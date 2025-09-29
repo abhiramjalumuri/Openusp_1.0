@@ -1,0 +1,150 @@
+# Mosquitto MQTT Broker Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: openusp
+  labels:
+    app: mosquitto
+    component: mqtt-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+        component: mqtt-broker
+    spec:
+      containers:
+      - name: mosquitto
+        image: eclipse-mosquitto:2.0-openssl
+        ports:
+        - containerPort: 1883
+          name: mqtt
+        - containerPort: 9001
+          name: websocket
+        volumeMounts:
+        - name: mosquitto-config
+          mountPath: /mosquitto/config
+        - name: mosquitto-data
+          mountPath: /mosquitto/data
+        - name: mosquitto-log
+          mountPath: /mosquitto/log
+        readinessProbe:
+          tcpSocket:
+            port: 1883
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 1883
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: mosquitto-config
+        configMap:
+          name: mosquitto-config
+      - name: mosquitto-data
+        emptyDir: {}
+      - name: mosquitto-log
+        emptyDir: {}
+---
+# Mosquitto Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  namespace: openusp
+  labels:
+    app: mosquitto
+spec:
+  selector:
+    app: mosquitto
+  ports:
+  - name: mqtt
+    port: 1883
+    targetPort: 1883
+  - name: websocket
+    port: 9001
+    targetPort: 9001
+  type: ClusterIP
+---
+# Mosquitto External Service (for external MQTT clients)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto-external
+  namespace: openusp
+  labels:
+    app: mosquitto
+    service: external
+spec:
+  selector:
+    app: mosquitto
+  ports:
+  - name: mqtt
+    port: 1883
+    targetPort: 1883
+  type: LoadBalancer
+---
+# Mosquitto Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: openusp
+data:
+  mosquitto.conf: |
+    # Basic Configuration
+    listener 1883
+    protocol mqtt
+    allow_anonymous true
+    
+    # WebSocket Configuration
+    listener 9001
+    protocol websockets
+    allow_anonymous true
+    
+    # Logging
+    log_dest stdout
+    log_type error
+    log_type warning
+    log_type notice
+    log_type information
+    log_type debug
+    
+    # Persistence
+    persistence true
+    persistence_location /mosquitto/data/
+    
+    # Connection Settings
+    max_connections 1000
+    max_keepalive 65535
+    
+    # Message Settings
+    max_packet_size 0
+    message_size_limit 0
+    
+    # Security (basic - enhance for production)
+    password_file /mosquitto/config/passwd
+    acl_file /mosquitto/config/acl
+  
+  passwd: |
+    # Username:Password (use mosquitto_passwd to generate)
+    # For demo purposes - replace with proper authentication
+    usp:$6$password$hash
+  
+  acl: |
+    # Access Control List
+    # Allow all for demo - restrict for production
+    topic readwrite #

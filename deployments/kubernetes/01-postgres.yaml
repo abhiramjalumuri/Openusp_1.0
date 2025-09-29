@@ -1,0 +1,165 @@
+# PostgreSQL StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: openusp
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: openusp
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "openusp"
+        - name: POSTGRES_USER
+          value: "openusp"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openusp-secrets
+              key: POSTGRES_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U openusp
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U openusp
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: postgres-init-scripts
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+# PostgreSQL Init Scripts ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: openusp
+data:
+  init.sql: |
+    -- OpenUSP Database Initialization
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    
+    -- Create devices table
+    CREATE TABLE IF NOT EXISTS devices (
+        id SERIAL PRIMARY KEY,
+        endpoint_id VARCHAR(255) UNIQUE NOT NULL,
+        manufacturer VARCHAR(255),
+        model VARCHAR(255),
+        software_version VARCHAR(255),
+        hardware_version VARCHAR(255),
+        serial_number VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'UNKNOWN',
+        last_contact TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create parameters table
+    CREATE TABLE IF NOT EXISTS parameters (
+        id SERIAL PRIMARY KEY,
+        device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+        path VARCHAR(512) NOT NULL,
+        value TEXT,
+        data_type VARCHAR(50),
+        writable BOOLEAN DEFAULT false,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(device_id, path)
+    );
+    
+    -- Create alerts table
+    CREATE TABLE IF NOT EXISTS alerts (
+        id SERIAL PRIMARY KEY,
+        device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+        alert_type VARCHAR(100) NOT NULL,
+        severity VARCHAR(50) DEFAULT 'INFO',
+        message TEXT,
+        resolved BOOLEAN DEFAULT false,
+        resolved_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create sessions table
+    CREATE TABLE IF NOT EXISTS sessions (
+        id SERIAL PRIMARY KEY,
+        device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        session_type VARCHAR(50),
+        started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        ended_at TIMESTAMP WITH TIME ZONE,
+        status VARCHAR(50) DEFAULT 'ACTIVE',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create indexes
+    CREATE INDEX IF NOT EXISTS idx_devices_endpoint_id ON devices(endpoint_id);
+    CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+    CREATE INDEX IF NOT EXISTS idx_parameters_device_id ON parameters(device_id);
+    CREATE INDEX IF NOT EXISTS idx_parameters_path ON parameters(path);
+    CREATE INDEX IF NOT EXISTS idx_alerts_device_id ON alerts(device_id);
+    CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(resolved);
+    CREATE INDEX IF NOT EXISTS idx_sessions_device_id ON sessions(device_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);

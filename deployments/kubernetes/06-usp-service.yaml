@@ -1,0 +1,70 @@
+# USP Core Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usp-service
+  namespace: openusp
+  labels:
+    app: usp-service
+    component: usp-core
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: usp-service
+  template:
+    metadata:
+      labels:
+        app: usp-service
+        component: usp-core
+    spec:
+      containers:
+      - name: usp-service
+        image: openusp/usp-service:latest
+        ports:
+        - containerPort: 9093
+          name: grpc
+        env:
+        - name: GRPC_PORT
+          value: "9093"
+        - name: DATA_SERVICE_ADDR
+          value: "data-service:9092"
+        - name: MTP_SERVICE_ADDR
+          value: "mtp-service:8081"
+        envFrom:
+        - configMapRef:
+            name: openusp-config
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:9093"]
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:9093"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+# USP Core Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: usp-service
+  namespace: openusp
+  labels:
+    app: usp-service
+spec:
+  selector:
+    app: usp-service
+  ports:
+  - name: grpc
+    port: 9093
+    targetPort: 9093
+  type: ClusterIP

@@ -1,0 +1,284 @@
+# Docker Compose for Production Environment
+version: '3.8'
+
+services:
+  # PostgreSQL Database with persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: openusp-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openusp}
+      POSTGRES_USER: ${POSTGRES_USER:-openusp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ../../configs/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openusp}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # RabbitMQ for STOMP (Production)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: openusp-rabbitmq-prod
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-openusp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+    volumes:
+      - rabbitmq_prod_data:/var/lib/rabbitmq
+      - ../../scripts/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    command: >
+      sh -c "rabbitmq-plugins enable rabbitmq_stomp rabbitmq_management &&
+             rabbitmq-server"
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Mosquitto MQTT Broker (Production)
+  mosquitto:
+    image: eclipse-mosquitto:2.0-openssl
+    container_name: openusp-mosquitto-prod
+    restart: unless-stopped
+    volumes:
+      - mosquitto_prod_data:/mosquitto/data
+      - mosquitto_prod_logs:/mosquitto/log
+      - ../../scripts/mosquitto-prod.conf:/mosquitto/config/mosquitto.conf
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "test", "-m", "health", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-prod-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Data Service (Production)
+  data-service:
+    image: openusp/data-service:${VERSION:-latest}
+    container_name: openusp-data-service-prod
+    restart: unless-stopped
+    command: ["./bin/data-service"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-openusp}
+      - POSTGRES_USER=${POSTGRES_USER:-openusp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - GRPC_PORT=9092
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - METRICS_ENABLED=true
+      - METRICS_PORT=9100
+    ports:
+      - "${DATA_SERVICE_PORT:-9092}:9092"
+      - "9100:9100"  # Metrics port
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "./bin/data-service", "-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    volumes:
+      - data_service_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # API Gateway (Production)
+  api-gateway:
+    image: openusp/api-gateway:${VERSION:-latest}
+    container_name: openusp-api-gateway-prod
+    restart: unless-stopped
+    command: ["./bin/api-gateway"]
+    environment:
+      - PORT=8080
+      - DATA_SERVICE_ADDR=data-service:9092
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_RPS=100
+      - CORS_ENABLED=true
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERT_PATH=${TLS_CERT_PATH}
+      - TLS_KEY_PATH=${TLS_KEY_PATH}
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      data-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    volumes:
+      - api_gateway_logs:/app/logs
+      - tls_certs:/app/certs:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # MTP Service (Production)
+  mtp-service:
+    image: openusp/mtp-service:${VERSION:-latest}
+    container_name: openusp-mtp-service-prod
+    restart: unless-stopped
+    command: ["./bin/mtp-service"]
+    environment:
+      - PORT=8081
+      - DATA_SERVICE_ADDR=data-service:9092
+      - MQTT_BROKER=mosquitto:1883
+      - STOMP_BROKER=rabbitmq:61613
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - USP_ENDPOINT_ID=${USP_ENDPOINT_ID:-usp.controller}
+      - MAX_MESSAGE_SIZE=1048576
+    ports:
+      - "${MTP_SERVICE_PORT:-8081}:8081"
+    depends_on:
+      data-service:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    volumes:
+      - mtp_service_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # CWMP Service (Production)
+  cwmp-service:
+    image: openusp/cwmp-service:${VERSION:-latest}
+    container_name: openusp-cwmp-service-prod
+    restart: unless-stopped
+    command: ["./bin/cwmp-service"]
+    environment:
+      - PORT=7547
+      - DATA_SERVICE_ADDR=data-service:9092
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CWMP_USERNAME=${CWMP_USERNAME:-acs}
+      - CWMP_PASSWORD=${CWMP_PASSWORD}
+      - SESSION_TIMEOUT=300
+    ports:
+      - "${CWMP_SERVICE_PORT:-7547}:7547"
+    depends_on:
+      data-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7547/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-prod-network
+    volumes:
+      - cwmp_service_logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Prometheus for monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: openusp-prometheus-prod
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ../../scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - openusp-prod-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: openusp-grafana-prod
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../../scripts/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ../../scripts/grafana-datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - openusp-prod-network
+    profiles:
+      - monitoring
+
+networks:
+  openusp-prod-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_prod_data:
+  rabbitmq_prod_data:
+  mosquitto_prod_data:
+  mosquitto_prod_logs:
+  data_service_logs:
+  api_gateway_logs:
+  mtp_service_logs:
+  cwmp_service_logs:
+  prometheus_data:
+  grafana_data:
+  tls_certs:

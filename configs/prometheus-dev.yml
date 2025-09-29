@@ -1,0 +1,59 @@
+# Prometheus Configuration for Development
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # OpenUSP Services (6xxx port scheme)
+  - job_name: 'openusp-api-gateway'
+    static_configs:
+    - targets: ['host.docker.internal:6500']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-mtp-service'
+    static_configs:
+    - targets: ['host.docker.internal:6100']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-usp-service'
+    static_configs:
+    - targets: ['host.docker.internal:6250']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-cwmp-service'
+    static_configs:
+    - targets: ['host.docker.internal:6300']
+    metrics_path: '/metrics'  
+    scrape_interval: 30s
+
+  - job_name: 'openusp-data-service'
+    static_configs:
+    - targets: ['host.docker.internal:6400']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Infrastructure Services
+  # PostgreSQL doesn't expose Prometheus metrics by default
+  # - job_name: 'postgresql'
+  #   static_configs:
+  #   - targets: ['host.docker.internal:5433']
+  #   scrape_interval: 60s
+
+  # RabbitMQ metrics require prometheus plugin to be enabled
+  # - job_name: 'rabbitmq'
+  #   static_configs:
+  #   - targets: ['host.docker.internal:15692']
+  #   metrics_path: '/metrics'
+  #   scrape_interval: 60s

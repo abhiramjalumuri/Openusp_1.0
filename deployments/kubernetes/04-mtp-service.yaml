@@ -1,0 +1,102 @@
+# MTP Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mtp-service
+  namespace: openusp
+  labels:
+    app: mtp-service
+    component: mtp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mtp-service
+  template:
+    metadata:
+      labels:
+        app: mtp-service
+        component: mtp
+    spec:
+      containers:
+      - name: mtp-service
+        image: openusp/mtp-service:latest
+        ports:
+        - containerPort: 8081
+          name: http
+        - containerPort: 1883
+          name: mqtt
+        - containerPort: 61613
+          name: stomp
+        env:
+        - name: PORT
+          value: "8081"
+        - name: DATA_SERVICE_ADDR
+          value: "data-service:9092"
+        - name: MQTT_BROKER_ADDR
+          value: "mosquitto:1883"
+        - name: STOMP_BROKER_ADDR
+          value: "rabbitmq:61613"
+        envFrom:
+        - configMapRef:
+            name: openusp-config
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 60
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+# MTP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mtp-service
+  namespace: openusp
+  labels:
+    app: mtp-service
+spec:
+  selector:
+    app: mtp-service
+  ports:
+  - name: http
+    port: 8081
+    targetPort: 8081
+  - name: mqtt
+    port: 1883
+    targetPort: 1883
+  - name: stomp
+    port: 61613
+    targetPort: 61613
+  type: ClusterIP
+---
+# WebSocket Service (for MTP WebSocket endpoint)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mtp-websocket
+  namespace: openusp
+  labels:
+    app: mtp-service
+    service: websocket
+spec:
+  selector:
+    app: mtp-service
+  ports:
+  - name: websocket
+    port: 8081
+    targetPort: 8081
+  type: LoadBalancer

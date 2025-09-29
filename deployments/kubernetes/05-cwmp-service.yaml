@@ -1,0 +1,98 @@
+# CWMP Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cwmp-service
+  namespace: openusp
+  labels:
+    app: cwmp-service
+    component: cwmp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cwmp-service
+  template:
+    metadata:
+      labels:
+        app: cwmp-service
+        component: cwmp
+    spec:
+      containers:
+      - name: cwmp-service
+        image: openusp/cwmp-service:latest
+        ports:
+        - containerPort: 7547
+          name: http
+        env:
+        - name: PORT
+          value: "7547"
+        - name: DATA_SERVICE_ADDR
+          value: "data-service:9092"
+        - name: CWMP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: openusp-secrets
+              key: cwmp-username
+        - name: CWMP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openusp-secrets
+              key: cwmp-password
+        envFrom:
+        - configMapRef:
+            name: openusp-config
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7547
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7547
+          initialDelaySeconds: 30
+          periodSeconds: 60
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+# CWMP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: cwmp-service
+  namespace: openusp
+  labels:
+    app: cwmp-service
+spec:
+  selector:
+    app: cwmp-service
+  ports:
+  - name: http
+    port: 7547
+    targetPort: 7547
+  type: ClusterIP
+---
+# CWMP LoadBalancer (for external TR-069 devices)
+apiVersion: v1
+kind: Service
+metadata:
+  name: cwmp-external
+  namespace: openusp
+  labels:
+    app: cwmp-service
+    service: external
+spec:
+  selector:
+    app: cwmp-service
+  ports:
+  - name: cwmp
+    port: 7547
+    targetPort: 7547
+  type: LoadBalancer

@@ -1,0 +1,15 @@
+# Data Service Dockerfile
+FROM openusp:latest AS data-service
+
+# Switch to non-root user
+USER openusp
+
+# Health check via gRPC health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD ./bin/data-service -health || exit 1
+
+# Expose Data Service gRPC port
+EXPOSE 9092
+
+# Start Data Service
+CMD ["./bin/data-service"]

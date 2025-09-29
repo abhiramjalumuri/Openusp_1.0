@@ -1,0 +1,111 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go build cache
+build/
+dist/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.backup
+Makefile.backup
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Log files
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+
+# Configuration files with sensitive data
+config/local.yaml
+config/production.yaml
+secrets/
+
+# Docker files
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes secrets
+k8s/secrets/
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.p12
+
+# Coverage reports
+coverage.txt
+coverage.html
+
+# Benchmarking files
+*.bench
+
+# Protocol buffer generated files (uncomment if you want to regenerate them)
+# *.pb.go
+
+# Build artifacts
+main
+openusp
+cmd/*/main
+cmd/api-gateway/api-gateway
+cmd/mtp-service/mtp-service
+cmd/cwmp-service/cwmp-service
+cmd/usp-service/usp-service
+cmd/data-service/data-service
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# macOS specific
+.DS_Store

@@ -1,0 +1,84 @@
+# Data Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-service
+  namespace: openusp
+  labels:
+    app: data-service
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: data-service
+  template:
+    metadata:
+      labels:
+        app: data-service
+        component: backend
+    spec:
+      containers:
+      - name: data-service
+        image: openusp/data-service:latest
+        ports:
+        - containerPort: 9092
+          name: grpc
+        - containerPort: 9100
+          name: metrics
+        env:
+        - name: POSTGRES_HOST
+          value: "postgres"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "openusp"
+        - name: POSTGRES_USER
+          value: "openusp"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openusp-secrets
+              key: POSTGRES_PASSWORD
+        - name: GRPC_PORT
+          value: "9092"
+        envFrom:
+        - configMapRef:
+            name: openusp-config
+        readinessProbe:
+          exec:
+            command: ["/app/bin/data-service", "-health"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["/app/bin/data-service", "-health"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+# Data Service Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-service
+  namespace: openusp
+  labels:
+    app: data-service
+spec:
+  selector:
+    app: data-service
+  ports:
+  - name: grpc
+    port: 9092
+    targetPort: 9092
+  - name: metrics
+    port: 9100
+    targetPort: 9100
+  type: ClusterIP

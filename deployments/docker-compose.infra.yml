@@ -1,0 +1,181 @@
+# Individual Infrastructure Services for Local Development
+# This compose file provides infrastructure components that can be started independently
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openusp-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: openusp_db
+      POSTGRES_USER: openusp
+      POSTGRES_PASSWORD: openusp123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../configs/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openusp -d openusp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Consul Service Discovery
+  consul:
+    image: hashicorp/consul:1.16
+    container_name: openusp-consul
+    ports:
+      - "8500:8500"    # HTTP API and Web UI
+      - "8600:8600/udp" # DNS
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    command: >
+      consul agent -dev -ui 
+      -client=0.0.0.0 
+      -bootstrap-expect=1 
+      -datacenter=openusp-dev
+      -node=openusp-consul-dev
+    volumes:
+      - consul_data:/consul/data
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Adminer Database Management UI
+  adminer:
+    image: adminer:4.8.1
+    container_name: openusp-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+  # RabbitMQ Message Broker with STOMP support
+  rabbitmq-dev:
+    image: rabbitmq:3.13-management-alpine
+    container_name: openusp-rabbitmq-dev
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+      - "61613:61613" # STOMP
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+      RABBITMQ_ENABLED_PLUGINS_FILE: /etc/rabbitmq/enabled_plugins
+    volumes:
+      - rabbitmq-dev-data:/var/lib/rabbitmq
+      - ../configs/rabbitmq-plugins:/etc/rabbitmq/enabled_plugins
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Mosquitto MQTT Broker
+  mosquitto-dev:
+    image: eclipse-mosquitto:2.0-openssl
+    container_name: openusp-mosquitto-dev
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket
+    volumes:
+      - ../configs/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-dev-data:/mosquitto/data
+      - mosquitto-dev-logs:/mosquitto/log
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 mosquitto_pub -h localhost -t test -m test"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus Monitoring
+  prometheus-dev:
+    image: prom/prometheus:v2.45.0
+    container_name: openusp-prometheus-dev
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ../configs/prometheus-dev.yml:/etc/prometheus/prometheus.yml
+      - prometheus-dev-data:/prometheus
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana Dashboards
+  grafana-dev:
+    image: grafana/grafana:10.0.0
+    container_name: openusp-grafana-dev
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-dev-data:/var/lib/grafana
+      - ../configs/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - prometheus-dev
+
+networks:
+  openusp-dev:
+    name: openusp-dev
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: openusp-postgres-data
+  consul_data:
+    name: openusp-consul-data
+  rabbitmq-dev-data:
+    name: openusp-rabbitmq-dev-data
+  mosquitto-dev-data:
+    name: openusp-mosquitto-dev-data
+  mosquitto-dev-logs:
+    name: openusp-mosquitto-dev-logs
+  prometheus-dev-data:
+    name: openusp-prometheus-dev-data
+  grafana-dev-data:
+    name: openusp-grafana-dev-data

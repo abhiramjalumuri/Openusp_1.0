@@ -1,0 +1,38 @@
+# Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openusp
+  labels:
+    name: openusp
+    environment: production
+---
+# ConfigMap for shared configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openusp-config
+  namespace: openusp
+data:
+  LOG_LEVEL: "info"
+  METRICS_ENABLED: "true"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_RPS: "100"
+  CORS_ENABLED: "true"
+  USP_ENDPOINT_ID: "usp.controller.k8s"
+  SESSION_TIMEOUT: "300"
+  MAX_MESSAGE_SIZE: "1048576"
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openusp-secrets
+  namespace: openusp
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual values
+  POSTGRES_PASSWORD: b3BlbnVzcDEyMw==  # openusp123
+  RABBITMQ_PASSWORD: b3BlbnVzcDEyMw==  # openusp123
+  CWMP_PASSWORD: YWNzMTIz  # acs123
+  GRAFANA_PASSWORD: YWRtaW4xMjM=  # admin123

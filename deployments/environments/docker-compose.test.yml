@@ -1,0 +1,224 @@
+# Docker Compose for Testing Environment
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openusp-postgres-test
+    environment:
+      POSTGRES_DB: openusp_test
+      POSTGRES_USER: openusp
+      POSTGRES_PASSWORD: openusp123
+    ports:
+      - "5433:5432"  # Different port for testing
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ../../configs/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openusp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openusp-test-network
+
+  # RabbitMQ for STOMP (Testing)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: openusp-rabbitmq-test
+    environment:
+      RABBITMQ_DEFAULT_USER: openusp
+      RABBITMQ_DEFAULT_PASS: openusp123
+    ports:
+      - "5673:5672"   # AMQP port
+      - "15673:15672" # Management UI
+      - "61614:61613" # STOMP port
+    volumes:
+      - rabbitmq_test_data:/var/lib/rabbitmq
+    command: >
+      sh -c "rabbitmq-plugins enable rabbitmq_stomp rabbitmq_management &&
+             rabbitmq-server"
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - openusp-test-network
+
+  # Mosquitto MQTT Broker (Testing)
+  mosquitto:
+    image: eclipse-mosquitto:2.0-openssl
+    container_name: openusp-mosquitto-test
+    ports:
+      - "1884:1883"   # MQTT port
+      - "9002:9001"   # WebSocket port
+    volumes:
+      - mosquitto_test_data:/mosquitto/data
+      - mosquitto_test_logs:/mosquitto/log
+      - ../../configs/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "test", "-m", "health", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-test-network
+
+  # Data Service
+  data-service:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+        BUILD_USER: ${BUILD_USER}
+        GIT_COMMIT: ${GIT_COMMIT}
+        GIT_BRANCH: ${GIT_BRANCH}
+        GIT_TAG: ${GIT_TAG}
+    container_name: openusp-data-service-test
+    command: ["./bin/data-service"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=openusp_test
+      - POSTGRES_USER=openusp
+      - POSTGRES_PASSWORD=openusp123
+      - GRPC_PORT=9092
+      - LOG_LEVEL=debug
+    ports:
+      - "9093:9092"  # gRPC port
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "./bin/data-service", "-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-test-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+        BUILD_USER: ${BUILD_USER}
+        GIT_COMMIT: ${GIT_COMMIT}
+        GIT_BRANCH: ${GIT_BRANCH}
+        GIT_TAG: ${GIT_TAG}
+    container_name: openusp-api-gateway-test
+    command: ["./bin/api-gateway"]
+    environment:
+      - PORT=8080
+      - DATA_SERVICE_ADDR=data-service:9092
+      - LOG_LEVEL=debug
+    ports:
+      - "8081:8080"  # Different port for testing
+    depends_on:
+      data-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-test-network
+
+  # MTP Service
+  mtp-service:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+        BUILD_USER: ${BUILD_USER}
+        GIT_COMMIT: ${GIT_COMMIT}
+        GIT_BRANCH: ${GIT_BRANCH}
+        GIT_TAG: ${GIT_TAG}
+    container_name: openusp-mtp-service-test
+    command: ["./bin/mtp-service"]
+    environment:
+      - PORT=8081
+      - DATA_SERVICE_ADDR=data-service:9092
+      - MQTT_BROKER=mosquitto:1883
+      - STOMP_BROKER=rabbitmq:61613
+      - LOG_LEVEL=debug
+    ports:
+      - "8082:8081"  # Different port for testing
+    depends_on:
+      data-service:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-test-network
+
+  # CWMP Service
+  cwmp-service:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+        BUILD_USER: ${BUILD_USER}
+        GIT_COMMIT: ${GIT_COMMIT}
+        GIT_BRANCH: ${GIT_BRANCH}
+        GIT_TAG: ${GIT_TAG}
+    container_name: openusp-cwmp-service-test
+    command: ["./bin/cwmp-service"]
+    environment:
+      - PORT=7547
+      - DATA_SERVICE_ADDR=data-service:9092
+      - LOG_LEVEL=debug
+    ports:
+      - "7548:7547"  # Different port for testing
+    depends_on:
+      data-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7547/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openusp-test-network
+
+  # Adminer for database management
+  adminer:
+    image: adminer:latest
+    container_name: openusp-adminer-test
+    ports:
+      - "8084:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    networks:
+      - openusp-test-network
+
+networks:
+  openusp-test-network:
+    driver: bridge
+
+volumes:
+  postgres_test_data:
+  rabbitmq_test_data: 
+  mosquitto_test_data:
+  mosquitto_test_logs:

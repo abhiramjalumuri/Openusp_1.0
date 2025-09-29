@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package uspservice;
+
+option go_package = "openusp/pkg/proto/uspservice";
+
+// USP Service provides TR-369 protocol processing and device management
+service USPService {
+    // ProcessUSPMessage processes incoming USP messages and returns responses
+    rpc ProcessUSPMessage(USPMessageRequest) returns (USPMessageResponse);
+    
+    // GetServiceHealth returns the health status of the USP service
+    rpc GetServiceHealth(HealthRequest) returns (HealthResponse);
+    
+    // GetServiceStatus returns detailed status information
+    rpc GetServiceStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Request to process a USP message
+message USPMessageRequest {
+    bytes usp_data = 1;                    // Raw USP record data
+    string transport_type = 2;             // Transport type (WebSocket, MQTT, STOMP, etc.)
+    string client_id = 3;                  // Client identifier from MTP service
+    int64 timestamp = 4;                   // Message timestamp
+    map<string, string> metadata = 5;      // Additional metadata from transport
+}
+
+// Response from USP message processing
+message USPMessageResponse {
+    bytes response_data = 1;               // Raw USP response record data
+    string status = 2;                     // Processing status (success, error, etc.)
+    string error_message = 3;              // Error message if processing failed
+    DeviceInfo device_info = 4;            // Device information if onboarding occurred
+    bool device_onboarded = 5;             // True if device was onboarded
+}
+
+// Device information extracted during onboarding
+message DeviceInfo {
+    string endpoint_id = 1;
+    string product_class = 2;
+    string serial_number = 3;
+    string manufacturer = 4;
+    string model_name = 5;
+    string software_version = 6;
+    string hardware_version = 7;
+    string supported_protocol_versions = 8;
+}
+
+// Health check request
+message HealthRequest {
+    // Empty for now
+}
+
+// Health check response
+message HealthResponse {
+    string status = 1;                     // "healthy" or "unhealthy"
+    string message = 2;                    // Additional health information
+    int64 timestamp = 3;                   // Health check timestamp
+}
+
+// Status request
+message StatusRequest {
+    // Empty for now
+}
+
+// Status response
+message StatusResponse {
+    string service_name = 1;
+    string version = 2;
+    string uptime = 3;
+    int32 processed_messages = 4;
+    int32 onboarded_devices = 5;
+    map<string, string> statistics = 6;
+}

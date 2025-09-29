@@ -1,0 +1,15 @@
+# CWMP Service Dockerfile
+FROM openusp:latest AS cwmp-service
+
+# Switch to non-root user
+USER openusp
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:7547/health || exit 1
+
+# Expose CWMP Service port
+EXPOSE 7547
+
+# Start CWMP Service
+CMD ["./bin/cwmp-service"]
