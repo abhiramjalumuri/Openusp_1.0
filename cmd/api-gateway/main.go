@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"openusp/docs" // Import generated docs
+	"openusp/api" // Import generated docs
 	grpcclient "openusp/internal/grpc"
 	"openusp/pkg/config"
 	"openusp/pkg/consul"
@@ -161,7 +161,7 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
 	// Configure Swagger host dynamically for current port
-	docs.SwaggerInfo.Host = fmt.Sprintf("localhost:%d", gw.getHTTPPort())
+	api.SwaggerInfo.Host = fmt.Sprintf("localhost:%d", gw.getHTTPPort())
 
 	// Swagger UI endpoint - Dynamic URL based on current port
 	swaggerURL := fmt.Sprintf("http://localhost:%d/swagger/doc.json", gw.getHTTPPort())

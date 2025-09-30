@@ -429,8 +429,16 @@ show-endpoints:
 	@echo "------------------------------------------------"
 	@echo "Use: make start-all (start everything) | make stop-all | make show-endpoints"
 
+# Swagger Documentation Generation
+.PHONY: swagger-gen
+swagger-gen: ## Generate Swagger documentation
+	@echo "📚 Generating Swagger documentation..."
+	@which swag > /dev/null || (echo "Installing swag..." && go install github.com/swaggo/swag/cmd/swag@latest)
+	@swag init -g cmd/api-gateway/main.go -o api/ --parseInternal
+	@echo "✅ Swagger documentation generated in api/"
+
 # Individual Service Build Targets
-build-api-gateway:
+build-api-gateway: swagger-gen
 	@echo "Building API Gateway..."
 	@mkdir -p $(BINARY_DIR)
 	@go build $(LDFLAGS) -o $(BINARY_DIR)/api-gateway cmd/api-gateway/main.go
