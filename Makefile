@@ -389,6 +389,13 @@ stop-ou-all:
 	@pkill -f "usp-service" 2>/dev/null || true
 	@pkill -f "mtp-service" 2>/dev/null || true
 	@pkill -f "cwmp-service" 2>/dev/null || true
+	@# Kill any processes on OpenUSP ports as fallback
+	@lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:$(OPENUSP_DATA_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@sleep 1
 	@echo "All OpenUSP services stopped"
 
 # Combined Commands
