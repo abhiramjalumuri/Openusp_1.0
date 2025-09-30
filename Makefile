@@ -371,14 +371,14 @@ start-ou-all:
 		echo "ERROR: PostgreSQL not running. Run 'make infra-up' first."; \
 		exit 1; \
 	fi
-	@echo "Starting Data Service (PostgreSQL dependency)..."
-	@$(MAKE) start-data-service &
-	@sleep 5
-	@echo "Starting remaining services..."
-	@$(MAKE) start-api-gateway &
-	@$(MAKE) start-mtp-service &
-	@$(MAKE) start-cwmp-service &
-	@$(MAKE) start-usp-service &
+	@echo "Starting Data Service with Consul (PostgreSQL dependency)..."
+	@$(MAKE) start-data-service-consul &
+	@sleep 8
+	@echo "Starting remaining services with Consul..."
+	@$(MAKE) start-api-gateway-consul &
+	@$(MAKE) start-mtp-service-consul &
+	@$(MAKE) start-cwmp-service-consul &
+	@$(MAKE) start-usp-service-consul &
 	@sleep 2
 	@echo "All OpenUSP services started (check individual logs via: make logs-<service>)"
 
