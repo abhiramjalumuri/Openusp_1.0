@@ -76,6 +76,7 @@ help:
 	@echo "  infra-clean     Clean/remove all 3rd party services and volumes"
 	@echo "  infra-volumes   List all named infrastructure volumes (OpenUSP)"
 	@echo "  setup-grafana   Configure Grafana with OpenUSP dashboards and data sources"
+	@echo "  verify-grafana  Verify Grafana dashboard data and connectivity"
 	@echo "  check-api-gateway Test API Gateway health endpoint with dynamic port discovery"
 	@echo ""
 	@echo "OpenUSP Service Targets:"
@@ -96,6 +97,8 @@ help:
 	@echo "  build-tr369-agent   Build TR-369 USP agent binary"
 	@echo "  build-tr069-agent   Build TR-069 agent binary" 
 	@echo "  start-tr369-agent   Start TR-369 USP agent (uses OPENUSP_USP_WS_URL)"
+	@echo "  start-tr369-v13     Start TR-369 agent with USP v1.3 (default)"
+	@echo "  start-tr369-v14     Start TR-369 agent with USP v1.4"
 	@echo "  start-tr069-agent   Start TR-069 agent"
 	@echo "  Note: All services support --consul flag for service discovery"
 	@echo ""
@@ -194,6 +197,8 @@ go-check: fmt vet tidy test-syntax
 # =============================================================================
 # Example Client Build Targets
 # =============================================================================
+.PHONY: build-tr369-agent build-tr069-agent start-tr369-agent start-tr069-agent start-tr369-v13 start-tr369-v14
+
 build-tr369-agent:
 	@echo "Building TR-369 USP agent..."
 	@mkdir -p $(BINARY_DIR)
@@ -214,6 +219,17 @@ start-tr369-agent: build-tr369-agent
 start-tr069-agent: build-tr069-agent
 	@echo "Starting TR-069 agent with Consul service discovery..."
 	@$(BINARY_DIR)/tr069-agent || echo "Agent exited"
+
+# TR-369 Agent Version-Specific Targets
+start-tr369-v13: build-tr369-agent
+	@echo "Starting TR-369 agent with USP Protocol v1.3..."
+	@echo "Command: $(BINARY_DIR)/tr369-agent -version 1.3"
+	@$(BINARY_DIR)/tr369-agent -version 1.3 || echo "Agent exited"
+
+start-tr369-v14: build-tr369-agent
+	@echo "Starting TR-369 agent with USP Protocol v1.4..."
+	@echo "Command: $(BINARY_DIR)/tr369-agent -version 1.4"
+	@$(BINARY_DIR)/tr369-agent -version 1.4 || echo "Agent exited"
 
 # Consul is now enabled by default in development
 # To disable: CONSUL_ENABLED=false make start-mtp-service
@@ -488,8 +504,11 @@ infra-volumes:
 
 setup-grafana:
 	@echo "Setting up Grafana with OpenUSP dashboards..."
-	@echo "💡 If login fails, see: docs/GRAFANA_TROUBLESHOOTING.md"
-	@./scripts/setup-grafana.sh
+	@./scripts/setup-grafana-dashboards.sh
+
+verify-grafana:
+	@echo "Verifying Grafana dashboard data and connectivity..."
+	@./scripts/verify-grafana.sh
 
 check-api-gateway:
 	@echo "Checking API Gateway health endpoint..."

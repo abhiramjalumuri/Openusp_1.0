@@ -387,7 +387,7 @@ func (gw *APIGateway) getStatus(c *gin.Context) {
 //	@Param			limit	query		int	false	"Pagination limit"	default(10)
 //	@Success		200		{object}	map[string]interface{}	"List of devices"
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
-//	@Router			/api/v1/devices [get]
+//	@Router			/devices [get]
 func (gw *APIGateway) listDevices(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -425,7 +425,7 @@ func (gw *APIGateway) listDevices(c *gin.Context) {
 //	@Success		201		{object}	map[string]interface{}	"Device created successfully"
 //	@Failure		400		{object}	map[string]interface{}	"Invalid request body"
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
-//	@Router			/api/v1/devices [post]
+//	@Router			/devices [post]
 func (gw *APIGateway) createDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -679,15 +679,38 @@ func main() {
 
 	log.Printf("✅ USP Core Service initialized with TR-181 data model")
 
-	// Connect to data service
-	dataConn, err := grpc.Dial(fmt.Sprintf("localhost:%s", cfg.DataServicePort), grpc.WithInsecure())
+	// Connect to data service - use Consul discovery if available
+	var dataServiceAddr string
+	if registry != nil {
+		// Discover data service via Consul
+		dataService, err := registry.DiscoverService("openusp-data-service")
+		if err != nil {
+			log.Printf("⚠️ Failed to discover data service via Consul: %v", err)
+			dataServiceAddr = fmt.Sprintf("localhost:%s", cfg.DataServicePort)
+		} else {
+			// Use the gRPC port from Consul metadata
+			if grpcPort, exists := dataService.Meta["grpc_port"]; exists {
+				dataServiceAddr = fmt.Sprintf("localhost:%s", grpcPort)
+				log.Printf("🔍 Discovered data service gRPC port via Consul: %s", grpcPort)
+			} else {
+				// Fallback to ServicePort if no gRPC port in metadata
+				dataServiceAddr = fmt.Sprintf("localhost:%d", dataService.Port)
+				log.Printf("🔍 Using data service port from Consul: %d", dataService.Port)
+			}
+		}
+	} else {
+		// No Consul, use configuration
+		dataServiceAddr = fmt.Sprintf("localhost:%s", cfg.DataServicePort)
+	}
+
+	dataConn, err := grpc.Dial(dataServiceAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Failed to connect to data service: %v", err)
 	}
 	defer dataConn.Close()
 
 	dataClient := dataservice.NewDataServiceClient(dataConn)
-	log.Printf("✅ Connected to Data Service at localhost:%s", cfg.DataServicePort)
+	log.Printf("✅ Connected to Data Service at %s", dataServiceAddr)
 
 	// Start HTTP server for health checks and metrics
 	var httpPort int

@@ -109,6 +109,12 @@ func NewDataService() (*DataService, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	service.database = db
+
+	// Run database migrations
+	if err := db.Migrate(); err != nil {
+		return nil, fmt.Errorf("failed to run database migrations: %w", err)
+	}
+
 	service.repos = database.NewRepositories(db.DB)
 
 	// Setup servers (but don't register with Consul yet)

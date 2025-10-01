@@ -281,7 +281,8 @@ func (s *SimpleMTPService) handleUSPWebSocket(w http.ResponseWriter, r *http.Req
 		}
 
 		if messageType == websocket.BinaryMessage && s.messageHandler != nil {
-			log.Printf("📨 Received USP message from client %s (size: %d bytes)", clientID, len(payload))
+			recvSize := len(payload)
+			log.Printf("📨 Received USP message from client %s (size: %d bytes)", clientID, recvSize)
 
 			// Detect USP version for metrics
 			version, _ := s.messageHandler.DetectUSPVersion(payload)
@@ -289,18 +290,21 @@ func (s *SimpleMTPService) handleUSPWebSocket(w http.ResponseWriter, r *http.Req
 				version = "unknown"
 			}
 
-			// Process the USP message
+			start := time.Now()
 			response, err := s.messageHandler.ProcessUSPMessage(payload)
+			procDur := time.Since(start)
+
 			if err != nil {
-				log.Printf("❌ Failed to process USP message from client %s: %v", clientID, err)
+				log.Printf("❌ Failed to process USP message from client %s (size=%d, version=%s, duration=%s): %v", clientID, recvSize, version, procDur, err)
 				s.metrics.RecordUSPError("mtp-service", version, "unknown", "processing_error")
+				// Keep the connection alive; short backoff to avoid tight loop
+				time.Sleep(150 * time.Millisecond)
 				continue
 			}
 
-			// Record successful USP message
+			log.Printf("✅ Processed USP message from client %s (version=%s, in %s, responseSize=%d)", clientID, version, procDur, len(response))
 			s.metrics.RecordUSPMessage("mtp-service", version, "unknown", "websocket")
 
-			// Send response back to client
 			if len(response) > 0 {
 				if err := conn.WriteMessage(websocket.BinaryMessage, response); err != nil {
 					log.Printf("❌ Failed to send response to client %s: %v", clientID, err)
@@ -779,12 +783,42 @@ func main() {
 	config.WebSocketPort = mtpPort
 
 	// Create USP message handler that forwards to USP service
-	uspServiceAddr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT"))
-	if uspServiceAddr == "" {
-		uspServiceAddr = "localhost:56250" // Default USP service gRPC address
-	} else {
-		uspServiceAddr = "localhost:" + uspServiceAddr
+	uspServiceAddr := ""
+	if deployConfig.IsConsulEnabled() && registry != nil {
+		// Allow configurable discovery timeout (default 20s). Accept Go duration format (e.g. 10s, 1m)
+		discTimeout := 20 * time.Second
+		if v := strings.TrimSpace(os.Getenv("OPENUSP_USP_DISCOVERY_TIMEOUT")); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				discTimeout = d
+			} else if err != nil {
+				log.Printf("⚠️  Invalid OPENUSP_USP_DISCOVERY_TIMEOUT value '%s': %v (using default %v)", v, err, discTimeout)
+			}
+		}
+
+		log.Printf("🔎 Attempting USP service discovery via Consul (timeout: %v)...", discTimeout)
+		if uspServiceInfo, err := registry.WaitForService(context.Background(), "openusp-usp-service", discTimeout); err == nil && uspServiceInfo != nil {
+			if uspServiceInfo.GRPCPort > 0 {
+				uspServiceAddr = fmt.Sprintf("%s:%d", uspServiceInfo.Address, uspServiceInfo.GRPCPort)
+				log.Printf("✅ Discovered USP service via Consul: %s (health=%s)", uspServiceAddr, uspServiceInfo.Health)
+			} else {
+				log.Printf("⚠️  USP service discovered but no gRPC port metadata found; falling back (http port=%d)", uspServiceInfo.Port)
+			}
+		} else if err != nil {
+			log.Printf("⚠️  USP service discovery timed out: %v", err)
+		}
 	}
+
+	// Fallback to environment variable or default if discovery failed
+	if uspServiceAddr == "" {
+		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
+			uspServiceAddr = "localhost:" + portStr
+			log.Printf("🔁 Using USP service address from OPENUSP_USP_SERVICE_GRPC_PORT: %s", uspServiceAddr)
+		} else {
+			uspServiceAddr = "localhost:56250" // Legacy/static default
+			log.Printf("⚠️  USP service not discovered; using legacy default address: %s", uspServiceAddr)
+		}
+	}
+
 	handler := NewUSPMessageHandler(uspServiceAddr)
 
 	// Create MTP service
@@ -825,7 +859,8 @@ func main() {
 
 	// Deregister from Consul
 	if registry != nil && serviceInfo != nil {
-		if err := registry.DeregisterService(serviceInfo.ID); err != nil {
+		// NOTE: DeregisterService expects the service name (not the dynamic ID)
+		if err := registry.DeregisterService(serviceInfo.Name); err != nil {
 			log.Printf("⚠️  Failed to deregister from Consul: %v", err)
 		} else {
 			log.Printf("✅ Deregistered from Consul successfully")

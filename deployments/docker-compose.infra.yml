@@ -148,6 +148,8 @@ services:
     volumes:
       - grafana-dev-data:/var/lib/grafana
       - ../configs/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ../configs/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml
+      - ../configs/grafana-dashboards:/etc/grafana/provisioning/dashboards
     networks:
       - openusp-dev
     restart: unless-stopped

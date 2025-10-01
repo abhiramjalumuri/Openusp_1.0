@@ -5,6 +5,6 @@ datasources:
 - name: Prometheus
   type: prometheus
   access: proxy
-  url: http://host.docker.internal:9090
+  url: http://openusp-prometheus-dev:9090
   isDefault: true
   editable: true

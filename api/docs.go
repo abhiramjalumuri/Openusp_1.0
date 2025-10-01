@@ -23,7 +23,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/devices": {
+        "/devices": {
             "get": {
                 "description": "Get a paginated list of all registered devices",
                 "consumes": [
