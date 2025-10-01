@@ -1,45 +1,249 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
 	"time"
-
-	"openusp/internal/cwmp"
-	"openusp/internal/tr181"
 )
+
+// ConsulService represents a service registered in Consul
+type ConsulService struct {
+	ServiceName    string            `json:"ServiceName"`
+	ServiceID      string            `json:"ServiceID"`
+	ServiceTags    []string          `json:"ServiceTags"`
+	Address        string            `json:"Address"`        // Node address
+	Port           int               `json:"Port"`           // Node port
+	ServiceAddress string            `json:"ServiceAddress"` // Service address
+	ServicePort    int               `json:"ServicePort"`    // Service port
+	Meta           map[string]string `json:"Meta"`
+}
+
+// discoverCWMPService discovers the CWMP service via Consul
+func discoverCWMPService() (string, error) {
+	log.Printf("🔍 Discovering CWMP service via Consul...")
+
+	// Get Consul address from environment or use default
+	consulAddr := os.Getenv("CONSUL_ADDR")
+	if consulAddr == "" {
+		consulAddr = "http://localhost:8500"
+	}
+
+	// Query Consul for CWMP service
+	url := fmt.Sprintf("%s/v1/catalog/service/openusp-cwmp-service", consulAddr)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("⚠️  Failed to query Consul: %v", err)
+		log.Printf("🔄 Falling back to default address: http://localhost:7547")
+		return "http://localhost:7547", nil
+	}
+	defer resp.Body.Close()
+
+	var services []ConsulService
+	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
+		log.Printf("⚠️  Failed to decode Consul response: %v", err)
+		log.Printf("🔄 Falling back to default address: http://localhost:7547")
+		return "http://localhost:7547", nil
+	}
+
+	if len(services) == 0 {
+		log.Printf("⚠️  No CWMP service found in Consul")
+		log.Printf("🔄 Falling back to default address: http://localhost:7547")
+		return "http://localhost:7547", nil
+	}
+
+	// Use the first available service
+	service := services[0]
+	// Use ServiceAddress and ServicePort for the actual service endpoint
+	address := service.ServiceAddress
+	if address == "" {
+		address = service.Address
+	}
+	if address == "127.0.0.1" {
+		address = "localhost" // Use localhost for better compatibility
+	}
+	
+	port := service.ServicePort
+	if port == 0 {
+		port = service.Port
+	}
+	
+	cwmpServiceURL := fmt.Sprintf("http://%s:%d", address, port)
+	log.Printf("✅ Found CWMP service at: %s", cwmpServiceURL)
+
+	return cwmpServiceURL, nil
+}
+
+// CWMP/SOAP structures for TR-069 communication
+type Envelope struct {
+	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
+	Header  *Header  `xml:"Header,omitempty"`
+	Body    Body     `xml:"Body"`
+}
+
+type Header struct {
+	ID string `xml:"http://schemas.xmlsoap.org/ws/2004/08/addressing To,omitempty"`
+}
+
+type Body struct {
+	Inform         *Inform         `xml:"urn:dslforum-org:cwmp-1-0 Inform,omitempty"`
+	InformResponse *InformResponse `xml:"urn:dslforum-org:cwmp-1-0 InformResponse,omitempty"`
+}
+
+type Inform struct {
+	DeviceId      DeviceIdStruct         `xml:"DeviceId"`
+	Event         []EventStruct          `xml:"Event>EventStruct"`
+	MaxEnvelopes  int                    `xml:"MaxEnvelopes"`
+	CurrentTime   string                 `xml:"CurrentTime"`
+	RetryCount    int                    `xml:"RetryCount"`
+	ParameterList []ParameterValueStruct `xml:"ParameterList>ParameterValueStruct"`
+}
+
+type DeviceIdStruct struct {
+	Manufacturer string `xml:"Manufacturer"`
+	OUI          string `xml:"OUI"`
+	ProductClass string `xml:"ProductClass"`
+	SerialNumber string `xml:"SerialNumber"`
+}
+
+type EventStruct struct {
+	EventCode  string `xml:"EventCode"`
+	CommandKey string `xml:"CommandKey"`
+}
+
+type ParameterValueStruct struct {
+	Name  string `xml:"Name"`
+	Value string `xml:"Value"`
+	Type  string `xml:"Type,attr"`
+}
+
+type InformResponse struct {
+	MaxEnvelopes int `xml:"MaxEnvelopes"`
+}
+
+// CWMPClient represents a TR-069 CWMP client
+type CWMPClient struct {
+	acsURL   string
+	username string
+	password string
+	client   *http.Client
+}
+
+// NewCWMPClient creates a new CWMP client
+func NewCWMPClient(acsURL, username, password string) *CWMPClient {
+	return &CWMPClient{
+		acsURL:   acsURL,
+		username: username,
+		password: password,
+		client:   &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// SendInform sends an Inform message to the CWMP service
+func (c *CWMPClient) SendInform(inform *Inform) error {
+	// Create SOAP envelope
+	envelope := &Envelope{
+		Body: Body{
+			Inform: inform,
+		},
+	}
+
+	// Marshal to XML
+	xmlData, err := xml.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal SOAP envelope: %v", err)
+	}
+
+	// Add XML declaration
+	xmlRequest := []byte(xml.Header + string(xmlData))
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", c.acsURL, bytes.NewBuffer(xmlRequest))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	req.Header.Set("SOAPAction", "")
+	
+	// Add basic auth if credentials provided
+	if c.username != "" && c.password != "" {
+		req.SetBasicAuth(c.username, c.password)
+	}
+
+	log.Printf("🌐 Sending CWMP Inform request to: %s", c.acsURL)
+	log.Printf("📄 Request XML:\n%s", string(xmlRequest))
+
+	// Send request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %v", err)
+	}
+
+	log.Printf("📨 CWMP Response Status: %s", resp.Status)
+	log.Printf("📄 Response XML:\n%s", string(respBody))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("CWMP service returned error: %s", resp.Status)
+	}
+
+	// Parse response
+	var responseEnvelope Envelope
+	if err := xml.Unmarshal(respBody, &responseEnvelope); err != nil {
+		log.Printf("⚠️  Failed to parse response XML: %v", err)
+		// Don't return error if we can't parse - the request might still have succeeded
+	}
+
+	log.Printf("✅ CWMP Inform sent successfully!")
+	return nil
+}
 
 // TR069OnboardingDemo demonstrates the TR-069 onboarding functionality
 func main() {
 	fmt.Println("🚀 TR-069 Device Onboarding Demo")
 	fmt.Println("================================")
 
-	// Initialize TR-181 manager
-	tr181Manager, err := tr181.NewDeviceManager("pkg/datamodel/tr-181-2-19-1-usp-full.xml")
+	// Discover CWMP service dynamically
+	cwmpServiceURL, err := discoverCWMPService()
 	if err != nil {
-		log.Fatalf("Failed to initialize TR-181 manager: %v", err)
+		log.Fatalf("Failed to discover CWMP service: %v", err)
+	}
+	log.Printf("Using CWMP service at: %s", cwmpServiceURL)
+
+	// Create CWMP client with basic auth credentials
+	username := os.Getenv("CWMP_USERNAME")
+	if username == "" {
+		username = "acs" // Default username
+	}
+	password := os.Getenv("CWMP_PASSWORD")
+	if password == "" {
+		password = "acs123" // Default password
 	}
 
-	// Initialize onboarding manager (using localhost for demo)
-	onboardingManager, err := cwmp.NewOnboardingManager("localhost:56400", tr181Manager)
-	if err != nil {
-		log.Fatalf("Failed to initialize onboarding manager: %v", err)
-	}
-	defer func() {
-		if err := onboardingManager.Close(); err != nil {
-			log.Printf("Error closing onboarding manager: %v", err)
-		}
-	}()
+	client := NewCWMPClient(cwmpServiceURL, username, password)
 
 	// Create a sample Inform message that would come from a TR-069 device
-	sampleInform := &cwmp.Inform{
-		DeviceId: cwmp.DeviceIdStruct{
+	sampleInform := &Inform{
+		DeviceId: DeviceIdStruct{
 			Manufacturer: "OpenUSP",
 			OUI:          "00D4FE",
 			ProductClass: "HomeGateway",
 			SerialNumber: "DEMO123456",
 		},
-		Event: []cwmp.EventStruct{
+		Event: []EventStruct{
 			{
 				EventCode:  "0 BOOTSTRAP",
 				CommandKey: "",
@@ -52,7 +256,7 @@ func main() {
 		MaxEnvelopes: 1,
 		CurrentTime:  time.Now().Format(time.RFC3339),
 		RetryCount:   0,
-		ParameterList: []cwmp.ParameterValueStruct{
+		ParameterList: []ParameterValueStruct{
 			{
 				Name:  "Device.DeviceInfo.Manufacturer",
 				Value: "OpenUSP",
@@ -66,16 +270,6 @@ func main() {
 			{
 				Name:  "Device.DeviceInfo.SerialNumber",
 				Value: "DEMO123456",
-				Type:  "xsd:string",
-			},
-			{
-				Name:  "Device.DeviceInfo.SoftwareVersion",
-				Value: "1.0.0",
-				Type:  "xsd:string",
-			},
-			{
-				Name:  "Device.ManagementServer.ConnectionRequestURL",
-				Value: "http://192.168.1.100:7547/ConnectionRequest",
 				Type:  "xsd:string",
 			},
 			{
@@ -93,39 +287,23 @@ func main() {
 	fmt.Printf("   Parameters: %d\n", len(sampleInform.ParameterList))
 	fmt.Println()
 
-	// Note: This demo shows the onboarding structure, but requires a running data service
-	// to actually perform database operations
-	fmt.Println("⚠️  Note: This demo shows the onboarding process structure.")
-	fmt.Println("   For full functionality, the data service must be running at localhost:56400")
-	fmt.Println()
-
-	// Create an onboarding process (this will fail without data service, but shows the flow)
-	process, err := onboardingManager.ProcessInformForOnboarding(sampleInform, "demo-session-123")
-	if err != nil {
-		fmt.Printf("❌ Onboarding process failed (expected without data service): %v\n", err)
+	// Send the Inform message to CWMP service for onboarding
+	fmt.Println("🔄 Starting TR-069 onboarding process...")
+	if err := client.SendInform(sampleInform); err != nil {
+		fmt.Printf("❌ TR-069 onboarding failed: %v\n", err)
 		fmt.Println()
 		fmt.Println("To see full onboarding in action:")
-		fmt.Println("1. Start the data service: make run-data-service")
-		fmt.Println("2. Start the CWMP service: make run-cwmp-service")
-		fmt.Println("3. Use the TR-069 client example: make run-tr069-example")
+		fmt.Println("1. Start infrastructure: make infra-up")
+		fmt.Println("2. Build services: make build-all")
+		fmt.Println("3. Start services: make start-all")
+		fmt.Println("4. Run this TR-069 agent: go run examples/tr069-agent/main.go")
+		fmt.Println()
+		fmt.Println("The agent will automatically discover services via Consul.")
 		return
 	}
 
-	// Display process steps (this would show if successful)
-	fmt.Printf("✅ Onboarding process created for device: %s\n", process.DeviceID)
-	fmt.Printf("   Started at: %s\n", process.StartedAt.Format(time.RFC3339))
-	fmt.Printf("   Steps: %d\n", len(process.Steps))
-
-	for _, step := range process.Steps {
-		status := "⏳ Pending"
-		if step.Completed {
-			status = "✅ Completed"
-		} else if step.Error != nil {
-			status = fmt.Sprintf("❌ Failed: %v", step.Error)
-		}
-		fmt.Printf("   - %s: %s\n", step.Name, status)
-	}
-
 	fmt.Println()
-	fmt.Println("🎉 TR-069 Onboarding Demo Complete!")
+	fmt.Println("🎉 TR-069 Device Onboarding Complete!")
+	fmt.Println("✅ Device successfully sent Inform message to CWMP service")
+	fmt.Println("📊 Check the CWMP service logs for onboarding details")
 }

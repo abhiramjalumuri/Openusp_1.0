@@ -34,11 +34,52 @@ wait_for_grafana() {
     return 1
 }
 
+# Function to reset Grafana admin password if needed
+reset_admin_password() {
+    echo "🔑 Checking Grafana admin access..."
+    
+    # Test if we can authenticate with current credentials
+    if curl -s -u "${GRAFANA_USER}:${GRAFANA_PASS}" "${GRAFANA_URL}/api/user" > /dev/null 2>&1; then
+        echo "   ✅ Admin credentials are working"
+        return 0
+    fi
+    
+    echo "   ⚠️  Admin credentials not working, attempting to reset password..."
+    
+    # Check if Grafana container is running
+    if ! docker ps | grep -q "openusp-grafana-dev"; then
+        echo "   ❌ Grafana container is not running. Please start with: make infra-up"
+        return 1
+    fi
+    
+    # Reset admin password using Grafana CLI
+    echo "   🔄 Resetting admin password to 'admin'..."
+    if docker exec openusp-grafana-dev grafana-cli admin reset-admin-password admin > /dev/null 2>&1; then
+        echo "   ✅ Admin password reset successfully"
+        
+        # Wait a moment for the change to take effect
+        sleep 2
+        
+        # Test authentication again
+        if curl -s -u "${GRAFANA_USER}:${GRAFANA_PASS}" "${GRAFANA_URL}/api/user" > /dev/null 2>&1; then
+            echo "   ✅ Admin access confirmed after password reset"
+            return 0
+        else
+            echo "   ❌ Authentication still failing after password reset"
+            return 1
+        fi
+    else
+        echo "   ❌ Failed to reset admin password"
+        return 1
+    fi
+}
+
 # Function to configure Prometheus data source
 configure_datasource() {
     echo "📊 Configuring Prometheus data source..."
     
     local datasource_config='{
+        "uid": "prometheus",
         "name": "Prometheus",
         "type": "prometheus",
         "url": "http://host.docker.internal:9090",
@@ -203,6 +244,13 @@ main() {
     # Wait for Grafana to be ready
     if ! wait_for_grafana; then
         echo "❌ Cannot proceed without Grafana being ready"
+        exit 1
+    fi
+    
+    # Reset admin password if needed
+    if ! reset_admin_password; then
+        echo "❌ Cannot proceed without admin access to Grafana"
+        echo "💡 Try manually resetting: docker exec openusp-grafana-dev grafana-cli admin reset-admin-password admin"
         exit 1
     fi
     

@@ -1,0 +1,86 @@
+# golangci-lint configuration for OpenUSP
+# This configuration ensures Go tools work correctly with the project structure
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+  
+  # Exit code when at least one issue was found
+  issues-exit-code: 1
+  
+  # Include test files in analysis
+  tests: true
+  
+  # Define which directories to analyze
+  # This prevents tools from trying to analyze the root directory
+  skip-dirs:
+    - vendor
+    - node_modules
+    - .git
+    - build
+    - logs
+    - deployments/docker
+  
+  # Only analyze Go files in these directories
+  skip-dirs-use-default: false
+  
+  # Allow to skip analysis of test files
+  skip-files:
+    - ".*_test.go$"
+
+# Configure specific linters
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  
+  disable:
+    - deadcode
+    - varcheck
+
+# Configure linter settings
+linters-settings:
+  govet:
+    # Check for common mistakes
+    check-shadowing: true
+  
+  staticcheck:
+    # Enable all checks
+    go: "1.25"
+
+# Issues configuration
+issues:
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+    
+    # Exclude known false positives
+    - path: pkg/proto/
+      linters:
+        - unused
+        - deadcode
+
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 3
+
+# Output configuration
+output:
+  # Format: colored-line-number|line-number|json|tab|checkstyle|code-climate
+  format: colored-line-number
+  
+  # Print lines of code with issue
+  print-issued-lines: true
+  
+  # Print linter name in the end of issue text
+  print-linter-name: true

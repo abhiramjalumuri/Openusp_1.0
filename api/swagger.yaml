@@ -1,4 +1,107 @@
+basePath: /api/v1
+externalDocs:
+  description: OpenUSP Documentation
+  url: https://github.com/plume-design-inc/openusp/docs
+host: localhost:8080
 info:
-  contact: {}
-paths: {}
+  contact:
+    email: support@openusp.org
+    name: OpenUSP Support
+    url: https://github.com/plume-design-inc/openusp
+  description: |-
+    REST API Gateway for OpenUSP TR-369 User Service Platform
+    Provides unified REST API access to all OpenUSP microservices
+    including device management, parameters, alerts, and sessions
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: OpenUSP API Gateway
+  version: 1.0.0
+paths:
+  /api/v1/devices:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of all registered devices
+      parameters:
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      - default: 10
+        description: Pagination limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of devices
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List Devices
+      tags:
+      - Devices
+    post:
+      consumes:
+      - application/json
+      description: Register a new device in the system
+      parameters:
+      - description: Device information
+        in: body
+        name: device
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Device created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create Device
+      tags:
+      - Devices
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Get the health status of the API Gateway and connected services
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service is unhealthy
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Health Check
+      tags:
+      - Health
 swagger: "2.0"

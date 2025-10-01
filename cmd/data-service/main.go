@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -110,12 +111,7 @@ func NewDataService() (*DataService, error) {
 	service.database = db
 	service.repos = database.NewRepositories(db.DB)
 
-	// Register with service discovery
-	if err := service.registerService(); err != nil {
-		return nil, fmt.Errorf("failed to register service: %w", err)
-	}
-
-	// Setup servers
+	// Setup servers (but don't register with Consul yet)
 	service.setupgRPCServer()
 	service.setupHTTPServer()
 
@@ -132,14 +128,10 @@ func (ds *DataService) registerService() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	serviceInfo, err := ds.registry.RegisterService(ctx, ds.config.ServiceName, ds.config.ServiceType)
+	err := ds.registry.RegisterServiceWithPorts(ctx, ds.serviceInfo)
 	if err != nil {
 		return fmt.Errorf("failed to register with Consul: %w", err)
 	}
-
-	ds.serviceInfo = serviceInfo
-	log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
-		serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
 
 	return nil
 }
@@ -236,11 +228,38 @@ func (ds *DataService) getgRPCPort() int {
 }
 
 func (ds *DataService) Start() error {
+	// Initialize service info if using Consul
+	if ds.config.IsConsulEnabled() {
+		ds.serviceInfo = &consul.ServiceInfo{
+			Name:     ds.config.ServiceName,
+			Address:  "localhost",
+			Port:     0, // Will be set by HTTP server
+			GRPCPort: 0, // Will be set by gRPC server
+			Protocol: "grpc",
+			Meta: map[string]string{
+				"service_type": ds.config.ServiceType,
+				"protocol":     "grpc",
+				"version":      "1.0.0",
+				"environment":  "development",
+			},
+		}
+	}
+
 	// Start gRPC server
 	go ds.startgRPCServer()
 
 	// Start HTTP server
 	go ds.startHTTPServer()
+
+	// Wait for servers to set their ports
+	time.Sleep(2 * time.Second)
+
+	// Register with service discovery AFTER servers have set their ports
+	if ds.config.IsConsulEnabled() {
+		if err := ds.registerService(); err != nil {
+			log.Printf("⚠️  Failed to register with Consul: %v", err)
+		}
+	}
 
 	log.Printf("🚀 Data Service started successfully")
 	if ds.config.IsConsulEnabled() && ds.serviceInfo != nil {
@@ -268,8 +287,8 @@ func (ds *DataService) startgRPCServer() {
 	var err error
 
 	if ds.config.IsConsulEnabled() {
-		// Dynamic port for Consul
-		lis, err = net.Listen("tcp", ":0")
+		// Dynamic port for Consul - bind to IPv4 specifically
+		lis, err = net.Listen("tcp4", "127.0.0.1:0")
 	} else {
 		// Fixed port for traditional deployment
 		lis, err = net.Listen("tcp", fmt.Sprintf(":%d", ds.getgRPCPort()))
@@ -282,14 +301,43 @@ func (ds *DataService) startgRPCServer() {
 	actualPort := lis.Addr().(*net.TCPAddr).Port
 	log.Printf("🔌 Starting gRPC server on port %d", actualPort)
 
+	// Update service info with actual gRPC port if using Consul
+	if ds.config.IsConsulEnabled() && ds.serviceInfo != nil {
+		ds.serviceInfo.GRPCPort = actualPort
+		ds.serviceInfo.Meta["grpc_port"] = strconv.Itoa(actualPort)
+		log.Printf("🎯 Updated service info with actual gRPC port: %d", actualPort)
+	}
+
 	if err := ds.grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve gRPC: %v", err)
 	}
 }
 
 func (ds *DataService) startHTTPServer() {
-	log.Printf("🔌 Starting HTTP server on port %d", ds.getHTTPPort())
-	if err := ds.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	var listener net.Listener
+	var err error
+
+	if ds.config.IsConsulEnabled() {
+		// Dynamic port for Consul - bind to IPv4 specifically
+		listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	} else {
+		// Fixed port for traditional deployment
+		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", ds.getHTTPPort()))
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to create HTTP listener: %v", err)
+	}
+
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+	log.Printf("🔌 Starting HTTP server on port %d", actualPort)
+
+	// Update service info with actual HTTP port if using Consul
+	if ds.config.IsConsulEnabled() && ds.serviceInfo != nil {
+		ds.serviceInfo.Port = actualPort
+	}
+
+	if err := ds.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 }

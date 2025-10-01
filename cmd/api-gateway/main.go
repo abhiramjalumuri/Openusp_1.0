@@ -1,3 +1,23 @@
+// Package main implements the OpenUSP API Gateway service
+//
+//	@title			OpenUSP API Gateway
+//	@version		1.0.0
+//	@description	REST API Gateway for OpenUSP TR-369 User Service Platform
+//	@description	Provides unified REST API access to all OpenUSP microservices
+//	@description	including device management, parameters, alerts, and sessions
+//
+//	@contact.name	OpenUSP Support
+//	@contact.url	https://github.com/plume-design-inc/openusp
+//	@contact.email	support@openusp.org
+//
+//	@license.name	Apache 2.0
+//	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
+//
+//	@host		localhost:8080
+//	@BasePath	/api/v1
+//
+//	@externalDocs.description	OpenUSP Documentation
+//	@externalDocs.url			https://github.com/plume-design-inc/openusp/docs
 package main
 
 import (
@@ -174,6 +194,10 @@ func (gw *APIGateway) setupRoutes() {
 	// API v1 routes
 	v1 := gw.router.Group("/api/v1")
 	{
+		// Health and status endpoints (for Swagger compatibility)
+		v1.GET("/health", gw.healthCheck)
+		v1.GET("/status", gw.getStatus)
+
 		// Device management endpoints
 		devices := v1.Group("/devices")
 		{
@@ -289,7 +313,16 @@ func (gw *APIGateway) Stop() error {
 	return nil
 }
 
-// Health check endpoint
+// healthCheck handles health check requests
+//
+//	@Summary		Health Check
+//	@Description	Get the health status of the API Gateway and connected services
+//	@Tags			Health
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"Service is healthy"
+//	@Failure		503	{object}	map[string]interface{}	"Service is unhealthy"
+//	@Router			/health [get]
 func (gw *APIGateway) healthCheck(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -343,7 +376,18 @@ func (gw *APIGateway) getStatus(c *gin.Context) {
 
 // Device management handlers
 
-// List devices with pagination
+// listDevices handles device listing with pagination
+//
+//	@Summary		List Devices
+//	@Description	Get a paginated list of all registered devices
+//	@Tags			Devices
+//	@Accept			json
+//	@Produce		json
+//	@Param			offset	query		int	false	"Pagination offset"	default(0)
+//	@Param			limit	query		int	false	"Pagination limit"	default(10)
+//	@Success		200		{object}	map[string]interface{}	"List of devices"
+//	@Failure		500		{object}	map[string]interface{}	"Internal server error"
+//	@Router			/api/v1/devices [get]
 func (gw *APIGateway) listDevices(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -370,7 +414,18 @@ func (gw *APIGateway) listDevices(c *gin.Context) {
 	})
 }
 
-// Create a new device
+// createDevice handles device creation
+//
+//	@Summary		Create Device
+//	@Description	Register a new device in the system
+//	@Tags			Devices
+//	@Accept			json
+//	@Produce		json
+//	@Param			device	body		map[string]interface{}	true	"Device information"
+//	@Success		201		{object}	map[string]interface{}	"Device created successfully"
+//	@Failure		400		{object}	map[string]interface{}	"Invalid request body"
+//	@Failure		500		{object}	map[string]interface{}	"Internal server error"
+//	@Router			/api/v1/devices [post]
 func (gw *APIGateway) createDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

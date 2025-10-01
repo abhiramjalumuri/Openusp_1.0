@@ -41,8 +41,8 @@ export OPENUSP_CWMP_PASSWORD
 
 # PHONY targets
 .PHONY: help version infra-up infra-down infra-status infra-clean
-.PHONY: infra-volumes setup-grafana
-.PHONY: build-ou-all clean-ou-all start-ou-all stop-ou-all ou-status
+.PHONY: infra-volumes setup-grafana check-api-gateway
+.PHONY: build-ou-all clean-ou-all start-ou-all stop-ou-all ou-status consul-status
 .PHONY: start-all stop-all clean-all show-endpoints
 .PHONY: $(addprefix build-,$(SERVICES))
 .PHONY: $(addprefix start-,$(SERVICES))
@@ -76,13 +76,15 @@ help:
 	@echo "  infra-clean     Clean/remove all 3rd party services and volumes"
 	@echo "  infra-volumes   List all named infrastructure volumes (OpenUSP)"
 	@echo "  setup-grafana   Configure Grafana with OpenUSP dashboards and data sources"
+	@echo "  check-api-gateway Test API Gateway health endpoint with dynamic port discovery"
 	@echo ""
 	@echo "OpenUSP Service Targets:"
 	@echo "  start-ou-all    Start all OpenUSP services (requires infra-up first)"
 	@echo "  stop-ou-all     Stop all OpenUSP services"
 	@echo "  build-ou-all    Build all OpenUSP services"
 	@echo "  clean-ou-all    Clean all OpenUSP service binaries"
-	@echo "  ou-status       Show status of all OpenUSP services"
+	@echo "  ou-status       Show status of all OpenUSP services (Consul-aware)"
+	@echo "  consul-status   Show Consul service discovery status"
 	@echo ""
 	@echo "Combined Targets:"
 	@echo "  start-all         Start all services (infrastructure + OpenUSP)"
@@ -118,6 +120,14 @@ help:
 	@echo ""
 	@echo "Quick Start: make start-all  # then open Swagger UI -> http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
 	@echo ""
+	@echo "Go Development Tools:"
+	@echo "  fmt             Format Go code (go fmt ./...)"
+	@echo "  vet             Vet Go code for common mistakes"
+	@echo "  lint            Run golangci-lint (install required)"
+	@echo "  tidy            Tidy Go modules"
+	@echo "  test-syntax     Test Go syntax without running tests"
+	@echo "  go-check        Run all Go quality checks (fmt, vet, tidy, test-syntax)"
+	@echo ""
 	@echo "Tip: Run 'make show-endpoints' for a full endpoint & credentials overview"
 	@echo "     Run 'make version' for version and protocol information"
 
@@ -136,7 +146,54 @@ version:
 	@echo "  CWMP Version: $(CWMP_VERSION)"
 	@echo "  API Version: $(API_VERSION)"
 
+# =============================================================================
+# Go Development Tools
+# =============================================================================
+
+.PHONY: fmt vet lint tidy test-syntax
+
+# Format Go code
+fmt:
+	@echo "🎨 Formatting Go code..."
+	@go fmt ./...
+	@echo "✅ Code formatting complete"
+
+# Vet Go code for common mistakes
+vet:
+	@echo "🔍 Vetting Go code..."
+	@go vet ./...
+	@echo "✅ Code vetting complete"
+
+# Run golangci-lint (install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+lint:
+	@echo "🧹 Running linter..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+		echo "✅ Linting complete"; \
+	else \
+		echo "⚠️  golangci-lint not installed. Install with:"; \
+		echo "   go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	fi
+
+# Tidy Go modules
+tidy:
+	@echo "📦 Tidying Go modules..."
+	@go mod tidy
+	@echo "✅ Module tidying complete"
+
+# Test Go syntax without running tests
+test-syntax:
+	@echo "🧪 Testing Go syntax..."
+	@go build -o /dev/null ./...
+	@echo "✅ Syntax test complete"
+
+# Run all Go quality checks
+go-check: fmt vet tidy test-syntax
+	@echo "✅ All Go quality checks passed"
+
+# =============================================================================
 # Example Client Build Targets
+# =============================================================================
 build-tr369-agent:
 	@echo "Building TR-369 USP agent..."
 	@mkdir -p $(BINARY_DIR)
@@ -149,13 +206,13 @@ build-tr069-agent:
 	@go build $(LDFLAGS) -o $(BINARY_DIR)/tr069-agent examples/tr069-agent/main.go
 	@echo "TR-069 agent built -> $(BINARY_DIR)/tr069-agent"
 
-# Example Agent Start Targets
+# Example Agent Start Targets (with Dynamic Service Discovery)
 start-tr369-agent: build-tr369-agent
-	@echo "Starting TR-369 (USP) agent against $(OPENUSP_USP_WS_URL) ..."
-	@USP_WS_URL=$(OPENUSP_USP_WS_URL) $(BINARY_DIR)/tr369-agent || echo "Agent exited"
+	@echo "Starting TR-369 (USP) agent with Consul service discovery..."
+	@$(BINARY_DIR)/tr369-agent || echo "Agent exited"
 
 start-tr069-agent: build-tr069-agent
-	@echo "Starting TR-069 agent..."
+	@echo "Starting TR-069 agent with Consul service discovery..."
 	@$(BINARY_DIR)/tr069-agent || echo "Agent exited"
 
 # Consul is now enabled by default in development
@@ -172,16 +229,7 @@ consul-demo:
 	@echo ""
 	@echo "All services support --consul flag and CONSUL_ENABLED environment variable"
 
-consul-status:
-	@echo "🔍 Consul Service Discovery Status"
-	@echo "=================================="
-	@echo "Consul UI: http://localhost:8500/ui/"
-	@echo ""
-	@echo "Registered Services:"
-	@curl -s http://localhost:8500/v1/agent/services | jq -r 'to_entries[] | "  ✅ \(.value.Service) (\(.value.ID)) - \(.value.Address):\(.value.Port)"' 2>/dev/null || echo "  ⚠️  Consul not accessible or jq not installed"
-	@echo ""
-	@echo "Health Checks:"
-	@curl -s http://localhost:8500/v1/agent/checks | jq -r 'to_entries[] | "  \(if .value.Status == "passing" then "✅" else "❌" end) \(.value.Name) - \(.value.Status)"' 2>/dev/null || echo "  ⚠️  Health checks not accessible"
+
 
 consul-services:
 	@echo "📋 Consul-Enabled Services (use CONSUL_ENABLED=true)"
@@ -262,68 +310,157 @@ ou-status:
 	@echo "OpenUSP Services Status:"
 	@echo "========================"
 	@echo ""
-	@echo "🔍 Checking Service Processes and Ports..."
+	@# Check if Consul is available
+	@consul_available=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | grep -o 'openusp' 2>/dev/null || echo ""); \
+	if [ -n "$$consul_available" ]; then \
+		echo "🏛️  Service Discovery Mode: Consul (Dynamic Ports)"; \
+		echo "🔍 Checking Consul-registered services..."; \
+		echo ""; \
+		printf "%-20s %-10s %-15s %-10s %s\n" "SERVICE" "STATUS" "PORT" "HEALTH" "ENDPOINT"; \
+		printf "%-20s %-10s %-15s %-10s %s\n" "-------" "------" "----" "------" "--------"; \
+		services=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | jq -r 'to_entries[] | select(.value.Service | startswith("openusp-")) | "\(.value.Service):\(.value.Port)"' 2>/dev/null || echo ""); \
+		if [ -n "$$services" ]; then \
+			echo "$$services" | while IFS=: read -r service_name port; do \
+				display_name=$$(echo $$service_name | sed 's/openusp-//'); \
+				health=$$(curl -s "http://localhost:8500/v1/agent/checks" 2>/dev/null | jq -r ".[] | select(.ServiceName == \"$$service_name\") | .Status" 2>/dev/null | head -1); \
+				if [ "$$health" = "passing" ]; then \
+					health_icon="✅"; \
+				elif [ "$$health" = "critical" ]; then \
+					health_icon="❌"; \
+				else \
+					health_icon="⚠️"; \
+				fi; \
+				endpoint="http://localhost:$$port"; \
+				printf "%-20s %-10s %-15s %-10s %s\n" "$$display_name" "🔗 CONSUL" "$$port" "$$health_icon $$health" "$$endpoint"; \
+			done; \
+		else \
+			echo "No OpenUSP services found in Consul"; \
+		fi; \
+	else \
+		echo "🔧 Service Discovery Mode: Traditional (Fixed Ports)"; \
+		echo "🔍 Checking traditional service processes and ports..."; \
+		echo ""; \
+		printf "%-20s %-10s %-15s %-10s %s\n" "SERVICE" "STATUS" "PORT" "PID" "ENDPOINT"; \
+		printf "%-20s %-10s %-15s %-10s %s\n" "-------" "------" "----" "---" "--------"; \
+		pid=$$(ps aux | grep -v grep | grep 'api-gateway' | awk '{print $$2}' | head -1); \
+		port_check=$$(lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null); \
+		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
+			printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "✅ RUNNING" "$(OPENUSP_API_GATEWAY_PORT)" "$$pid" "http://localhost:$(OPENUSP_API_GATEWAY_PORT)"; \
+		else \
+			printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "❌ STOPPED" "$(OPENUSP_API_GATEWAY_PORT)" "-" "-"; \
+		fi; \
+		port_check=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
+		if [ -n "$$port_check" ]; then \
+			pid=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
+			printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "✅ RUNNING" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "$$pid" "gRPC://localhost:$(OPENUSP_DATA_SERVICE_GRPC_PORT)"; \
+		else \
+			printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "❌ STOPPED" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "-" "-"; \
+		fi; \
+		pid=$$(ps aux | grep -v grep | grep 'mtp-service' | awk '{print $$2}' | head -1); \
+		port_check=$$(lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null); \
+		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
+			printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "✅ RUNNING" "$(OPENUSP_MTP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_MTP_SERVICE_PORT)"; \
+		else \
+			printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "❌ STOPPED" "$(OPENUSP_MTP_SERVICE_PORT)" "-" "-"; \
+		fi; \
+		pid=$$(ps aux | grep -v grep | grep 'cwmp-service' | awk '{print $$2}' | head -1); \
+		port_check=$$(lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null); \
+		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
+			printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "✅ RUNNING" "$(OPENUSP_CWMP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"; \
+		else \
+			printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "❌ STOPPED" "$(OPENUSP_CWMP_SERVICE_PORT)" "-" "-"; \
+		fi; \
+		pid=$$(ps aux | grep -v grep | grep 'usp-service' | awk '{print $$2}' | head -1); \
+		port_check=$$(lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null); \
+		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
+			printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "✅ RUNNING" "$(OPENUSP_USP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_USP_SERVICE_PORT)"; \
+		else \
+			printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "❌ STOPPED" "$(OPENUSP_USP_SERVICE_PORT)" "-" "-"; \
+		fi; \
+	fi
 	@echo ""
-	@printf "%-20s %-10s %-15s %-10s %s\n" "SERVICE" "STATUS" "PORT" "PID" "ENDPOINT"
-	@printf "%-20s %-10s %-15s %-10s %s\n" "-------" "------" "----" "---" "--------"
-	@# API Gateway
-	@pid=$$(ps aux | grep -v grep | grep './build/api-gateway' | awk '{print $$2}' | head -1); \
-	port_check=$$(lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null); \
-	if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-		printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "✅ RUNNING" "$(OPENUSP_API_GATEWAY_PORT)" "$$pid" "http://localhost:$(OPENUSP_API_GATEWAY_PORT)"; \
+	@echo "� Quick Health Check:"
+	@# Try to find actual running services and test their health endpoints
+	@data_services=$$(ps aux | grep -v grep | grep 'data-service' | awk '{print $$2}' || echo ""); \
+	cwmp_services=$$(ps aux | grep -v grep | grep 'cwmp-service' | awk '{print $$2}' || echo ""); \
+	if [ -n "$$data_services" ]; then \
+		data_port=$$(lsof -Pan -p $$(echo $$data_services | head -1) 2>/dev/null | grep LISTEN | grep -v '127.0.0.1:.*->127.0.0.1' | head -1 | sed 's/.*:\([0-9]*\).*/\1/' || echo ""); \
+		if [ -n "$$data_port" ]; then \
+			response=$$(curl -s http://127.0.0.1:$$data_port/health 2>/dev/null | grep -o '"status"' 2>/dev/null || echo ""); \
+			if [ -n "$$response" ]; then \
+				echo "  ✅ Data Service is responding on port $$data_port"; \
+			else \
+				echo "  ⚠️  Data Service running on port $$data_port but not responding to /health"; \
+			fi; \
+		else \
+			echo "  ⚠️  Data Service process found but port detection failed"; \
+		fi; \
 	else \
-		printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "❌ STOPPED" "$(OPENUSP_API_GATEWAY_PORT)" "-" "-"; \
-	fi
-	@# Data Service
-	@port_check=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
-	if [ -n "$$port_check" ]; then \
-		pid=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
-		printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "✅ RUNNING" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "$$pid" "gRPC://localhost:$(OPENUSP_DATA_SERVICE_GRPC_PORT)"; \
+		echo "  ❌ Data Service not running"; \
+	fi; \
+	if [ -n "$$cwmp_services" ]; then \
+		cwmp_port=$$(lsof -Pan -p $$(echo $$cwmp_services | head -1) 2>/dev/null | grep LISTEN | grep -v '127.0.0.1:.*->127.0.0.1' | head -1 | sed 's/.*:\([0-9]*\).*/\1/' || echo ""); \
+		if [ -n "$$cwmp_port" ]; then \
+			response=$$(curl -s http://127.0.0.1:$$cwmp_port/health 2>/dev/null | grep -o '"status"' 2>/dev/null || echo ""); \
+			if [ -n "$$response" ]; then \
+				echo "  ✅ CWMP Service is responding on port $$cwmp_port"; \
+			else \
+				echo "  ⚠️  CWMP Service running on port $$cwmp_port but not responding to /health"; \
+			fi; \
+		else \
+			echo "  ⚠️  CWMP Service process found but port detection failed"; \
+		fi; \
 	else \
-		printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "❌ STOPPED" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "-" "-"; \
+		echo "  ❌ CWMP Service not running"; \
 	fi
-	@# MTP Service
-	@pid=$$(ps aux | grep -v grep | grep './build/mtp-service' | awk '{print $$2}' | head -1); \
-	port_check=$$(lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null); \
-	if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-		printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "✅ RUNNING" "$(OPENUSP_MTP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_MTP_SERVICE_PORT)"; \
-	else \
-		printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "❌ STOPPED" "$(OPENUSP_MTP_SERVICE_PORT)" "-" "-"; \
-	fi
-	@# CWMP Service
-	@pid=$$(ps aux | grep -v grep | grep './build/cwmp-service' | awk '{print $$2}' | head -1); \
-	port_check=$$(lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null); \
-	if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-		printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "✅ RUNNING" "$(OPENUSP_CWMP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"; \
-	else \
-		printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "❌ STOPPED" "$(OPENUSP_CWMP_SERVICE_PORT)" "-" "-"; \
-	fi
-	@# USP Service
-	@pid=$$(ps aux | grep -v grep | grep './build/usp-service' | awk '{print $$2}' | head -1); \
-	port_check=$$(lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null); \
-	if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-		printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "✅ RUNNING" "$(OPENUSP_USP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_USP_SERVICE_PORT)"; \
-	elif [ -n "$$pid" ]; then \
-		printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "⚠️ PARTIAL" "$(OPENUSP_USP_SERVICE_PORT)" "$$pid" "Process only"; \
-	else \
-		printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "❌ STOPPED" "$(OPENUSP_USP_SERVICE_PORT)" "-" "-"; \
-	fi
+
+# Consul Service Discovery Status
+consul-status:
+	@echo "Consul Service Discovery Status:"
+	@echo "==============================="
 	@echo ""
-	@echo "🔗 Health Check URLs:"
-	@echo "  API Gateway:  http://localhost:$(OPENUSP_API_GATEWAY_PORT)/health"
-	@echo "  MTP Service:  http://localhost:$(OPENUSP_MTP_SERVICE_PORT)/health"  
-	@echo "  USP Service:  http://localhost:$(OPENUSP_USP_SERVICE_PORT)/health"
-	@echo "  CWMP Service: http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)/health"
-	@echo ""
-	@echo "📊 Quick Health Check:"
-	@response=$$(curl -s http://localhost:$(OPENUSP_API_GATEWAY_PORT)/health 2>/dev/null | grep -o '"status"' 2>/dev/null); \
-	if [ -n "$$response" ]; then echo "  ✅ API Gateway is responding"; else echo "  ❌ API Gateway not responding"; fi
-	@response=$$(curl -s http://localhost:$(OPENUSP_MTP_SERVICE_PORT)/health 2>/dev/null | grep -o '"status"' 2>/dev/null); \
-	if [ -n "$$response" ]; then echo "  ✅ MTP Service is responding"; else echo "  ❌ MTP Service not responding"; fi
-	@response=$$(curl -s http://localhost:$(OPENUSP_USP_SERVICE_PORT)/health 2>/dev/null | grep -o '"status"' 2>/dev/null); \
-	if [ -n "$$response" ]; then echo "  ✅ USP Service is responding"; else echo "  ❌ USP Service not responding"; fi
-	@response=$$(curl -s http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)/health 2>/dev/null | grep -o '"status"' 2>/dev/null); \
-	if [ -n "$$response" ]; then echo "  ✅ CWMP Service is responding"; else echo "  ❌ CWMP Service not responding"; fi
+	@# Check if Consul is available
+	@if curl -s http://localhost:8500/v1/agent/self >/dev/null 2>&1; then \
+		echo "🏛️  Consul Agent: ✅ Available at http://localhost:8500"; \
+		consul_ui="http://localhost:8500/ui"; \
+		echo "🌐 Consul UI: $$consul_ui"; \
+		echo ""; \
+		echo "📋 Registered Services:"; \
+		services=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | jq -r 'to_entries[] | select(.value.Service | startswith("openusp-")) | "\(.value.Service):\(.value.Port):\(.value.Meta.grpc_port // "N/A")"' 2>/dev/null || echo ""); \
+		if [ -n "$$services" ]; then \
+			printf "%-25s %-10s %-10s %s\n" "SERVICE" "HTTP" "GRPC" "HEALTH"; \
+			printf "%-25s %-10s %-10s %s\n" "-------" "----" "----" "------"; \
+			echo "$$services" | while IFS=: read -r service_name http_port grpc_port; do \
+				health=$$(curl -s "http://localhost:8500/v1/agent/checks" 2>/dev/null | jq -r ".[] | select(.ServiceName == \"$$service_name\") | .Status" 2>/dev/null | head -1 || echo "unknown"); \
+				if [ "$$health" = "passing" ]; then \
+					health_display="✅ passing"; \
+				elif [ "$$health" = "critical" ]; then \
+					health_display="❌ critical"; \
+				else \
+					health_display="⚠️  $$health"; \
+				fi; \
+				printf "%-25s %-10s %-10s %s\n" "$$service_name" "$$http_port" "$$grpc_port" "$$health_display"; \
+			done; \
+		else \
+			echo "  No OpenUSP services registered in Consul"; \
+		fi; \
+		echo ""; \
+		echo "🔍 Health Check Details:"; \
+		checks=$$(curl -s http://localhost:8500/v1/agent/checks 2>/dev/null | jq -r 'to_entries[] | select(.value.ServiceName | startswith("openusp-")) | "\(.value.ServiceName):\(.value.Status):\(.value.Output)"' 2>/dev/null || echo ""); \
+		if [ -n "$$checks" ]; then \
+			echo "$$checks" | while IFS=: read -r service_name status output; do \
+				if [ "$$status" = "passing" ]; then \
+					echo "  ✅ $$service_name: $$status"; \
+				else \
+					echo "  ❌ $$service_name: $$status"; \
+					echo "     Output: $$(echo "$$output" | head -c 100)..."; \
+				fi; \
+			done; \
+		fi; \
+	else \
+		echo "❌ Consul Agent: Not available at http://localhost:8500"; \
+		echo "   Start with: make infra-up"; \
+	fi
 
 infra-clean:
 	@echo "Cleaning all 3rd party infrastructure services and named volumes..."
@@ -351,7 +488,12 @@ infra-volumes:
 
 setup-grafana:
 	@echo "Setting up Grafana with OpenUSP dashboards..."
+	@echo "💡 If login fails, see: docs/GRAFANA_TROUBLESHOOTING.md"
 	@./scripts/setup-grafana.sh
+
+check-api-gateway:
+	@echo "Checking API Gateway health endpoint..."
+	@./scripts/check-api-gateway.sh
 
 # OpenUSP Service Commands
 build-ou-all: $(addprefix build-,$(SERVICES))
@@ -391,7 +533,7 @@ stop-ou-all:
 	@pkill -f "cwmp-service" 2>/dev/null || true
 	@# Kill any processes on OpenUSP ports as fallback
 	@lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:$(OPENUSP_DATA_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:$(OPENUSP_DATA_SERVICE_HTTP_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
@@ -502,11 +644,11 @@ start-api-gateway-consul:
 	@CONSUL_ENABLED=true DATA_SERVICE_ADDR=$(OPENUSP_DATA_SERVICE_ADDR) go run cmd/api-gateway/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/api-gateway-consul.log
 
 start-data-service:
-	@echo "Starting Data Service on port $(OPENUSP_DATA_SERVICE_PORT) (traditional mode)..."
+	@echo "Starting Data Service on port $(OPENUSP_DATA_SERVICE_HTTP_PORT) (traditional mode)..."
 	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] Data Service starting (port=$(OPENUSP_DATA_SERVICE_PORT))" > $(OPENUSP_LOG_DIR)/data-service.log
+	@echo "[start $(BUILD_DATE)] Data Service starting (port=$(OPENUSP_DATA_SERVICE_HTTP_PORT))" > $(OPENUSP_LOG_DIR)/data-service.log
 	@echo "Database config: $(OPENUSP_DB_HOST):$(OPENUSP_DB_PORT)/$(OPENUSP_DB_NAME) (user: $(OPENUSP_DB_USER))" >> $(OPENUSP_LOG_DIR)/data-service.log
-	@DB_HOST=$(OPENUSP_DB_HOST) DB_PORT=$(OPENUSP_DB_PORT) DB_NAME=$(OPENUSP_DB_NAME) DB_USER=$(OPENUSP_DB_USER) DB_PASSWORD=$(OPENUSP_DB_PASSWORD) DB_SSLMODE=$(OPENUSP_DB_SSLMODE) go run cmd/data-service/main.go --port $(OPENUSP_DATA_SERVICE_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/data-service.log
+	@DB_HOST=$(OPENUSP_DB_HOST) DB_PORT=$(OPENUSP_DB_PORT) DB_NAME=$(OPENUSP_DB_NAME) DB_USER=$(OPENUSP_DB_USER) DB_PASSWORD=$(OPENUSP_DB_PASSWORD) DB_SSLMODE=$(OPENUSP_DB_SSLMODE) go run cmd/data-service/main.go --port $(OPENUSP_DATA_SERVICE_HTTP_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/data-service.log
 
 start-data-service-consul:
 	@echo "Starting Data Service with Consul service discovery..."

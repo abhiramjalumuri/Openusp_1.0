@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -688,24 +689,72 @@ func main() {
 	dataClient := dataservice.NewDataServiceClient(dataConn)
 	log.Printf("✅ Connected to Data Service at localhost:%s", cfg.DataServicePort)
 
-	// Start HTTP metrics server
-	httpPort := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_PORT"))
-	if httpPort == "" {
-		httpPort = "6250" // Default HTTP port for USP Service metrics
+	// Start HTTP server for health checks and metrics
+	var httpPort int
+	if serviceInfo != nil && serviceInfo.Port > 0 {
+		// Use Consul-allocated HTTP port
+		httpPort = serviceInfo.Port
+	} else {
+		// Fallback to environment or default port
+		if envPort := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_PORT")); envPort != "" {
+			if port, err := strconv.Atoi(envPort); err == nil {
+				httpPort = port
+			} else {
+				httpPort = 6250 // Default HTTP port for USP Service
+			}
+		} else {
+			httpPort = 6250 // Default HTTP port for USP Service
+		}
 	}
 
 	go func() {
 		mux := http.NewServeMux()
+
+		// Health check endpoint for Consul
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			response := fmt.Sprintf(`{
+				"service": "usp-service",
+				"status": "healthy",
+				"version": "1.0.0",
+				"grpc_port": %d,
+				"http_port": %d,
+				"consul": %t,
+				"timestamp": "%s"
+			}`, grpcPort, httpPort, deployConfig.IsConsulEnabled(), time.Now().Format(time.RFC3339))
+			w.Write([]byte(response))
+		})
+
+		// Status endpoint
+		mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			response := fmt.Sprintf(`{
+				"service": "usp-service",
+				"status": "running",
+				"version": "1.0.0",
+				"grpc_port": %d,
+				"http_port": %d,
+				"consul": %t,
+				"tr181_objects": 822,
+				"usp_versions": ["1.3", "1.4"],
+				"timestamp": "%s"
+			}`, grpcPort, httpPort, deployConfig.IsConsulEnabled(), time.Now().Format(time.RFC3339))
+			w.Write([]byte(response))
+		})
+
+		// Metrics endpoint
 		mux.Handle("/metrics", metrics.HTTPHandler())
 
 		server := &http.Server{
-			Addr:    ":" + httpPort,
+			Addr:    fmt.Sprintf(":%d", httpPort),
 			Handler: mux,
 		}
 
-		log.Printf("🔧 USP Service metrics server starting on port %s", httpPort)
+		log.Printf("� Starting HTTP server on port %d", httpPort)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Metrics server error: %v", err)
+			log.Printf("HTTP server error: %v", err)
 		}
 	}()
 
@@ -730,15 +779,19 @@ func main() {
 	log.Printf("🚀 USP Service started successfully")
 	if deployConfig.IsConsulEnabled() && serviceInfo != nil {
 		log.Printf("   └── gRPC Port: %d", serviceInfo.GRPCPort)
+		log.Printf("   └── HTTP Port: %d", httpPort)
 		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
+		log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
+		log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
 	} else {
 		log.Printf("   └── gRPC Port: %d", grpcPort)
+		log.Printf("   └── HTTP Port: %d", httpPort)
 		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
 	}
 	log.Printf("   └── TR-181 Device:2 data model loaded")
 	log.Printf("   └── USP protocol versions 1.3 and 1.4 supported")
-	fmt.Printf("   🔧 HTTP metrics: http://localhost:%s/metrics\n", httpPort)
+	fmt.Printf("   🔧 HTTP Endpoints: http://localhost:%d/health, /status, /metrics\n", httpPort)
 	fmt.Println("   🔧 TR-181 Device:2 data model loaded")
 	fmt.Println("   🔧 USP protocol versions 1.3 and 1.4 supported")
 	fmt.Println("   🔧 Automatic version detection enabled")

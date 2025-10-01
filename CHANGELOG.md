@@ -5,6 +5,37 @@ All notable changes to the OpenUSP project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-10-01
+
+### Fixed
+
+#### API Gateway & Swagger UI Integration
+- **Swagger UI 404 Fix**: Fixed health endpoint 404 errors in Swagger UI by adding `/api/v1/health` endpoint
+- **Dynamic Port Configuration**: Swagger host now properly updates with dynamic port allocation
+- **Backward Compatibility**: Maintained both `/health` and `/api/v1/health` endpoints
+- **Service Discovery**: Enhanced Consul service registration cleanup and management
+
+#### TR-069 Agent Dynamic Service Discovery
+- **CWMP Service Discovery**: TR-069 agent now dynamically discovers CWMP service via Consul API
+- **Onboarding Process**: Complete SOAP/XML TR-069 client with proper Inform message structure
+- **Dynamic Endpoints**: Agent adapts to dynamic CWMP service ports automatically
+
+#### Grafana Integration & Monitoring
+- **Dashboard Data Sources**: Fixed Grafana dashboard data source UID mismatches
+- **Login Issues**: Automated admin password reset functionality
+- **Data Visualization**: All OpenUSP platform dashboards now display live metrics correctly
+
+#### Documentation & Tooling
+- **Quick Fix Guide**: Added comprehensive troubleshooting guide (`docs/quickFix.md`)
+- **API Gateway Scripts**: Created dynamic port discovery script (`scripts/check-api-gateway.sh`)
+- **Grafana Troubleshooting**: Detailed monitoring troubleshooting guide (`docs/GRAFANA_TROUBLESHOOTING.md`)
+
+### Enhanced
+
+#### Agent Integration
+- **Dynamic Integration**: Complete documentation for agent dynamic service discovery (`AGENT_DYNAMIC_INTEGRATION.md`)
+- **Protocol Compliance**: Enhanced TR-369 and TR-069 agent implementations with proper onboarding
+
 ## [1.0.0] - 2025-09-27
 
 ### Added

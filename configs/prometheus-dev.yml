@@ -13,34 +13,35 @@ scrape_configs:
     static_configs:
     - targets: ['localhost:9090']
 
-  # OpenUSP Services (6xxx port scheme)
-  - job_name: 'openusp-api-gateway'
-    static_configs:
-    - targets: ['host.docker.internal:6500']
+  # OpenUSP Services via Consul Service Discovery
+  - job_name: 'openusp-services'
+    consul_sd_configs:
+    - server: 'openusp-consul:8500'
+      services: ['openusp-api-gateway', 'openusp-data-service', 'openusp-mtp-service', 'openusp-cwmp-service', 'openusp-usp-service']
+    relabel_configs:
+    # Use the service name as the job label
+    - source_labels: [__meta_consul_service]
+      target_label: job
+    # Use host.docker.internal for container-to-host communication
+    - source_labels: [__meta_consul_service_address]
+      regex: 'localhost'
+      target_label: __address__
+      replacement: 'host.docker.internal:${1}'
+    - source_labels: [__meta_consul_service_port]
+      target_label: __address__
+      replacement: 'host.docker.internal:${1}'
+    # Add service metadata as labels
+    - source_labels: [__meta_consul_service_metadata_service_type]
+      target_label: service_type
+    - source_labels: [__meta_consul_service_metadata_version]
+      target_label: version
     metrics_path: '/metrics'
     scrape_interval: 30s
 
-  - job_name: 'openusp-mtp-service'
+  # Fallback static config for services not using Consul (backward compatibility)
+  - job_name: 'openusp-static-fallback'
     static_configs:
-    - targets: ['host.docker.internal:6100']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  - job_name: 'openusp-usp-service'
-    static_configs:
-    - targets: ['host.docker.internal:6250']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  - job_name: 'openusp-cwmp-service'
-    static_configs:
-    - targets: ['host.docker.internal:6300']
-    metrics_path: '/metrics'  
-    scrape_interval: 30s
-
-  - job_name: 'openusp-data-service'
-    static_configs:
-    - targets: ['host.docker.internal:6400']
+    - targets: ['host.docker.internal:6500', 'host.docker.internal:6100', 'host.docker.internal:6250', 'host.docker.internal:6300', 'host.docker.internal:6400']
     metrics_path: '/metrics'
     scrape_interval: 30s
 

@@ -76,26 +76,32 @@ func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, regis
 	// Initialize metrics
 	metricsInstance := metrics.NewOpenUSPMetrics("cwmp-service")
 
-	// Initialize onboarding manager
-	onboardingManager, err := cwmp.NewOnboardingManager(config.DataServiceAddress, tr181Manager)
+	service := &CWMPService{
+		deployConfig: deployConfig,
+		registry:     registry,
+		serviceInfo:  serviceInfo,
+		config:       config,
+		processor:    processor,
+		metrics:      metricsInstance,
+		tr181Mgr:     tr181Manager,
+		connections:  make(map[string]*cwmp.Session),
+	}
+
+	// Now resolve the data service address using the service discovery method
+	dataServiceAddr, err := service.getDataServiceAddress()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve data service address: %w", err)
+	}
+
+	// Initialize onboarding manager with resolved address
+	onboardingManager, err := cwmp.NewOnboardingManager(dataServiceAddr, tr181Manager)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize onboarding manager: %w", err)
 	}
 
-	// Set onboarding manager in processor
+	// Set onboarding manager in service and processor
+	service.onboardingManager = onboardingManager
 	processor.SetOnboardingManager(onboardingManager)
-
-	service := &CWMPService{
-		deployConfig:      deployConfig,
-		registry:          registry,
-		serviceInfo:       serviceInfo,
-		config:            config,
-		processor:         processor,
-		metrics:           metricsInstance,
-		tr181Mgr:          tr181Manager,
-		onboardingManager: onboardingManager,
-		connections:       make(map[string]*cwmp.Session),
-	}
 
 	// Create HTTP server with CWMP handlers
 	mux := http.NewServeMux()
@@ -125,11 +131,8 @@ func DefaultConfig() *Config {
 		}
 	}
 
-	// Get data service address from environment or use default
-	dataServiceAddr := "localhost:56400" // Default gRPC data service address
-	if envAddr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_ADDR")); envAddr != "" {
-		dataServiceAddr = envAddr
-	}
+	// Data service address will be resolved later based on Consul availability
+	dataServiceAddr := "" // Will be populated by getDataServiceAddress()
 
 	return &Config{
 		Port:                  port,
@@ -179,6 +182,30 @@ func (s *CWMPService) Start(ctx context.Context) error {
 	// Wait for context cancellation
 	<-ctx.Done()
 	return s.Stop()
+}
+
+// getDataServiceAddress resolves the data service address using Consul service discovery or environment variables
+func (s *CWMPService) getDataServiceAddress() (string, error) {
+	if s.registry != nil {
+		// Try to discover data service from Consul
+		service, err := s.registry.DiscoverService("openusp-data-service")
+		if err == nil && service != nil {
+			if grpcPort, exists := service.Meta["grpc_port"]; exists {
+				return fmt.Sprintf("%s:%s", service.Address, grpcPort), nil
+			}
+		}
+		log.Printf("⚠️  Data service not found in Consul, using fallback address")
+	}
+
+	// Fallback to environment variables or defaults
+	dataServiceAddr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_ADDR"))
+	if dataServiceAddr == "" {
+		dataServiceAddr = strings.TrimSpace(os.Getenv("DATA_SERVICE_ADDR"))
+		if dataServiceAddr == "" {
+			dataServiceAddr = "localhost:56400" // Default gRPC port
+		}
+	}
+	return dataServiceAddr, nil
 }
 
 // Stop stops the CWMP service

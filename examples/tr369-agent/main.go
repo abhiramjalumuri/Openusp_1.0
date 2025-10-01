@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -26,10 +28,11 @@ const (
 	deviceProductClass    = "DemoAgent"
 )
 
-var (
-	// OpenUSP MTP Service WebSocket endpoint (configurable via environment)
-	mtpServiceURL = getEnvOrDefault("USP_WS_URL", "ws://localhost:8081/ws")
-)
+// ConsulService represents a service discovered from Consul
+type ConsulService struct {
+	ServiceAddress string `json:"ServiceAddress"`
+	ServicePort    int    `json:"ServicePort"`
+}
 
 // getEnvOrDefault returns environment variable value or default if not set
 func getEnvOrDefault(key, defaultValue string) string {
@@ -37,6 +40,50 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// discoverMTPService discovers the MTP service WebSocket URL via Consul
+func discoverMTPService() (string, error) {
+	// Check if user provided explicit URL
+	if url := os.Getenv("USP_WS_URL"); url != "" {
+		log.Printf("🔧 Using explicit MTP WebSocket URL: %s", url)
+		return url, nil
+	}
+
+	// Try to discover via Consul
+	consulAddr := getEnvOrDefault("CONSUL_ADDR", "localhost:8500")
+	consulURL := fmt.Sprintf("http://%s/v1/catalog/service/openusp-mtp-service", consulAddr)
+	
+	log.Printf("🔍 Discovering MTP service via Consul at %s", consulURL)
+	
+	resp, err := http.Get(consulURL)
+	if err != nil {
+		// Fallback to default URL if Consul is not available
+		fallbackURL := "ws://localhost:8081/ws"
+		log.Printf("⚠️  Consul not available, using fallback URL: %s", fallbackURL)
+		return fallbackURL, nil
+	}
+	defer resp.Body.Close()
+
+	var services []ConsulService
+	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
+		return "", fmt.Errorf("failed to decode Consul response: %v", err)
+	}
+
+	if len(services) == 0 {
+		return "", fmt.Errorf("no MTP service found in Consul")
+	}
+
+	// Use the first available service
+	service := services[0]
+	address := service.ServiceAddress
+	if address == "localhost" {
+		address = "localhost" // Keep localhost for local development
+	}
+	
+	wsURL := fmt.Sprintf("ws://%s:%d/ws", address, service.ServicePort)
+	log.Printf("✅ Discovered MTP service WebSocket URL: %s", wsURL)
+	return wsURL, nil
 }
 
 type USPClient struct {
@@ -274,8 +321,15 @@ func main() {
 	client := NewUSPClient(agentEndpointID, controllerID)
 	defer client.Close()
 
+	// Discover MTP Service dynamically
+	dynamicURL, err := discoverMTPService()
+	if err != nil {
+		log.Fatalf("Failed to discover MTP Service: %v", err)
+	}
+	log.Printf("Discovered MTP Service at: %s", dynamicURL)
+
 	// Connect to MTP Service
-	if err := client.Connect(mtpServiceURL); err != nil {
+	if err := client.Connect(dynamicURL); err != nil {
 		log.Fatalf("Failed to connect to MTP Service: %v", err)
 	}
 
@@ -288,9 +342,11 @@ func main() {
 	}
 
 	log.Printf("\n✅ TR-369 USP Client demonstration completed!")
-	log.Printf("\nNote: Make sure the OpenUSP MTP Service is running:")
-	log.Printf("  make postgres-up")
-	log.Printf("  make run-services-ordered")
+	log.Printf("\nNote: Make sure the OpenUSP services are running:")
+	log.Printf("  make infra-up                    # Start infrastructure (Consul, PostgreSQL)")
+	log.Printf("  make build-all                   # Build all services")
+	log.Printf("  make start-all                   # Start all OpenUSP services")
 	log.Printf("\nThen run this example with:")
 	log.Printf("  go run examples/tr369-agent/main.go")
+	log.Printf("\nThe agent will automatically discover the MTP Service via Consul.")
 }

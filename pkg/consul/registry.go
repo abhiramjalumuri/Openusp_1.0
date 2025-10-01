@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"time"
 
@@ -40,13 +41,62 @@ type Config struct {
 	CheckTimeout  time.Duration `json:"check_timeout"`
 }
 
+// getHealthCheckHost determines the correct host for health checks based on environment
+func getHealthCheckHost() string {
+	// Check if running in Docker container (service itself in Docker)
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "host.docker.internal"
+	}
+
+	// Check for Docker environment variables (service itself in Docker)
+	if os.Getenv("DOCKER_CONTAINER") == "true" ||
+		os.Getenv("IN_DOCKER") == "true" ||
+		os.Getenv("HOSTNAME") != "" && os.Getenv("HOME") == "/" {
+		return "host.docker.internal"
+	}
+
+	// Check if Consul is running in Docker (but our service is on host)
+	// This is the common development scenario
+	if isConsulInDocker() {
+		return "host.docker.internal"
+	}
+
+	// Use 127.0.0.1 for fully local development
+	return "127.0.0.1"
+}
+
+// isConsulInDocker checks if Consul is running in Docker container
+func isConsulInDocker() bool {
+	// Try to detect if we can reach a Docker container named consul
+	// This is a simple heuristic for our development setup
+	consulAddr := os.Getenv("CONSUL_ADDR")
+	if consulAddr == "" {
+		consulAddr = "localhost:8500"
+	}
+
+	// If we're connecting to localhost:8500 and Docker is available,
+	// assume Consul is running in Docker (our common dev setup)
+	if consulAddr == "localhost:8500" {
+		// Quick check if Docker is available by looking for docker.sock
+		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+			return true
+		}
+		// On macOS, check for Docker Desktop's socket location
+		if _, err := os.Stat("/Users/" + os.Getenv("USER") + "/.docker/run/docker.sock"); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 // DefaultConfig returns default Consul configuration
 func DefaultConfig() *Config {
 	return &Config{
 		Address:       "localhost:8500",
 		Datacenter:    "openusp-dev",
 		CheckInterval: 10 * time.Second,
-		CheckTimeout:  5 * time.Second,
+		CheckTimeout:  10 * time.Second, // Increased timeout for reliability
 	}
 }
 
@@ -133,6 +183,7 @@ func (sr *ServiceRegistry) RegisterService(ctx context.Context, serviceName, ser
 	}
 
 	// Register with Consul
+	healthHost := getHealthCheckHost()
 	registration := &api.AgentServiceRegistration{
 		ID:      serviceID,
 		Name:    serviceName,
@@ -141,25 +192,11 @@ func (sr *ServiceRegistry) RegisterService(ctx context.Context, serviceName, ser
 		Tags:    service.Tags,
 		Meta:    service.Meta,
 		Check: &api.AgentServiceCheck{
-			HTTP:                           fmt.Sprintf("http://%s:%d/health", service.Address, service.Port),
+			HTTP:                           fmt.Sprintf("http://%s:%d/health", healthHost, service.Port),
 			Interval:                       sr.config.CheckInterval.String(),
 			Timeout:                        sr.config.CheckTimeout.String(),
-			DeregisterCriticalServiceAfter: "30s",
+			DeregisterCriticalServiceAfter: "90s", // Increased to handle startup delays
 		},
-	}
-
-	// Use gRPC health check for gRPC services
-	if protocol == "grpc" {
-		port := grpcPort
-		if port == 0 {
-			port = httpPort
-		}
-		registration.Check = &api.AgentServiceCheck{
-			GRPC:                           fmt.Sprintf("%s:%d", service.Address, port),
-			Interval:                       sr.config.CheckInterval.String(),
-			Timeout:                        sr.config.CheckTimeout.String(),
-			DeregisterCriticalServiceAfter: "30s",
-		}
 	}
 
 	err = sr.client.Agent().ServiceRegister(registration)
@@ -187,22 +224,34 @@ func (sr *ServiceRegistry) DiscoverService(serviceName string) (*ServiceInfo, er
 		return service, nil
 	}
 
-	// Query Consul for services (including non-healthy ones for development)
-	services, _, err := sr.client.Health().Service(serviceName, "", false, nil)
+	// First try Health API for healthy services
+	healthServices, _, err := sr.client.Health().Service(serviceName, "", false, nil)
+	if err == nil && len(healthServices) > 0 {
+		// Use healthy service
+		return sr.buildServiceInfoFromHealth(healthServices[0])
+	}
+
+	// Fallback to Catalog API for development (includes unhealthy services)
+	catalogServices, _, err := sr.client.Catalog().Service(serviceName, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover service %s: %w", serviceName, err)
 	}
 
-	if len(services) == 0 {
+	if len(catalogServices) == 0 {
 		return nil, fmt.Errorf("service %s not found", serviceName)
 	}
 
-	// Get the first service (check its health status)
-	consulService := services[0].Service
+	// Use the first service from catalog
+	return sr.buildServiceInfoFromCatalog(catalogServices[0])
+}
+
+// buildServiceInfoFromHealth builds ServiceInfo from Health API response
+func (sr *ServiceRegistry) buildServiceInfoFromHealth(healthEntry *api.ServiceEntry) (*ServiceInfo, error) {
+	consulService := healthEntry.Service
 
 	// Determine actual health status
 	healthStatus := "critical"
-	for _, check := range services[0].Checks {
+	for _, check := range healthEntry.Checks {
 		if check.Status == "passing" {
 			healthStatus = "passing"
 			break
@@ -231,9 +280,79 @@ func (sr *ServiceRegistry) DiscoverService(serviceName string) (*ServiceInfo, er
 	}
 
 	// Cache the discovered service
-	sr.services[serviceName] = service
-
+	sr.services[consulService.Service] = service
 	return service, nil
+}
+
+// buildServiceInfoFromCatalog builds ServiceInfo from Catalog API response
+func (sr *ServiceRegistry) buildServiceInfoFromCatalog(catalogService *api.CatalogService) (*ServiceInfo, error) {
+	grpcPort := 0
+	if grpcPortStr, exists := catalogService.ServiceMeta["grpc_port"]; exists {
+		if port, err := strconv.Atoi(grpcPortStr); err == nil {
+			grpcPort = port
+		}
+	}
+
+	service := &ServiceInfo{
+		ID:       catalogService.ServiceID,
+		Name:     catalogService.ServiceName,
+		Address:  catalogService.ServiceAddress,
+		Port:     catalogService.ServicePort,
+		GRPCPort: grpcPort,
+		Tags:     catalogService.ServiceTags,
+		Meta:     catalogService.ServiceMeta,
+		Protocol: catalogService.ServiceMeta["protocol"],
+		Health:   "unknown", // Catalog doesn't provide health status
+	}
+
+	// Cache the discovered service
+	sr.services[catalogService.ServiceName] = service
+	return service, nil
+}
+
+// RegisterServiceWithPorts registers a service with Consul using specified ports
+func (sr *ServiceRegistry) RegisterServiceWithPorts(ctx context.Context, serviceInfo *ServiceInfo) error {
+	serviceID := fmt.Sprintf("%s-%d", serviceInfo.Name, time.Now().Unix())
+	serviceInfo.ID = serviceID
+
+	// Ensure metadata includes gRPC port if available
+	if serviceInfo.GRPCPort > 0 {
+		serviceInfo.Meta["grpc_port"] = strconv.Itoa(serviceInfo.GRPCPort)
+	}
+
+	// Register with Consul
+	healthHost := getHealthCheckHost()
+	registration := &api.AgentServiceRegistration{
+		ID:      serviceID,
+		Name:    serviceInfo.Name,
+		Address: serviceInfo.Address,
+		Port:    serviceInfo.Port,
+		Tags:    []string{"openusp", "v1.0.0", serviceInfo.Meta["service_type"]},
+		Meta:    serviceInfo.Meta,
+		Check: &api.AgentServiceCheck{
+			HTTP:                           fmt.Sprintf("http://%s:%d/health", healthHost, serviceInfo.Port),
+			Interval:                       sr.config.CheckInterval.String(),
+			Timeout:                        sr.config.CheckTimeout.String(),
+			DeregisterCriticalServiceAfter: "90s",
+		},
+	}
+
+	err := sr.client.Agent().ServiceRegister(registration)
+	if err != nil {
+		return fmt.Errorf("failed to register service %s with Consul: %w", serviceInfo.Name, err)
+	}
+
+	// Cache locally
+	sr.services[serviceInfo.Name] = serviceInfo
+
+	log.Printf("🎯 Service registered with Consul: %s (%s) at %s:%d",
+		serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Address, serviceInfo.Port)
+
+	if serviceInfo.GRPCPort > 0 {
+		log.Printf("   └── gRPC port: %d", serviceInfo.GRPCPort)
+	}
+
+	return nil
 }
 
 // GetServiceURL returns the URL for a service
@@ -350,6 +469,48 @@ func (sr *ServiceRegistry) GetAllServices() (map[string]*ServiceInfo, error) {
 	}
 
 	return result, nil
+}
+
+// UpdateServiceMetadata updates the metadata of an existing service registration
+func (sr *ServiceRegistry) UpdateServiceMetadata(serviceName string, updatedMetadata map[string]string) error {
+	// Get existing service info
+	service, exists := sr.services[serviceName]
+	if !exists {
+		return fmt.Errorf("service %s not found in local cache", serviceName)
+	}
+
+	// Update the metadata
+	for key, value := range updatedMetadata {
+		service.Meta[key] = value
+	}
+
+	// Update local cache
+	sr.services[serviceName] = service
+
+	// Re-register the service with updated metadata
+	registration := &api.AgentServiceRegistration{
+		ID:      service.ID,
+		Name:    service.Name,
+		Address: service.Address,
+		Port:    service.Port,
+		Tags:    service.Tags,
+		Meta:    service.Meta,
+		Check: &api.AgentServiceCheck{
+			HTTP:                           fmt.Sprintf("http://127.0.0.1:%d/health", service.Port),
+			Interval:                       sr.config.CheckInterval.String(),
+			Timeout:                        sr.config.CheckTimeout.String(),
+			DeregisterCriticalServiceAfter: "90s",
+		},
+	}
+
+	// Re-register with Consul (this updates the existing registration)
+	err := sr.client.Agent().ServiceRegister(registration)
+	if err != nil {
+		return fmt.Errorf("failed to update service %s metadata in Consul: %w", serviceName, err)
+	}
+
+	log.Printf("🔄 Updated service metadata in Consul: %s", serviceName)
+	return nil
 }
 
 // DeregisterService removes a service from Consul

@@ -1,5 +1,4 @@
 package usp
-package usp
 
 import (
 	"testing"
