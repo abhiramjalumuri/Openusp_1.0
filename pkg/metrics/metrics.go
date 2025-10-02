@@ -148,7 +148,7 @@ func NewOpenUSPMetrics(serviceName string) *OpenUSPMetrics {
 	)
 
 	// Set service info
-	metrics.ServiceInfo.WithLabelValues(serviceName, "1.0.0", time.Now().Format("2006-01-02T15:04:05Z")).Set(1)
+	metrics.ServiceInfo.WithLabelValues(serviceName, "1.1.0", time.Now().Format("2006-01-02T15:04:05Z")).Set(1)
 
 	return metrics
 }

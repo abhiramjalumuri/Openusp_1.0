@@ -168,11 +168,11 @@ func (sr *ServiceRegistry) RegisterService(ctx context.Context, serviceName, ser
 		Port:     httpPort,
 		GRPCPort: grpcPort,
 		Protocol: protocol,
-		Tags:     []string{"openusp", "v1.0.0", serviceType},
+		Tags:     []string{"openusp", "v1.1.0", serviceType},
 		Meta: map[string]string{
 			"service_type": serviceType,
 			"protocol":     protocol,
-			"version":      "1.0.0",
+			"version":      "1.1.0",
 			"environment":  "development",
 		},
 		Health: "starting",
@@ -327,7 +327,7 @@ func (sr *ServiceRegistry) RegisterServiceWithPorts(ctx context.Context, service
 		Name:    serviceInfo.Name,
 		Address: serviceInfo.Address,
 		Port:    serviceInfo.Port,
-		Tags:    []string{"openusp", "v1.0.0", serviceInfo.Meta["service_type"]},
+		Tags:    []string{"openusp", "v1.1.0", serviceInfo.Meta["service_type"]},
 		Meta:    serviceInfo.Meta,
 		Check: &api.AgentServiceCheck{
 			HTTP:                           fmt.Sprintf("http://%s:%d/health", healthHost, serviceInfo.Port),
