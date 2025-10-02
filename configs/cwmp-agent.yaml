@@ -1,19 +1,13 @@
 # TR-069 CWMP Agent Configuration
 # =================================
 
-# Service Discovery Configuration
-service_discovery:
-  consul_enabled: true
-  consul_addr: "localhost:8500"
-  consul_datacenter: "openusp-dev"
-
 # Agent Device Information
 device_info:
-  endpoint_id: "cwmp://tr069-demo-agent-001"
+  endpoint_id: "cwmp:tr069-demo-agent-003"
   product_class: "HomeGateway"
-  manufacturer: "OpenUSP"
+  manufacturer: "Plume"
   model_name: "CWMP-Gateway-v1"
-  serial_number: "DEMO-CWMP-001"
+  serial_number: "Plume-CWMP-002"
   software_version: "1.1.0"
   hardware_version: "1.0"
   device_type: "gateway"
@@ -28,7 +22,7 @@ cwmp_protocol:
 
 # ACS (Auto Configuration Server) Configuration
 acs:
-  url: "http://localhost:7547"
+  url: "http://localhost:7547" # Standard TR-069 CWMP port
   username: "acs"
   password: "acs123"
   periodic_inform_enabled: true
@@ -50,14 +44,6 @@ platform:
   registration_endpoint: "/api/v1/devices"
   heartbeat_interval: "60s"
   cwmp_service_endpoint: "/cwmp"
-
-# Consul Service Discovery Integration
-consul_integration:
-  service_discovery_enabled: true
-  cwmp_service_name: "openusp-cwmp-service"
-  api_gateway_service_name: "openusp-api-gateway"
-  health_check_interval: "10s"
-  service_tags: ["tr069", "cwmp", "agent", "v1.1.0"]
 
 # SOAP/XML Configuration
 soap_xml:
@@ -122,9 +108,9 @@ authentication:
 
 # Logging Configuration
 logging:
-  level: "info"           # debug, info, warn, error
-  format: "json"          # json, text
-  output: "stdout"        # stdout, file
+  level: "info" # debug, info, warn, error
+  format: "json" # json, text
+  output: "stdout" # stdout, file
   file: "logs/tr069-agent.log"
   soap_messages: false
   http_requests: false
@@ -132,7 +118,7 @@ logging:
 # Performance Tuning
 performance:
   buffer_size: 4096
-  max_message_size: 1048576  # 1MB
+  max_message_size: 1048576 # 1MB
   connection_timeout: "30s"
   read_timeout: "60s"
   write_timeout: "60s"

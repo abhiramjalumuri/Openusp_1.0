@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,7 +28,8 @@ type CWMPService struct {
 	registry          *consul.ServiceRegistry
 	serviceInfo       *consul.ServiceInfo
 	config            *Config
-	server            *http.Server
+	cwmpServer        *http.Server // TR-069 protocol server (port 7547)
+	healthServer      *http.Server // Health/status/metrics server (dynamic port)
 	processor         *cwmp.MessageProcessor
 	tr181Mgr          *tr181.DeviceManager
 	metrics           *metrics.OpenUSPMetrics
@@ -40,7 +40,8 @@ type CWMPService struct {
 
 // Config holds configuration for CWMP service
 type Config struct {
-	Port                  int
+	CWMPPort              int // Standard TR-069 port (7547)
+	HealthPort            int // Dynamic port for health/status/metrics
 	ACSUsername           string
 	ACSPassword           string
 	ConnectionTimeout     time.Duration
@@ -61,7 +62,7 @@ type TLSConfig struct {
 // NewCWMPService creates a new CWMP service instance
 func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, registry *consul.ServiceRegistry, serviceInfo *consul.ServiceInfo) (*CWMPService, error) {
 	if config == nil {
-		config = DefaultConfig()
+		config = DefaultConfig(0) // Use port 0 for testing (will be assigned dynamically)
 	}
 
 	// Initialize TR-181 manager for data model support
@@ -103,16 +104,27 @@ func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, regis
 	service.onboardingManager = onboardingManager
 	processor.SetOnboardingManager(onboardingManager)
 
-	// Create HTTP server with CWMP handlers
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", service.handleCWMPRequest)
-	mux.HandleFunc("/health", service.handleHealth)
-	mux.HandleFunc("/status", service.handleStatus)
-	mux.Handle("/metrics", metrics.HTTPHandler())
+	// Create CWMP protocol server (TR-069 on standard port 7547)
+	cwmpMux := http.NewServeMux()
+	cwmpMux.HandleFunc("/", service.handleCWMPRequest)
 
-	service.server = &http.Server{
-		Addr:         fmt.Sprintf(":%d", config.Port),
-		Handler:      mux,
+	service.cwmpServer = &http.Server{
+		Addr:         fmt.Sprintf(":%d", config.CWMPPort),
+		Handler:      cwmpMux,
+		ReadTimeout:  config.ConnectionTimeout,
+		WriteTimeout: config.ConnectionTimeout,
+		IdleTimeout:  config.SessionTimeout,
+	}
+
+	// Create health/admin server (dynamic port registered with Consul)
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/health", service.handleHealth)
+	healthMux.HandleFunc("/status", service.handleStatus)
+	healthMux.Handle("/metrics", metrics.HTTPHandler())
+
+	service.healthServer = &http.Server{
+		Addr:         fmt.Sprintf(":%d", config.HealthPort),
+		Handler:      healthMux,
 		ReadTimeout:  config.ConnectionTimeout,
 		WriteTimeout: config.ConnectionTimeout,
 		IdleTimeout:  config.SessionTimeout,
@@ -122,20 +134,16 @@ func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, regis
 }
 
 // DefaultConfig returns default CWMP service configuration
-func DefaultConfig() *Config {
-	// Get port from environment or use default
-	port := 7547 // Standard TR-069 CWMP port
-	if envPort := strings.TrimSpace(os.Getenv("OPENUSP_CWMP_SERVICE_PORT")); envPort != "" {
-		if p, err := strconv.Atoi(envPort); err == nil {
-			port = p
-		}
-	}
+func DefaultConfig(healthPort int) *Config {
+	// CWMP protocol always uses standard TR-069 port
+	cwmpPort := 7547
 
 	// Data service address will be resolved later based on Consul availability
 	dataServiceAddr := "" // Will be populated by getDataServiceAddress()
 
 	return &Config{
-		Port:                  port,
+		CWMPPort:              cwmpPort,
+		HealthPort:            healthPort,
 		ACSUsername:           "acs",
 		ACSPassword:           "acs123",
 		ConnectionTimeout:     30 * time.Second,
@@ -153,31 +161,42 @@ func DefaultConfig() *Config {
 
 // Start starts the CWMP service
 func (s *CWMPService) Start(ctx context.Context) error {
-	log.Printf("🚀 Starting CWMP Service on port %d...", s.config.Port)
+	log.Printf("🚀 Starting CWMP Service...")
+	log.Printf("   📡 CWMP Protocol Port: %d (TR-069)", s.config.CWMPPort)
+	log.Printf("   🏥 Health API Port: %d (Dynamic)", s.config.HealthPort)
 
-	// Start HTTP server
+	// Start the CWMP protocol server in a goroutine
 	go func() {
 		var err error
 		if s.config.TLS.Enabled {
-			log.Printf("🔒 Starting HTTPS server with TLS...")
-			err = s.server.ListenAndServeTLS(s.config.TLS.CertFile, s.config.TLS.KeyFile)
+			log.Printf("🔒 TLS enabled, using cert: %s, key: %s", s.config.TLS.CertFile, s.config.TLS.KeyFile)
+			err = s.cwmpServer.ListenAndServeTLS(s.config.TLS.CertFile, s.config.TLS.KeyFile)
 		} else {
-			log.Printf("🌐 Starting HTTP server...")
-			err = s.server.ListenAndServe()
+			log.Printf("🔓 TLS disabled")
+			err = s.cwmpServer.ListenAndServe()
 		}
 
 		if err != nil && err != http.ErrServerClosed {
-			log.Printf("❌ CWMP server error: %v", err)
+			log.Printf("❌ CWMP protocol server error: %v", err)
 		}
 	}()
 
-	log.Printf("✅ CWMP Service started successfully")
-	log.Printf("   📍 Endpoint: http://localhost:%d", s.config.Port)
-	log.Printf("   🔧 TR-069 Protocol: Enabled")
-	log.Printf("   🔧 Authentication: %v", s.config.EnableAuthentication)
-	log.Printf("   🔧 Max Sessions: %d", s.config.MaxConcurrentSessions)
-	log.Printf("   🔧 Health Check: http://localhost:%d/health", s.config.Port)
-	log.Printf("   🔧 Status: http://localhost:%d/status", s.config.Port)
+	// Start the health/admin server in a goroutine
+	go func() {
+		err := s.healthServer.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("❌ Health server error: %v", err)
+		}
+	}()
+
+	log.Printf("✅ CWMP Service is running")
+	log.Printf("   📍 CWMP Endpoint: http://localhost:%d", s.config.CWMPPort)
+	log.Printf("   � Authentication: %s", map[bool]string{true: "✅ Enabled", false: "❌ Disabled"}[s.config.EnableAuthentication])
+	log.Printf("   ⏱️  Connection Timeout: %v", s.config.ConnectionTimeout)
+	log.Printf("   ⏱️  Session Timeout: %v", s.config.SessionTimeout)
+	log.Printf("   🔧 Health Check: http://localhost:%d/health", s.config.HealthPort)
+	log.Printf("   🔧 Status: http://localhost:%d/status", s.config.HealthPort)
+	log.Printf("   📊 Metrics: http://localhost:%d/metrics", s.config.HealthPort)
 
 	// Wait for context cancellation
 	<-ctx.Done()
@@ -231,10 +250,25 @@ func (s *CWMPService) Stop() error {
 		}
 	}
 
-	// Shutdown HTTP server
-	if err := s.server.Shutdown(ctx); err != nil {
-		log.Printf("❌ Error shutting down CWMP server: %v", err)
-		return err
+	// Shutdown both HTTP servers
+	var shutdownErr error
+
+	// Shutdown CWMP protocol server
+	if err := s.cwmpServer.Shutdown(ctx); err != nil {
+		log.Printf("❌ Error shutting down CWMP protocol server: %v", err)
+		shutdownErr = err
+	}
+
+	// Shutdown health server
+	if err := s.healthServer.Shutdown(ctx); err != nil {
+		log.Printf("❌ Error shutting down health server: %v", err)
+		if shutdownErr == nil {
+			shutdownErr = err
+		}
+	}
+
+	if shutdownErr != nil {
+		return shutdownErr
 	}
 
 	log.Printf("✅ CWMP Service stopped")
@@ -462,9 +496,9 @@ func main() {
 	}
 	fmt.Println()
 
-	// Load configuration
-	config := DefaultConfig()
-	config.Port = httpPort // Use the determined port
+	// Load configuration with dual ports
+	// CWMP protocol uses standard port 7547, health API uses dynamic port
+	config := DefaultConfig(httpPort) // httpPort is the dynamic port for health API
 
 	// Create CWMP service
 	cwmpService, err := NewCWMPService(config, deployConfig, registry, serviceInfo)

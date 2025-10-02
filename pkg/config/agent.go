@@ -12,22 +12,22 @@ type AgentConfig struct {
 	ConsulDatacenter string `json:"consul_datacenter"`
 
 	// Device Information
-	EndpointID       string `json:"endpoint_id"`
-	ProductClass     string `json:"product_class"`
-	Manufacturer     string `json:"manufacturer"`
-	ModelName        string `json:"model_name"`
-	SerialNumber     string `json:"serial_number"`
-	SoftwareVersion  string `json:"software_version"`
-	HardwareVersion  string `json:"hardware_version"`
-	DeviceType       string `json:"device_type"`
-	OUI              string `json:"oui"`
+	EndpointID      string `json:"endpoint_id"`
+	ProductClass    string `json:"product_class"`
+	Manufacturer    string `json:"manufacturer"`
+	ModelName       string `json:"model_name"`
+	SerialNumber    string `json:"serial_number"`
+	SoftwareVersion string `json:"software_version"`
+	HardwareVersion string `json:"hardware_version"`
+	DeviceType      string `json:"device_type"`
+	OUI             string `json:"oui"`
 
 	// Platform Integration
-	PlatformURL            string        `json:"platform_url"`
-	APIVersion             string        `json:"api_version"`
-	RegistrationEndpoint   string        `json:"registration_endpoint"`
-	HeartbeatInterval      time.Duration `json:"heartbeat_interval"`
-	AutoRegister           bool          `json:"auto_register"`
+	PlatformURL          string        `json:"platform_url"`
+	APIVersion           string        `json:"api_version"`
+	RegistrationEndpoint string        `json:"registration_endpoint"`
+	HeartbeatInterval    time.Duration `json:"heartbeat_interval"`
+	AutoRegister         bool          `json:"auto_register"`
 
 	// Consul Integration
 	ServiceDiscoveryEnabled bool          `json:"service_discovery_enabled"`
@@ -35,11 +35,11 @@ type AgentConfig struct {
 	ServiceTags             []string      `json:"service_tags"`
 
 	// Security
-	TLSEnabled   bool   `json:"tls_enabled"`
-	TLSCertFile  string `json:"tls_cert_file"`
-	TLSKeyFile   string `json:"tls_key_file"`
-	TLSCAFile    string `json:"tls_ca_file"`
-	TLSSkipVerify bool  `json:"tls_skip_verify"`
+	TLSEnabled    bool   `json:"tls_enabled"`
+	TLSCertFile   string `json:"tls_cert_file"`
+	TLSKeyFile    string `json:"tls_key_file"`
+	TLSCAFile     string `json:"tls_ca_file"`
+	TLSSkipVerify bool   `json:"tls_skip_verify"`
 
 	// Logging
 	LogLevel  string `json:"log_level"`
@@ -67,21 +67,21 @@ type TR369Config struct {
 	AgentConfig
 
 	// USP Protocol
-	USPVersion          string   `json:"usp_version"`
+	USPVersion           string   `json:"usp_version"`
 	USPSupportedVersions []string `json:"usp_supported_versions"`
-	USPAgentRole        string   `json:"usp_agent_role"`
-	USPCommandKey       string   `json:"usp_command_key"`
+	USPAgentRole         string   `json:"usp_agent_role"`
+	USPCommandKey        string   `json:"usp_command_key"`
 
 	// MTP Configuration
 	MTPType string `json:"mtp_type"`
 
 	// WebSocket MTP
-	WebSocketURL               string        `json:"websocket_url"`
-	WebSocketSubprotocol       string        `json:"websocket_subprotocol"`
-	WebSocketPingInterval      time.Duration `json:"websocket_ping_interval"`
-	WebSocketPongTimeout       time.Duration `json:"websocket_pong_timeout"`
-	WebSocketReconnectInterval time.Duration `json:"websocket_reconnect_interval"`
-	WebSocketMaxReconnectAttempts int        `json:"websocket_max_reconnect_attempts"`
+	WebSocketURL                  string        `json:"websocket_url"`
+	WebSocketSubprotocol          string        `json:"websocket_subprotocol"`
+	WebSocketPingInterval         time.Duration `json:"websocket_ping_interval"`
+	WebSocketPongTimeout          time.Duration `json:"websocket_pong_timeout"`
+	WebSocketReconnectInterval    time.Duration `json:"websocket_reconnect_interval"`
+	WebSocketMaxReconnectAttempts int           `json:"websocket_max_reconnect_attempts"`
 
 	// MQTT MTP
 	MQTTBrokerURL     string        `json:"mqtt_broker_url"`
@@ -96,24 +96,24 @@ type TR369Config struct {
 	MQTTKeepAlive     time.Duration `json:"mqtt_keep_alive"`
 
 	// STOMP MTP
-	STOMPBrokerURL            string        `json:"stomp_broker_url"`
-	STOMPUsername             string        `json:"stomp_username"`
-	STOMPPassword             string        `json:"stomp_password"`
-	STOMPDestinationRequest   string        `json:"stomp_destination_request"`
-	STOMPDestinationResponse  string        `json:"stomp_destination_response"`
-	STOMPHeartbeatSend        time.Duration `json:"stomp_heartbeat_send"`
-	STOMPHeartbeatReceive     time.Duration `json:"stomp_heartbeat_receive"`
+	STOMPBrokerURL           string        `json:"stomp_broker_url"`
+	STOMPUsername            string        `json:"stomp_username"`
+	STOMPPassword            string        `json:"stomp_password"`
+	STOMPDestinationRequest  string        `json:"stomp_destination_request"`
+	STOMPDestinationResponse string        `json:"stomp_destination_response"`
+	STOMPHeartbeatSend       time.Duration `json:"stomp_heartbeat_send"`
+	STOMPHeartbeatReceive    time.Duration `json:"stomp_heartbeat_receive"`
 
 	// Unix Domain Socket MTP
 	UDSSocketPath string `json:"uds_socket_path"`
 	UDSSocketMode string `json:"uds_socket_mode"`
 
 	// Agent Behavior
-	PeriodicInformEnabled         bool          `json:"periodic_inform_enabled"`
-	PeriodicInformInterval        time.Duration `json:"periodic_inform_interval"`
-	ParameterUpdateNotification   bool          `json:"parameter_update_notification"`
-	EventNotification             bool          `json:"event_notification"`
-	DiagnosticMode                bool          `json:"diagnostic_mode"`
+	PeriodicInformEnabled       bool          `json:"periodic_inform_enabled"`
+	PeriodicInformInterval      time.Duration `json:"periodic_inform_interval"`
+	ParameterUpdateNotification bool          `json:"parameter_update_notification"`
+	EventNotification           bool          `json:"event_notification"`
+	DiagnosticMode              bool          `json:"diagnostic_mode"`
 
 	// Consul Service Names
 	ConsulMTPServiceName        string `json:"consul_mtp_service_name"`
@@ -125,18 +125,18 @@ type TR069Config struct {
 	AgentConfig
 
 	// CWMP Protocol
-	CWMPVersion          string   `json:"cwmp_version"`
-	CWMPSupportedVersions []string `json:"cwmp_supported_versions"`
-	CWMPAgentRole        string   `json:"cwmp_agent_role"`
-	CWMPConnectionRequestAuth string `json:"cwmp_connection_request_auth"`
+	CWMPVersion               string   `json:"cwmp_version"`
+	CWMPSupportedVersions     []string `json:"cwmp_supported_versions"`
+	CWMPAgentRole             string   `json:"cwmp_agent_role"`
+	CWMPConnectionRequestAuth string   `json:"cwmp_connection_request_auth"`
 
 	// ACS Configuration
-	ACSURL                   string        `json:"acs_url"`
-	ACSUsername              string        `json:"acs_username"`
-	ACSPassword              string        `json:"acs_password"`
-	ACSPeriodicInformEnabled bool          `json:"acs_periodic_inform_enabled"`
+	ACSURL                    string        `json:"acs_url"`
+	ACSUsername               string        `json:"acs_username"`
+	ACSPassword               string        `json:"acs_password"`
+	ACSPeriodicInformEnabled  bool          `json:"acs_periodic_inform_enabled"`
 	ACSPeriodicInformInterval time.Duration `json:"acs_periodic_inform_interval"`
-	ACSParameterKey          string        `json:"acs_parameter_key"`
+	ACSParameterKey           string        `json:"acs_parameter_key"`
 
 	// Connection Request
 	ConnectionRequestURL      string `json:"connection_request_url"`
@@ -153,29 +153,29 @@ type TR069Config struct {
 	EnvelopeNamespacePrefix string `json:"envelope_namespace_prefix"`
 
 	// HTTP Configuration
-	HTTPTimeout                   time.Duration `json:"http_timeout"`
-	HTTPKeepAlive                 bool          `json:"http_keep_alive"`
-	HTTPMaxIdleConnections        int           `json:"http_max_idle_connections"`
-	HTTPIdleTimeout               time.Duration `json:"http_idle_timeout"`
-	HTTPTLSHandshakeTimeout       time.Duration `json:"http_tls_handshake_timeout"`
-	HTTPExpectContinueTimeout     time.Duration `json:"http_expect_continue_timeout"`
+	HTTPTimeout               time.Duration `json:"http_timeout"`
+	HTTPKeepAlive             bool          `json:"http_keep_alive"`
+	HTTPMaxIdleConnections    int           `json:"http_max_idle_connections"`
+	HTTPIdleTimeout           time.Duration `json:"http_idle_timeout"`
+	HTTPTLSHandshakeTimeout   time.Duration `json:"http_tls_handshake_timeout"`
+	HTTPExpectContinueTimeout time.Duration `json:"http_expect_continue_timeout"`
 
 	// Session Management
-	SessionTimeout        time.Duration `json:"session_timeout"`
-	SessionMaxConcurrent  int           `json:"session_max_concurrent"`
-	SessionKeepAlive      bool          `json:"session_keep_alive"`
-	SessionCookieEnabled  bool          `json:"session_cookie_enabled"`
+	SessionTimeout       time.Duration `json:"session_timeout"`
+	SessionMaxConcurrent int           `json:"session_max_concurrent"`
+	SessionKeepAlive     bool          `json:"session_keep_alive"`
+	SessionCookieEnabled bool          `json:"session_cookie_enabled"`
 
 	// TR-181 Data Model
-	TR181RootObject           string `json:"tr181_root_object"`
-	TR181DeviceType           string `json:"tr181_device_type"`
-	TR181SpecVersion          string `json:"tr181_spec_version"`
-	TR181ParameterNotifications bool `json:"tr181_parameter_notifications"`
-	TR181ObjectNotifications    bool `json:"tr181_object_notifications"`
+	TR181RootObject             string `json:"tr181_root_object"`
+	TR181DeviceType             string `json:"tr181_device_type"`
+	TR181SpecVersion            string `json:"tr181_spec_version"`
+	TR181ParameterNotifications bool   `json:"tr181_parameter_notifications"`
+	TR181ObjectNotifications    bool   `json:"tr181_object_notifications"`
 
 	// Authentication
-	DigestAuthEnabled  bool          `json:"digest_auth_enabled"`
-	BasicAuthEnabled   bool          `json:"basic_auth_enabled"`
+	DigestAuthEnabled bool          `json:"digest_auth_enabled"`
+	BasicAuthEnabled  bool          `json:"basic_auth_enabled"`
 	AuthRealm         string        `json:"auth_realm"`
 	AuthAlgorithm     string        `json:"auth_algorithm"`
 	AuthQOP           string        `json:"auth_qop"`
@@ -205,21 +205,21 @@ type TR069Config struct {
 	RPCUpload                 bool `json:"rpc_upload"`
 
 	// Events
-	EventBootstrap                    bool `json:"event_bootstrap"`
-	EventBoot                         bool `json:"event_boot"`
-	EventPeriodic                     bool `json:"event_periodic"`
-	EventValueChange                  bool `json:"event_value_change"`
-	EventConnectionRequest            bool `json:"event_connection_request"`
-	EventTransferComplete             bool `json:"event_transfer_complete"`
-	EventDiagnosticsComplete          bool `json:"event_diagnostics_complete"`
-	EventRequestDownload              bool `json:"event_request_download"`
-	EventAutonomousTransferComplete   bool `json:"event_autonomous_transfer_complete"`
+	EventBootstrap                  bool `json:"event_bootstrap"`
+	EventBoot                       bool `json:"event_boot"`
+	EventPeriodic                   bool `json:"event_periodic"`
+	EventValueChange                bool `json:"event_value_change"`
+	EventConnectionRequest          bool `json:"event_connection_request"`
+	EventTransferComplete           bool `json:"event_transfer_complete"`
+	EventDiagnosticsComplete        bool `json:"event_diagnostics_complete"`
+	EventRequestDownload            bool `json:"event_request_download"`
+	EventAutonomousTransferComplete bool `json:"event_autonomous_transfer_complete"`
 
 	// Fault Management
-	FaultToleranceEnabled   bool          `json:"fault_tolerance_enabled"`
-	FaultMaxRetryCount      int           `json:"fault_max_retry_count"`
-	FaultRetryInterval      time.Duration `json:"fault_retry_interval"`
-	FaultDetailedReporting  bool          `json:"fault_detailed_reporting"`
+	FaultToleranceEnabled  bool          `json:"fault_tolerance_enabled"`
+	FaultMaxRetryCount     int           `json:"fault_max_retry_count"`
+	FaultRetryInterval     time.Duration `json:"fault_retry_interval"`
+	FaultDetailedReporting bool          `json:"fault_detailed_reporting"`
 
 	// Consul Service Names
 	ConsulCWMPServiceName       string `json:"consul_cwmp_service_name"`
@@ -229,11 +229,9 @@ type TR069Config struct {
 	CWMPServiceEndpoint string `json:"cwmp_service_endpoint"`
 
 	// Logging
-	LogSOAPMessages   bool `json:"log_soap_messages"`
-	LogHTTPRequests   bool `json:"log_http_requests"`
+	LogSOAPMessages bool `json:"log_soap_messages"`
+	LogHTTPRequests bool `json:"log_http_requests"`
 
 	// Simulation
 	SimulateDeviceResponses bool `json:"simulate_device_responses"`
 }
-
-

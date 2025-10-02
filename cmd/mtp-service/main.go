@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,8 +29,10 @@ import (
 // SimpleMTPService provides a basic MTP service implementation for demo
 type SimpleMTPService struct {
 	webSocketPort    int
+	healthPort       int
 	unixSocketPath   string
-	httpServer       *http.Server
+	webSocketServer  *http.Server // WebSocket protocol server (standard port 8081)
+	healthServer     *http.Server // Health/admin server (dynamic port)
 	messageHandler   MessageHandler
 	connectedClients map[string]time.Time
 	upgrader         websocket.Upgrader
@@ -47,7 +48,8 @@ type MessageHandler interface {
 
 // Config holds configuration for MTP service
 type Config struct {
-	WebSocketPort    int
+	WebSocketPort    int    // Standard WebSocket port (8081)
+	HealthPort       int    // Dynamic port for health/status/metrics
 	UnixSocketPath   string
 	EnableWebSocket  bool
 	EnableUnixSocket bool
@@ -56,17 +58,13 @@ type Config struct {
 }
 
 // DefaultConfig returns default MTP service configuration
-func DefaultConfig() *Config {
-	// Get port from environment or use default
-	port := 6100 // Default MTP service port
-	if envPort := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_PORT")); envPort != "" {
-		if p, err := strconv.Atoi(envPort); err == nil {
-			port = p
-		}
-	}
+func DefaultConfig(healthPort int) *Config {
+	// WebSocket protocol always uses standard USP MTP port
+	webSocketPort := 8081
 
 	return &Config{
-		WebSocketPort:    port,
+		WebSocketPort:    webSocketPort,
+		HealthPort:       healthPort,
 		UnixSocketPath:   "/tmp/usp-agent.sock",
 		EnableWebSocket:  true,
 		EnableUnixSocket: true,
@@ -82,6 +80,7 @@ func NewSimpleMTPService(config *Config, handler MessageHandler) (*SimpleMTPServ
 
 	return &SimpleMTPService{
 		webSocketPort:    config.WebSocketPort,
+		healthPort:       config.HealthPort,
 		unixSocketPath:   config.UnixSocketPath,
 		messageHandler:   handler,
 		connectedClients: make(map[string]time.Time),
@@ -98,29 +97,47 @@ func NewSimpleMTPService(config *Config, handler MessageHandler) (*SimpleMTPServ
 func (s *SimpleMTPService) Start(ctx context.Context) error {
 	log.Println("🚀 Starting Simple MTP Service...")
 
-	// Create HTTP server for WebSocket and health endpoints
-	mux := http.NewServeMux()
-	mux.HandleFunc("/usp", s.handleUSPWebSocketDemo) // Demo HTML page
-	mux.HandleFunc("/ws", s.handleUSPWebSocket)      // Actual WebSocket endpoint
-	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/status", s.handleStatus)
-	mux.Handle("/metrics", metrics.HTTPHandler())
-	mux.HandleFunc("/simulate", s.handleSimulate)
+	// Create WebSocket protocol server (standard port 8081)
+	webSocketMux := http.NewServeMux()
+	webSocketMux.HandleFunc("/usp", s.handleUSPWebSocketDemo) // Demo HTML page
+	webSocketMux.HandleFunc("/ws", s.handleUSPWebSocket)      // Actual WebSocket endpoint
 
-	s.httpServer = &http.Server{
+	s.webSocketServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.webSocketPort),
-		Handler: mux,
+		Handler: webSocketMux,
 	}
 
-	// Start HTTP server
+	// Create health/admin server (dynamic port registered with Consul)
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/health", s.handleHealth)
+	healthMux.HandleFunc("/status", s.handleStatus)
+	healthMux.Handle("/metrics", metrics.HTTPHandler())
+	healthMux.HandleFunc("/simulate", s.handleSimulate)
+
+	s.healthServer = &http.Server{
+		Addr:    fmt.Sprintf(":%d", s.healthPort),
+		Handler: healthMux,
+	}
+
+	// Start WebSocket protocol server
 	go func() {
-		log.Printf("🔌 Starting HTTP server on port %d", s.webSocketPort)
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("❌ HTTP server error: %v", err)
+		log.Printf("🔌 Starting WebSocket server on port %d", s.webSocketPort)
+		if err := s.webSocketServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("❌ WebSocket server error: %v", err)
 		}
 	}()
 
-	log.Printf("✅ Simple MTP Service started on port %d", s.webSocketPort)
+	// Start health/admin server
+	go func() {
+		log.Printf("🔌 Starting health server on port %d", s.healthPort)
+		if err := s.healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("❌ Health server error: %v", err)
+		}
+	}()
+
+	log.Printf("✅ Simple MTP Service started")
+	log.Printf("   📡 WebSocket Port: %d (USP Protocol)", s.webSocketPort)
+	log.Printf("   🏥 Health API Port: %d (Dynamic)", s.healthPort)
 	return nil
 }
 
@@ -128,10 +145,21 @@ func (s *SimpleMTPService) Start(ctx context.Context) error {
 func (s *SimpleMTPService) Stop() {
 	log.Println("🛑 Stopping Simple MTP Service...")
 
-	if s.httpServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		s.httpServer.Shutdown(ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Stop WebSocket server
+	if s.webSocketServer != nil {
+		if err := s.webSocketServer.Shutdown(ctx); err != nil {
+			log.Printf("❌ Error shutting down WebSocket server: %v", err)
+		}
+	}
+
+	// Stop health server
+	if s.healthServer != nil {
+		if err := s.healthServer.Shutdown(ctx); err != nil {
+			log.Printf("❌ Error shutting down health server: %v", err)
+		}
 	}
 
 	log.Println("✅ Simple MTP Service stopped")
@@ -770,17 +798,17 @@ func main() {
 			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
 	}
 
-	// Determine the port to use
-	var mtpPort int
+	// Determine the health port to use (dynamic when Consul enabled)
+	var healthPort int
 	if serviceInfo != nil {
-		mtpPort = serviceInfo.Port
+		healthPort = serviceInfo.Port
 	} else {
-		mtpPort = deployConfig.ServicePort
+		healthPort = deployConfig.ServicePort
 	}
 
-	// Load MTP configuration
-	config := DefaultConfig()
-	config.WebSocketPort = mtpPort
+	// Load MTP configuration with dual ports
+	// WebSocket uses standard port 8081, health API uses dynamic port
+	config := DefaultConfig(healthPort)
 
 	// Create USP message handler that forwards to USP service
 	uspServiceAddr := ""
@@ -837,16 +865,18 @@ func main() {
 
 	log.Printf("🚀 MTP Service started successfully")
 	if deployConfig.IsConsulEnabled() && serviceInfo != nil {
-		log.Printf("   └── HTTP Port: %d", serviceInfo.Port)
+		log.Printf("   └── WebSocket Port: %d (USP Protocol)", config.WebSocketPort)
+		log.Printf("   └── Health API Port: %d (Dynamic)", serviceInfo.Port)
 		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
-		log.Printf("   └── Demo UI: http://localhost:%d/usp", serviceInfo.Port)
+		log.Printf("   └── Demo UI: http://localhost:%d/usp", config.WebSocketPort)
 		log.Printf("   └── Health Check: http://localhost:%d/health", serviceInfo.Port)
 		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
 	} else {
-		log.Printf("   └── HTTP Port: %d", mtpPort)
+		log.Printf("   └── WebSocket Port: %d (USP Protocol)", config.WebSocketPort)
+		log.Printf("   └── Health API Port: %d (Static)", config.HealthPort)
 		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
-		log.Printf("   └── Demo UI: http://localhost:%d/usp", mtpPort)
-		log.Printf("   └── Health Check: http://localhost:%d/health", mtpPort)
+		log.Printf("   └── Demo UI: http://localhost:%d/usp", config.WebSocketPort)
+		log.Printf("   └── Health Check: http://localhost:%d/health", config.HealthPort)
 	}
 
 	// Handle graceful shutdown

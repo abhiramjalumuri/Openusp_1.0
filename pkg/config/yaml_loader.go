@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,27 +90,27 @@ type YAMLTR369Config struct {
 		DefaultType string `yaml:"default_type"`
 
 		WebSocket struct {
-			URL                     string `yaml:"url"`
-			Subprotocol             string `yaml:"subprotocol"`
-			PingInterval            string `yaml:"ping_interval"`
-			PongTimeout             string `yaml:"pong_timeout"`
-			ReconnectInterval       string `yaml:"reconnect_interval"`
-			MaxReconnectAttempts    int    `yaml:"max_reconnect_attempts"`
-			MessageEncoding         string `yaml:"message_encoding"`
+			URL                  string `yaml:"url"`
+			Subprotocol          string `yaml:"subprotocol"`
+			PingInterval         string `yaml:"ping_interval"`
+			PongTimeout          string `yaml:"pong_timeout"`
+			ReconnectInterval    string `yaml:"reconnect_interval"`
+			MaxReconnectAttempts int    `yaml:"max_reconnect_attempts"`
+			MessageEncoding      string `yaml:"message_encoding"`
 		} `yaml:"websocket"`
 
 		MQTT struct {
-			BrokerURL        string `yaml:"broker_url"`
-			ClientID         string `yaml:"client_id"`
-			Username         string `yaml:"username"`
-			Password         string `yaml:"password"`
-			TopicRequest     string `yaml:"topic_request"`
-			TopicResponse    string `yaml:"topic_response"`
-			QOS              int    `yaml:"qos"`
-			Retain           bool   `yaml:"retain"`
-			CleanSession     bool   `yaml:"clean_session"`
-			KeepAlive        string `yaml:"keep_alive"`
-			MessageEncoding  string `yaml:"message_encoding"`
+			BrokerURL       string `yaml:"broker_url"`
+			ClientID        string `yaml:"client_id"`
+			Username        string `yaml:"username"`
+			Password        string `yaml:"password"`
+			TopicRequest    string `yaml:"topic_request"`
+			TopicResponse   string `yaml:"topic_response"`
+			QOS             int    `yaml:"qos"`
+			Retain          bool   `yaml:"retain"`
+			CleanSession    bool   `yaml:"clean_session"`
+			KeepAlive       string `yaml:"keep_alive"`
+			MessageEncoding string `yaml:"message_encoding"`
 		} `yaml:"mqtt"`
 
 		STOMP struct {
@@ -133,14 +132,14 @@ type YAMLTR369Config struct {
 	} `yaml:"mtp"`
 
 	AgentBehavior struct {
-		AutoRegister                  bool   `yaml:"auto_register"`
-		PeriodicInformEnabled         bool   `yaml:"periodic_inform_enabled"`
-		PeriodicInformInterval        string `yaml:"periodic_inform_interval"`
-		ParameterUpdateNotification   bool   `yaml:"parameter_update_notification"`
-		EventNotification             bool   `yaml:"event_notification"`
-		DiagnosticMode                bool   `yaml:"diagnostic_mode"`
-		MaxRetryCount                 int    `yaml:"max_retry_count"`
-		RetryInterval                 string `yaml:"retry_interval"`
+		AutoRegister                bool   `yaml:"auto_register"`
+		PeriodicInformEnabled       bool   `yaml:"periodic_inform_enabled"`
+		PeriodicInformInterval      string `yaml:"periodic_inform_interval"`
+		ParameterUpdateNotification bool   `yaml:"parameter_update_notification"`
+		EventNotification           bool   `yaml:"event_notification"`
+		DiagnosticMode              bool   `yaml:"diagnostic_mode"`
+		MaxRetryCount               int    `yaml:"max_retry_count"`
+		RetryInterval               string `yaml:"retry_interval"`
 	} `yaml:"agent_behavior"`
 }
 
@@ -156,12 +155,12 @@ type YAMLTR069Config struct {
 	} `yaml:"cwmp_protocol"`
 
 	ACS struct {
-		URL                     string `yaml:"url"`
-		Username                string `yaml:"username"`
-		Password                string `yaml:"password"`
-		PeriodicInformEnabled   bool   `yaml:"periodic_inform_enabled"`
-		PeriodicInformInterval  string `yaml:"periodic_inform_interval"`
-		ParameterKey            string `yaml:"parameter_key"`
+		URL                    string `yaml:"url"`
+		Username               string `yaml:"username"`
+		Password               string `yaml:"password"`
+		PeriodicInformEnabled  bool   `yaml:"periodic_inform_enabled"`
+		PeriodicInformInterval string `yaml:"periodic_inform_interval"`
+		ParameterKey           string `yaml:"parameter_key"`
 	} `yaml:"acs"`
 
 	ConnectionRequest struct {
@@ -173,11 +172,11 @@ type YAMLTR069Config struct {
 	} `yaml:"connection_request"`
 
 	SOAPXML struct {
-		SOAPVersion        string `yaml:"soap_version"`
-		SOAPNamespace      string `yaml:"soap_namespace"`
-		XMLStrictParsing   bool   `yaml:"xml_strict_parsing"`
-		XMLPrettyPrint     bool   `yaml:"xml_pretty_print"`
-		EnvelopeNSPrefix   string `yaml:"envelope_namespace_prefix"`
+		SOAPVersion      string `yaml:"soap_version"`
+		SOAPNamespace    string `yaml:"soap_namespace"`
+		XMLStrictParsing bool   `yaml:"xml_strict_parsing"`
+		XMLPrettyPrint   bool   `yaml:"xml_pretty_print"`
+		EnvelopeNSPrefix string `yaml:"envelope_namespace_prefix"`
 	} `yaml:"soap_xml"`
 
 	HTTP struct {
@@ -201,11 +200,11 @@ type YAMLTR069Config struct {
 	} `yaml:"agent_behavior"`
 
 	TR181 struct {
-		RootObject            string `yaml:"root_object"`
-		DeviceType            string `yaml:"device_type"`
-		SpecVersion           string `yaml:"spec_version"`
+		RootObject             string `yaml:"root_object"`
+		DeviceType             string `yaml:"device_type"`
+		SpecVersion            string `yaml:"spec_version"`
 		ParameterNotifications bool   `yaml:"parameter_notifications"`
-		ObjectNotifications   bool   `yaml:"object_notifications"`
+		ObjectNotifications    bool   `yaml:"object_notifications"`
 	} `yaml:"tr181"`
 
 	Session struct {
@@ -223,46 +222,46 @@ type YAMLTR069Config struct {
 	} `yaml:"authentication"`
 
 	RPCMethods struct {
-		GetRPCMethods           bool `yaml:"get_rpc_methods"`
-		SetParameterValues      bool `yaml:"set_parameter_values"`
-		GetParameterValues      bool `yaml:"get_parameter_values"`
-		GetParameterNames       bool `yaml:"get_parameter_names"`
-		SetParameterAttributes  bool `yaml:"set_parameter_attributes"`
-		GetParameterAttributes  bool `yaml:"get_parameter_attributes"`
-		AddObject               bool `yaml:"add_object"`
-		DeleteObject            bool `yaml:"delete_object"`
-		Reboot                  bool `yaml:"reboot"`
-		FactoryReset            bool `yaml:"factory_reset"`
-		Download                bool `yaml:"download"`
-		Upload                  bool `yaml:"upload"`
+		GetRPCMethods          bool `yaml:"get_rpc_methods"`
+		SetParameterValues     bool `yaml:"set_parameter_values"`
+		GetParameterValues     bool `yaml:"get_parameter_values"`
+		GetParameterNames      bool `yaml:"get_parameter_names"`
+		SetParameterAttributes bool `yaml:"set_parameter_attributes"`
+		GetParameterAttributes bool `yaml:"get_parameter_attributes"`
+		AddObject              bool `yaml:"add_object"`
+		DeleteObject           bool `yaml:"delete_object"`
+		Reboot                 bool `yaml:"reboot"`
+		FactoryReset           bool `yaml:"factory_reset"`
+		Download               bool `yaml:"download"`
+		Upload                 bool `yaml:"upload"`
 	} `yaml:"rpc_methods"`
 
 	Events struct {
-		Bootstrap                      bool `yaml:"bootstrap"`
-		Boot                           bool `yaml:"boot"`
-		Periodic                       bool `yaml:"periodic"`
-		ValueChange                    bool `yaml:"value_change"`
-		ConnectionRequest              bool `yaml:"connection_request"`
-		TransferComplete               bool `yaml:"transfer_complete"`
-		DiagnosticsComplete            bool `yaml:"diagnostics_complete"`
-		RequestDownload                bool `yaml:"request_download"`
-		AutonomousTransferComplete     bool `yaml:"autonomous_transfer_complete"`
+		Bootstrap                  bool `yaml:"bootstrap"`
+		Boot                       bool `yaml:"boot"`
+		Periodic                   bool `yaml:"periodic"`
+		ValueChange                bool `yaml:"value_change"`
+		ConnectionRequest          bool `yaml:"connection_request"`
+		TransferComplete           bool `yaml:"transfer_complete"`
+		DiagnosticsComplete        bool `yaml:"diagnostics_complete"`
+		RequestDownload            bool `yaml:"request_download"`
+		AutonomousTransferComplete bool `yaml:"autonomous_transfer_complete"`
 	} `yaml:"events"`
 
 	FaultManagement struct {
-		ToleranceEnabled    bool   `yaml:"tolerance_enabled"`
-		MaxRetryCount       int    `yaml:"max_retry_count"`
-		RetryInterval       string `yaml:"retry_interval"`
-		DetailedReporting   bool   `yaml:"detailed_reporting"`
+		ToleranceEnabled  bool   `yaml:"tolerance_enabled"`
+		MaxRetryCount     int    `yaml:"max_retry_count"`
+		RetryInterval     string `yaml:"retry_interval"`
+		DetailedReporting bool   `yaml:"detailed_reporting"`
 	} `yaml:"fault_management"`
 }
 
 // LoadYAMLTR369Config loads TR-369 agent configuration from YAML file
 func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 	yamlConfig := &YAMLTR369Config{}
-	
+
 	// Read YAML file
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read YAML config file: %v", err)
 	}
@@ -274,7 +273,7 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 
 	// Convert to TR369Config
 	config := &TR369Config{}
-	
+
 	// Service Discovery
 	config.ConsulEnabled = yamlConfig.ServiceDiscovery.ConsulEnabled
 	config.ConsulAddr = yamlConfig.ServiceDiscovery.ConsulAddr
@@ -309,7 +308,7 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 
 	// MTP Configuration
 	config.MTPType = yamlConfig.MTP.DefaultType
-	
+
 	// WebSocket MTP
 	config.WebSocketURL = yamlConfig.MTP.WebSocket.URL
 	config.WebSocketSubprotocol = yamlConfig.MTP.WebSocket.Subprotocol
@@ -437,9 +436,9 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 // LoadYAMLTR069Config loads TR-069 agent configuration from YAML file
 func LoadYAMLTR069Config(configPath string) (*TR069Config, error) {
 	yamlConfig := &YAMLTR069Config{}
-	
+
 	// Read YAML file
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read YAML config file: %v", err)
 	}
@@ -451,7 +450,7 @@ func LoadYAMLTR069Config(configPath string) (*TR069Config, error) {
 
 	// Convert to TR069Config
 	config := &TR069Config{}
-	
+
 	// Service Discovery
 	config.ConsulEnabled = yamlConfig.ServiceDiscovery.ConsulEnabled
 	config.ConsulAddr = yamlConfig.ServiceDiscovery.ConsulAddr
@@ -559,12 +558,12 @@ func LoadYAMLTR069Config(configPath string) (*TR069Config, error) {
 // LoadConfigFromYAML loads configuration from YAML file only (pure YAML-based configuration)
 func LoadConfigFromYAML(protocol string, configDir string) (interface{}, error) {
 	var yamlPath string
-	
+
 	switch strings.ToLower(protocol) {
-	case "tr369", "usp":
-		yamlPath = filepath.Join(configDir, "tr369-agent.yaml")
-	case "tr069", "cwmp":
-		yamlPath = filepath.Join(configDir, "tr069-agent.yaml")
+	case "usp":
+		yamlPath = filepath.Join(configDir, "usp-agent.yaml")
+	case "cwmp":
+		yamlPath = filepath.Join(configDir, "cwmp-agent.yaml")
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", protocol)
 	}
@@ -575,9 +574,9 @@ func LoadConfigFromYAML(protocol string, configDir string) (interface{}, error) 
 	}
 
 	switch strings.ToLower(protocol) {
-	case "tr369", "usp":
+	case "usp":
 		return LoadYAMLTR369Config(yamlPath)
-	case "tr069", "cwmp":
+	case "cwmp":
 		return LoadYAMLTR069Config(yamlPath)
 	}
 

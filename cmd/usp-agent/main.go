@@ -32,16 +32,10 @@ const (
 	deviceHardwareVersion = "1.0"
 	deviceProductClass    = "DemoAgent"
 
-	// Protocol Version Support
+	// P	wsURL := getMTPServiceURLWithConfig(agentConfig)col Version Support
 	defaultUSPVersion         = "1.3"
 	supportedProtocolVersions = "1.3,1.4"
 )
-
-// ConsulService represents a service discovered from Consul
-type ConsulService struct {
-	ServiceAddress string `json:"ServiceAddress"`
-	ServicePort    int    `json:"ServicePort"`
-}
 
 // getEnvOrDefault returns environment variable value or default if not set
 func getEnvOrDefault(key, defaultValue string) string {
@@ -57,7 +51,7 @@ func printHelp() {
 	fmt.Println("=========================")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  tr369-agent [flags]")
+	fmt.Println("  usp-agent [flags]")
 	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  -config string")
@@ -73,20 +67,18 @@ func printHelp() {
 	fmt.Println("        Show agent information")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  tr369-agent                                    # Use default configuration")
-	fmt.Println("  tr369-agent -version 1.4                      # Override USP version")
-	fmt.Println("  tr369-agent -config configs/tr369-agent.yaml  # Use specific config file")
-	fmt.Println("  tr369-agent -config my-config.yaml -validate-only  # Validate config only")
-	fmt.Println("  tr369-agent -info                             # Show agent information")
+	fmt.Println("  usp-agent                                      # Use default configuration")
+	fmt.Println("  usp-agent -version 1.4                        # Override USP version")
+	fmt.Println("  usp-agent -config configs/usp-agent.yaml      # Use specific config file")
+	fmt.Println("  usp-agent -config my-config.yaml -validate-only  # Validate config only")
+	fmt.Println("  usp-agent -info                               # Show agent information")
 	fmt.Println()
 	fmt.Println("Configuration Files:")
-	fmt.Println("  configs/tr369-agent.yaml                      # Main YAML configuration")
-	fmt.Println("  configs/examples/yaml/tr369-consul-enabled.yaml   # Consul enabled example")
-	fmt.Println("  configs/examples/yaml/tr369-consul-disabled.yaml  # Standalone example")
+	fmt.Println("  configs/usp-agent.yaml                        # Main YAML configuration")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
-	fmt.Println("  USP_WS_URL      # Override WebSocket URL (default: auto-discover)")
-	fmt.Println("  CONSUL_ADDR     # Consul address for service discovery (default: localhost:8500)")
+	fmt.Println("  USP_WS_URL      # Override WebSocket URL (default: ws://localhost:8081/ws)")
+	fmt.Println("  API_GATEWAY_URL # Override API Gateway URL (default: http://localhost:6500)")
 }
 
 // printAgentInfo displays agent and device information
@@ -111,191 +103,67 @@ func printAgentInfo() {
 	fmt.Printf("  Supported Versions: %s\n", supportedProtocolVersions)
 }
 
-// discoverMTPService discovers the MTP service WebSocket URL via Consul or fallback
-func discoverMTPService() (string, error) {
-	// Check if user provided explicit URL
+// getMTPServiceURL gets the MTP service WebSocket URL from configuration
+func getMTPServiceURL() string {
+	// Check if user provided explicit URL via environment
 	if url := os.Getenv("USP_WS_URL"); url != "" {
-		log.Printf("🔧 Using explicit MTP WebSocket URL: %s", url)
-		return url, nil
+		log.Printf("🔧 Using explicit MTP WebSocket URL from environment: %s", url)
+		return url
 	}
 
-	// Try to discover via Consul
-	consulAddr := getEnvOrDefault("CONSUL_ADDR", "localhost:8500")
-	consulURL := fmt.Sprintf("http://%s/v1/catalog/service/openusp-mtp-service", consulAddr)
-
-	log.Printf("🔍 Discovering MTP service via Consul at %s", consulURL)
-
-	resp, err := http.Get(consulURL)
-	if err != nil {
-		// Fallback to default URL if Consul is not available
-		fallbackURL := "ws://localhost:8081/ws"
-		log.Printf("⚠️  Consul not available, using fallback URL: %s", fallbackURL)
-		return fallbackURL, nil
-	}
-	defer resp.Body.Close()
-
-	var services []ConsulService
-	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
-		return "", fmt.Errorf("failed to decode Consul response: %v", err)
+	// Try to load configuration from YAML
+	configPath := "configs/usp-agent.yaml"
+	if _, err := os.Stat(configPath); err == nil {
+		tr369Config, err := config.LoadYAMLTR369Config(configPath)
+		if err == nil && tr369Config.WebSocketURL != "" {
+			log.Printf("✅ Using MTP WebSocket URL from YAML config: %s", tr369Config.WebSocketURL)
+			return tr369Config.WebSocketURL
+		}
 	}
 
-	if len(services) == 0 {
-		return "", fmt.Errorf("no MTP service found in Consul")
-	}
-
-	// Use the first available service
-	service := services[0]
-	address := service.ServiceAddress
-	if address == "localhost" {
-		address = "localhost" // Keep localhost for local development
-	}
-
-	wsURL := fmt.Sprintf("ws://%s:%d/ws", address, service.ServicePort)
-	log.Printf("✅ Discovered MTP service WebSocket URL: %s", wsURL)
-	return wsURL, nil
+	// Fallback to default standard port
+	fallbackURL := "ws://localhost:8081/ws"
+	log.Printf("✅ Using default MTP WebSocket URL: %s", fallbackURL)
+	return fallbackURL
 }
 
-// discoverMTPServiceWithConfig discovers MTP service using configuration-driven approach
-func discoverMTPServiceWithConfig(agentConfig *config.TR369Config) (string, error) {
+// getMTPServiceURLWithConfig gets MTP service URL using configuration-driven approach
+func getMTPServiceURLWithConfig(agentConfig *config.TR369Config) string {
 	if agentConfig == nil {
-		return discoverMTPService()
+		return getMTPServiceURL()
 	}
 
-	// If Consul is disabled or not configured, use static URL
-	if !agentConfig.ConsulEnabled || !agentConfig.ServiceDiscoveryEnabled {
-		if agentConfig.WebSocketURL != "" {
-			log.Printf("🔧 Using configured WebSocket URL: %s", agentConfig.WebSocketURL)
-			return agentConfig.WebSocketURL, nil
-		}
-		// Fallback to default static URL
-		fallbackURL := "ws://localhost:8081/ws"
-		log.Printf("🔧 Using default WebSocket URL: %s", fallbackURL)
-		return fallbackURL, nil
+	// Use configured WebSocket URL
+	if agentConfig.WebSocketURL != "" {
+		log.Printf("🔧 Using configured WebSocket URL: %s", agentConfig.WebSocketURL)
+		return agentConfig.WebSocketURL
 	}
 
-	// Consul-enabled dynamic discovery
-	consulAddr := agentConfig.ConsulAddr
-	if consulAddr == "" {
-		consulAddr = "localhost:8500"
-	}
-
-	// Determine service name from configuration
-	serviceName := "openusp-mtp-service"
-	if agentConfig.ConsulMTPServiceName != "" {
-		serviceName = agentConfig.ConsulMTPServiceName
-	}
-
-	consulURL := fmt.Sprintf("http://%s/v1/catalog/service/%s", consulAddr, serviceName)
-	log.Printf("🔍 Discovering MTP service '%s' via Consul at %s", serviceName, consulURL)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(consulURL)
-	if err != nil {
-		// Fallback to configured static URL if Consul fails
-		if agentConfig.WebSocketURL != "" {
-			log.Printf("⚠️  Consul discovery failed, using configured URL: %s", agentConfig.WebSocketURL)
-			return agentConfig.WebSocketURL, nil
-		}
-		return "", fmt.Errorf("consul discovery failed and no fallback URL configured: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var services []ConsulService
-	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
-		return "", fmt.Errorf("failed to decode Consul response: %v", err)
-	}
-
-	if len(services) == 0 {
-		// Fallback to configured static URL if no services found
-		if agentConfig.WebSocketURL != "" {
-			log.Printf("⚠️  No MTP service found in Consul, using configured URL: %s", agentConfig.WebSocketURL)
-			return agentConfig.WebSocketURL, nil
-		}
-		return "", fmt.Errorf("no MTP service found in Consul and no fallback URL configured")
-	}
-
-	// Use the first available service
-	service := services[0]
-	address := service.ServiceAddress
-	if address == "" || address == "localhost" {
-		address = "localhost" // Keep localhost for local development
-	}
-
-	wsURL := fmt.Sprintf("ws://%s:%d/ws", address, service.ServicePort)
-	log.Printf("✅ Discovered MTP service WebSocket URL via Consul: %s", wsURL)
-	return wsURL, nil
+	// Fallback to standard URL discovery
+	return getMTPServiceURL()
 }
 
-// discoverAPIGatewayWithConfig discovers API Gateway service for device registration
-func discoverAPIGatewayWithConfig(agentConfig *config.TR369Config) (string, error) {
-	if agentConfig == nil {
-		// Default API Gateway URL
-		return "http://localhost:6500", nil
-	}
+// Determine service name from configuration
 
-	// If Consul is disabled, use static configuration
-	if !agentConfig.ConsulEnabled || !agentConfig.ServiceDiscoveryEnabled {
-		if agentConfig.PlatformURL != "" {
-			log.Printf("🔧 Using configured API Gateway URL: %s", agentConfig.PlatformURL)
-			return agentConfig.PlatformURL, nil
+// getAPIGatewayURL gets the API Gateway URL from configuration
+func getAPIGatewayURL() string {
+	// Try to load configuration from YAML
+	configPath := "configs/usp-agent.yaml"
+	if _, err := os.Stat(configPath); err == nil {
+		tr369Config, err := config.LoadYAMLTR369Config(configPath)
+		if err == nil && tr369Config.PlatformURL != "" {
+			log.Printf("✅ Using API Gateway URL from YAML config: %s", tr369Config.PlatformURL)
+			return tr369Config.PlatformURL
 		}
-		// Fallback to default
-		defaultURL := "http://localhost:6500"
-		log.Printf("🔧 Using default API Gateway URL: %s", defaultURL)
-		return defaultURL, nil
 	}
 
-	// Consul-enabled dynamic discovery
-	consulAddr := agentConfig.ConsulAddr
-	if consulAddr == "" {
-		consulAddr = "localhost:8500"
+	// Fallback to environment or default
+	apiGatewayURL := os.Getenv("API_GATEWAY_URL")
+	if apiGatewayURL == "" {
+		apiGatewayURL = "http://localhost:6500" // Standard OpenUSP API Gateway port
 	}
-
-	// Determine service name from configuration
-	serviceName := "openusp-api-gateway"
-	if agentConfig.ConsulAPIGatewayServiceName != "" {
-		serviceName = agentConfig.ConsulAPIGatewayServiceName
-	}
-
-	consulURL := fmt.Sprintf("http://%s/v1/catalog/service/%s", consulAddr, serviceName)
-	log.Printf("🔍 Discovering API Gateway '%s' via Consul at %s", serviceName, consulURL)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(consulURL)
-	if err != nil {
-		// Fallback to configured static URL if Consul fails
-		if agentConfig.PlatformURL != "" {
-			log.Printf("⚠️  Consul discovery failed, using configured URL: %s", agentConfig.PlatformURL)
-			return agentConfig.PlatformURL, nil
-		}
-		return "", fmt.Errorf("consul discovery failed and no fallback URL configured: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var services []ConsulService
-	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
-		return "", fmt.Errorf("failed to decode Consul response: %v", err)
-	}
-
-	if len(services) == 0 {
-		// Fallback to configured static URL if no services found
-		if agentConfig.PlatformURL != "" {
-			log.Printf("⚠️  No API Gateway found in Consul, using configured URL: %s", agentConfig.PlatformURL)
-			return agentConfig.PlatformURL, nil
-		}
-		return "", fmt.Errorf("no API Gateway found in Consul and no fallback URL configured")
-	}
-
-	// Use the first available service
-	service := services[0]
-	address := service.ServiceAddress
-	if address == "" || address == "localhost" {
-		address = "localhost" // Keep localhost for local development
-	}
-
-	apiURL := fmt.Sprintf("http://%s:%d", address, service.ServicePort)
-	log.Printf("✅ Discovered API Gateway URL via Consul: %s", apiURL)
-	return apiURL, nil
+	log.Printf("✅ Using API Gateway URL from environment/default: %s", apiGatewayURL)
+	return apiGatewayURL
 }
 
 type USPClient struct {
@@ -603,12 +471,8 @@ func registerDeviceWithAPI(agentConfig *config.TR369Config, endpointID string) e
 		return nil
 	}
 
-	// Discover API Gateway
-	apiURL, err := discoverAPIGatewayWithConfig(agentConfig)
-	if err != nil {
-		log.Printf("⚠️  Failed to discover API Gateway, skipping registration: %v", err)
-		return nil // Don't fail if registration is not available
-	}
+	// Get API Gateway URL
+	apiURL := getAPIGatewayURL()
 
 	// Prepare device registration data
 	deviceData := map[string]interface{}{
@@ -759,7 +623,7 @@ func main() {
 	} else {
 		// Try to load from default locations
 		configDir := filepath.Join("configs")
-		configInterface, err := config.LoadConfigFromYAML("tr369", configDir)
+		configInterface, err := config.LoadConfigFromYAML("usp", configDir)
 		if err != nil {
 			log.Printf("No configuration file found, using defaults: %v", err)
 		} else {
@@ -808,18 +672,10 @@ func main() {
 	client := NewUSPClient(endpointID, controllerID, *version)
 	defer client.Close()
 
-	// Determine WebSocket URL using configuration-driven service discovery
-	wsURL, err := discoverMTPServiceWithConfig(agentConfig)
-	if err != nil {
-		log.Fatalf("Failed to discover MTP Service: %v", err)
-	}
+	// Get WebSocket URL from configuration
+	wsURL := getMTPServiceURLWithConfig(agentConfig)
 
-	// Register device with API Gateway (if enabled and available)
-	if err := registerDeviceWithAPI(agentConfig, endpointID); err != nil {
-		log.Printf("⚠️  Device registration warning: %v", err)
-	}
-
-	// Connect to MTP Service
+	// Connect to MTP Service (device registration will happen via USP Notify OnBoard message per TR-369)
 	if err := client.Connect(wsURL); err != nil {
 		log.Fatalf("Failed to connect to MTP Service: %v", err)
 	}
@@ -837,8 +693,8 @@ func main() {
 	log.Printf("  make infra-up                    # Start infrastructure (Consul, PostgreSQL)")
 	log.Printf("  make build-all                   # Build all services")
 	log.Printf("  make start-all                   # Start all OpenUSP services")
-	log.Printf("\nThen run this example with:")
-	log.Printf("  go run examples/tr369-agent/main.go")
-	log.Printf("  go run examples/tr369-agent/main.go --config configs/tr369-agent.yaml")
+	log.Printf("\nThen run this agent with:")
+	log.Printf("  make start-usp-agent")
+	log.Printf("  ./build/usp-agent --config configs/usp-agent.yaml")
 	log.Printf("\nThe agent will automatically discover the MTP Service via Consul.")
 }

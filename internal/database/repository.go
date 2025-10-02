@@ -26,11 +26,11 @@ func (r *DeviceRepository) Create(device *Device) error {
 func (r *DeviceRepository) CreateOrUpdate(device *Device) error {
 	// Use PostgreSQL's ON CONFLICT to handle duplicates atomically
 	// This will INSERT or UPDATE based on the unique constraint on endpoint_id
-	
+
 	// First, try to find existing device to preserve ID and CreatedAt
 	var existing Device
 	err := r.db.Where("endpoint_id = ?", device.EndpointID).First(&existing).Error
-	
+
 	if err == nil {
 		// Device exists, update it
 		device.ID = existing.ID
@@ -40,7 +40,7 @@ func (r *DeviceRepository) CreateOrUpdate(device *Device) error {
 		// Some other error occurred
 		return err
 	}
-	
+
 	// Device doesn't exist, use ON CONFLICT to handle race conditions
 	// Use raw SQL for proper UPSERT with ON CONFLICT
 	return r.db.Exec(`

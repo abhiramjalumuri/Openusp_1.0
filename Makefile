@@ -92,10 +92,10 @@ help:
 	@echo "  show-static-endpoints  List all public/local service endpoints"
 	@echo ""
 	@echo "Agent Targets (Pure YAML Configuration):" 
-	@echo "  build-tr369-agent   Build TR-369 USP agent binary"
-	@echo "  build-tr069-agent   Build TR-069 agent binary" 
-	@echo "  start-tr369-agent   Start TR-369 agent with default YAML config"
-	@echo "  start-tr069-agent   Start TR-069 agent"
+	@echo "  build-usp-agent     Build USP agent binary (TR-369)"
+	@echo "  build-cwmp-agent    Build CWMP agent binary (TR-069)" 
+	@echo "  start-usp-agent     Start USP agent with default YAML config"
+	@echo "  start-cwmp-agent    Start CWMP agent with default YAML config"
 	@echo ""
 	@echo "Service Management (all services support --consul flag for service discovery):"
 	@echo "  build-all           Build all components (services + agents)"
@@ -193,31 +193,32 @@ go-check: fmt vet tidy test-syntax
 # =============================================================================
 # Agent Build and Start Targets (Pure YAML Configuration)
 # =============================================================================
-.PHONY: build-tr369-agent build-tr069-agent start-tr369-agent start-tr069-agent
+.PHONY: build-usp-agent build-cwmp-agent start-usp-agent start-cwmp-agent
 
 
 # Build individual agents
-build-tr369-agent:
-	@echo "Building TR-369 USP agent..."
+build-usp-agent:
+	@echo "Building USP agent..."
 	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/tr369-agent examples/tr369-agent/main.go
-	@echo "TR-369 USP agent built -> $(BINARY_DIR)/tr369-agent"
+	@go build $(LDFLAGS) -o $(BINARY_DIR)/usp-agent cmd/usp-agent/main.go
+	@echo "USP agent built -> $(BINARY_DIR)/usp-agent"
 
-build-tr069-agent:
-	@echo "Building TR-069 agent..."
+build-cwmp-agent:
+	@echo "Building CWMP agent..."
 	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/tr069-agent examples/tr069-agent/main.go
-	@echo "TR-069 agent built -> $(BINARY_DIR)/tr069-agent"
+	@go build $(LDFLAGS) -o $(BINARY_DIR)/cwmp-agent cmd/cwmp-agent/main.go
+	@echo "CWMP agent built -> $(BINARY_DIR)/cwmp-agent"
 
 # Start agents with default YAML configuration
-start-tr369-agent: build-tr369-agent
-	@echo "Starting TR-369 agent with default YAML configuration..."
-	@echo "Configuration: configs/tr369-agent.yaml"
-	@$(BINARY_DIR)/tr369-agent --config configs/tr369-agent.yaml || echo "Agent exited"
+start-usp-agent: build-usp-agent
+	@echo "Starting USP agent with default YAML configuration..."
+	@echo "Configuration: configs/usp-agent.yaml"
+	@$(BINARY_DIR)/usp-agent --config configs/usp-agent.yaml || echo "Agent exited"
 
-start-tr069-agent: build-tr069-agent
-	@echo "Starting TR-069 agent..."
-	@$(BINARY_DIR)/tr069-agent || echo "Agent exited"
+start-cwmp-agent: build-cwmp-agent
+	@echo "Starting CWMP agent..."
+	@echo "Configuration: configs/cwmp-agent.yaml"
+	@$(BINARY_DIR)/cwmp-agent --config configs/cwmp-agent.yaml || echo "Agent exited"
 
 
 # =================================
