@@ -423,10 +423,6 @@ verify-grafana:
 build-ou-all: $(addprefix build-,$(SERVICES))
 	@echo "All OpenUSP services built successfully"
 
-# Build everything (services + agents)
-build-all: build-ou-all
-	@echo "All OpenUSP components built successfully (services + agents)"
-
 clean-ou-all: $(addprefix clean-,$(SERVICES))
 	@echo "All OpenUSP service binaries cleaned"
 
