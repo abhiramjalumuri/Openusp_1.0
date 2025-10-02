@@ -41,9 +41,9 @@ export OPENUSP_CWMP_PASSWORD
 
 # PHONY targets
 .PHONY: help version infra-up infra-down infra-status infra-clean
-.PHONY: infra-volumes setup-grafana check-api-gateway
-.PHONY: build-ou-all clean-ou-all start-ou-all stop-ou-all ou-status consul-status
-.PHONY: start-all stop-all clean-all show-endpoints
+.PHONY: infra-volumes setup-grafana
+.PHONY: build-ou-all build-all clean-ou-all start-ou-all stop-ou-all ou-status consul-status
+.PHONY: start-all stop-all clean-all show-static-endpoints
 .PHONY: $(addprefix build-,$(SERVICES))
 .PHONY: $(addprefix start-,$(SERVICES))
 .PHONY: $(addprefix clean-,$(SERVICES))
@@ -77,7 +77,6 @@ help:
 	@echo "  infra-volumes   List all named infrastructure volumes (OpenUSP)"
 	@echo "  setup-grafana   Configure Grafana with OpenUSP dashboards and data sources"
 	@echo "  verify-grafana  Verify Grafana dashboard data and connectivity"
-	@echo "  check-api-gateway Test API Gateway health endpoint with dynamic port discovery"
 	@echo ""
 	@echo "OpenUSP Service Targets:"
 	@echo "  start-ou-all    Start all OpenUSP services (requires infra-up first)"
@@ -85,24 +84,21 @@ help:
 	@echo "  build-ou-all    Build all OpenUSP services"
 	@echo "  clean-ou-all    Clean all OpenUSP service binaries"
 	@echo "  ou-status       Show status of all OpenUSP services (Consul-aware)"
-	@echo "  consul-status   Show Consul service discovery status"
 	@echo ""
 	@echo "Combined Targets:"
 	@echo "  start-all         Start all services (infrastructure + OpenUSP)"
 	@echo "  stop-all        Stop all services (infrastructure + OpenUSP)"
 	@echo "  clean-all       Clean all services (infrastructure + OpenUSP)"
-	@echo "  show-endpoints  List all public/local service endpoints"
+	@echo "  show-static-endpoints  List all public/local service endpoints"
 	@echo ""
-	@echo "Example Agent Targets:" 
+	@echo "Agent Targets (Pure YAML Configuration):" 
 	@echo "  build-tr369-agent   Build TR-369 USP agent binary"
 	@echo "  build-tr069-agent   Build TR-069 agent binary" 
-	@echo "  start-tr369-agent   Start TR-369 USP agent (uses OPENUSP_USP_WS_URL)"
-	@echo "  start-tr369-v13     Start TR-369 agent with USP v1.3 (default)"
-	@echo "  start-tr369-v14     Start TR-369 agent with USP v1.4"
+	@echo "  start-tr369-agent   Start TR-369 agent with default YAML config"
 	@echo "  start-tr069-agent   Start TR-069 agent"
-	@echo "  Note: All services support --consul flag for service discovery"
 	@echo ""
 	@echo "Service Management (all services support --consul flag for service discovery):"
+	@echo "  build-all           Build all components (services + agents)"
 	@echo "  build-ou-all        Build all OpenUSP services"
 	@echo "  start-all           Start all services (background)"
 	@echo "  stop-all            Stop all services"
@@ -131,7 +127,7 @@ help:
 	@echo "  test-syntax     Test Go syntax without running tests"
 	@echo "  go-check        Run all Go quality checks (fmt, vet, tidy, test-syntax)"
 	@echo ""
-	@echo "Tip: Run 'make show-endpoints' for a full endpoint & credentials overview"
+	@echo "Tip: Run 'make show-static-endpoints' for a full endpoint & credentials overview"
 	@echo "     Run 'make version' for version and protocol information"
 
 # Version Information
@@ -195,10 +191,12 @@ go-check: fmt vet tidy test-syntax
 	@echo "✅ All Go quality checks passed"
 
 # =============================================================================
-# Example Client Build Targets
+# Agent Build and Start Targets (Pure YAML Configuration)
 # =============================================================================
-.PHONY: build-tr369-agent build-tr069-agent start-tr369-agent start-tr069-agent start-tr369-v13 start-tr369-v14
+.PHONY: build-tr369-agent build-tr069-agent start-tr369-agent start-tr069-agent
 
+
+# Build individual agents
 build-tr369-agent:
 	@echo "Building TR-369 USP agent..."
 	@mkdir -p $(BINARY_DIR)
@@ -211,61 +209,20 @@ build-tr069-agent:
 	@go build $(LDFLAGS) -o $(BINARY_DIR)/tr069-agent examples/tr069-agent/main.go
 	@echo "TR-069 agent built -> $(BINARY_DIR)/tr069-agent"
 
-# Example Agent Start Targets (with Dynamic Service Discovery)
+# Start agents with default YAML configuration
 start-tr369-agent: build-tr369-agent
-	@echo "Starting TR-369 (USP) agent with Consul service discovery..."
-	@$(BINARY_DIR)/tr369-agent || echo "Agent exited"
+	@echo "Starting TR-369 agent with default YAML configuration..."
+	@echo "Configuration: configs/tr369-agent.yaml"
+	@$(BINARY_DIR)/tr369-agent --config configs/tr369-agent.yaml || echo "Agent exited"
 
 start-tr069-agent: build-tr069-agent
-	@echo "Starting TR-069 agent with Consul service discovery..."
+	@echo "Starting TR-069 agent..."
 	@$(BINARY_DIR)/tr069-agent || echo "Agent exited"
 
-# TR-369 Agent Version-Specific Targets
-start-tr369-v13: build-tr369-agent
-	@echo "Starting TR-369 agent with USP Protocol v1.3..."
-	@echo "Command: $(BINARY_DIR)/tr369-agent -version 1.3"
-	@$(BINARY_DIR)/tr369-agent -version 1.3 || echo "Agent exited"
 
-start-tr369-v14: build-tr369-agent
-	@echo "Starting TR-369 agent with USP Protocol v1.4..."
-	@echo "Command: $(BINARY_DIR)/tr369-agent -version 1.4"
-	@$(BINARY_DIR)/tr369-agent -version 1.4 || echo "Agent exited"
-
-# Consul is now enabled by default in development
-# To disable: CONSUL_ENABLED=false make start-mtp-service
-
-consul-demo:
-	@echo "🚀 OpenUSP Consul Service Discovery Demo"
-	@echo "========================================"
-	@echo ""
-	@echo "Prerequisites:"
-	@echo "1. Consul must be running: make infra-up consul"
-	@echo "2. Start services (Consul enabled by default): make start-mtp-service"
-	@echo "3. Run agent: go run examples/tr369-agent/main.go"
-	@echo ""
-	@echo "All services support --consul flag and CONSUL_ENABLED environment variable"
-
-
-
-consul-services:
-	@echo "📋 Consul-Enabled Services (use CONSUL_ENABLED=true)"
-	@echo "===================================================="
-	@echo "Core Services:"
-	@echo "  CONSUL_ENABLED=true make start-data-service    # Data Service"
-	@echo "  CONSUL_ENABLED=true make start-api-gateway     # API Gateway"
-	@echo "  CONSUL_ENABLED=true make start-mtp-service     # MTP Service"
-	@echo "  CONSUL_ENABLED=true make start-usp-service     # USP Service"
-	@echo "  CONSUL_ENABLED=true make start-cwmp-service    # CWMP Service"
-	@echo ""
-	@echo "Client Examples:"
-	@echo "  make start-tr369-consul   # TR-369 USP Client with Service Discovery"
-	@echo ""
-	@echo "Management:"
-	@echo "  make consul-status        # Show service registry status"
-	@echo "  make consul-demo          # Demo instructions"
-	@echo ""
-	@echo "Infrastructure:"
-	@echo "  make infra-up             # Start Consul + PostgreSQL + other services"
+# =================================
+# Configuration and Testing Targets  
+# =================================
 
 start-all-consul:
 	@echo "🚀 Starting All OpenUSP Services with Consul Service Discovery"
@@ -295,7 +252,7 @@ start-all-consul:
 	@echo ""
 	@echo "✅ All services started! Check status:"
 	@echo "   🔍 Consul UI: http://localhost:8500/ui/"
-	@echo "   📊 Service Status: make consul-status"
+	@echo "   📊 Service Status: make ou-status"
 	@echo "   📋 Individual Logs: tail -f logs/*-consul.log"
 	@echo ""
 	@echo "🧪 Test with TR-369 client: make start-tr369-consul"
@@ -430,54 +387,6 @@ ou-status:
 		echo "  ❌ CWMP Service not running"; \
 	fi
 
-# Consul Service Discovery Status
-consul-status:
-	@echo "Consul Service Discovery Status:"
-	@echo "==============================="
-	@echo ""
-	@# Check if Consul is available
-	@if curl -s http://localhost:8500/v1/agent/self >/dev/null 2>&1; then \
-		echo "🏛️  Consul Agent: ✅ Available at http://localhost:8500"; \
-		consul_ui="http://localhost:8500/ui"; \
-		echo "🌐 Consul UI: $$consul_ui"; \
-		echo ""; \
-		echo "📋 Registered Services:"; \
-		services=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | jq -r 'to_entries[] | select(.value.Service | startswith("openusp-")) | "\(.value.Service):\(.value.Port):\(.value.Meta.grpc_port // "N/A")"' 2>/dev/null || echo ""); \
-		if [ -n "$$services" ]; then \
-			printf "%-25s %-10s %-10s %s\n" "SERVICE" "HTTP" "GRPC" "HEALTH"; \
-			printf "%-25s %-10s %-10s %s\n" "-------" "----" "----" "------"; \
-			echo "$$services" | while IFS=: read -r service_name http_port grpc_port; do \
-				health=$$(curl -s "http://localhost:8500/v1/agent/checks" 2>/dev/null | jq -r ".[] | select(.ServiceName == \"$$service_name\") | .Status" 2>/dev/null | head -1 || echo "unknown"); \
-				if [ "$$health" = "passing" ]; then \
-					health_display="✅ passing"; \
-				elif [ "$$health" = "critical" ]; then \
-					health_display="❌ critical"; \
-				else \
-					health_display="⚠️  $$health"; \
-				fi; \
-				printf "%-25s %-10s %-10s %s\n" "$$service_name" "$$http_port" "$$grpc_port" "$$health_display"; \
-			done; \
-		else \
-			echo "  No OpenUSP services registered in Consul"; \
-		fi; \
-		echo ""; \
-		echo "🔍 Health Check Details:"; \
-		checks=$$(curl -s http://localhost:8500/v1/agent/checks 2>/dev/null | jq -r 'to_entries[] | select(.value.ServiceName | startswith("openusp-")) | "\(.value.ServiceName):\(.value.Status):\(.value.Output)"' 2>/dev/null || echo ""); \
-		if [ -n "$$checks" ]; then \
-			echo "$$checks" | while IFS=: read -r service_name status output; do \
-				if [ "$$status" = "passing" ]; then \
-					echo "  ✅ $$service_name: $$status"; \
-				else \
-					echo "  ❌ $$service_name: $$status"; \
-					echo "     Output: $$(echo "$$output" | head -c 100)..."; \
-				fi; \
-			done; \
-		fi; \
-	else \
-		echo "❌ Consul Agent: Not available at http://localhost:8500"; \
-		echo "   Start with: make infra-up"; \
-	fi
-
 infra-clean:
 	@echo "Cleaning all 3rd party infrastructure services and named volumes..."
 	@docker-compose -f $(DOCKER_COMPOSE_INFRA) down --remove-orphans 2>/dev/null || true
@@ -510,13 +419,13 @@ verify-grafana:
 	@echo "Verifying Grafana dashboard data and connectivity..."
 	@./scripts/verify-grafana.sh
 
-check-api-gateway:
-	@echo "Checking API Gateway health endpoint..."
-	@./scripts/check-api-gateway.sh
-
 # OpenUSP Service Commands
 build-ou-all: $(addprefix build-,$(SERVICES))
 	@echo "All OpenUSP services built successfully"
+
+# Build everything (services + agents)
+build-all: build-ou-all
+	@echo "All OpenUSP components built successfully (services + agents)"
 
 clean-ou-all: $(addprefix clean-,$(SERVICES))
 	@echo "All OpenUSP service binaries cleaned"
@@ -570,7 +479,7 @@ clean-all: clean-ou-all infra-clean
 	@echo "All services cleaned"
 
 # Endpoint Overview
-show-endpoints:
+show-static-endpoints:
 	@echo "Service Endpoints (unified configuration)"
 	@echo "========================================"
 	@echo "API Gateway:      http://localhost:$(OPENUSP_API_GATEWAY_PORT)"
@@ -595,7 +504,7 @@ show-endpoints:
 	@echo "Adminer:          http://localhost:$(OPENUSP_ADMINER_PORT)"
 	@echo "  DB Credentials: $(OPENUSP_DB_USER) / $(OPENUSP_DB_PASSWORD) ($(OPENUSP_DB_NAME))"
 	@echo "------------------------------------------------"
-	@echo "Use: make start-all (start everything) | make stop-all | make show-endpoints"
+	@echo "Use: make start-all (start everything) | make stop-all | make show-static-endpoints"
 
 # Swagger Documentation Generation
 .PHONY: swagger-gen

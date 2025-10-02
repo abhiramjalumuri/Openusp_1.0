@@ -232,13 +232,13 @@ SIMULATE_DEVICE_RESPONSES=true
 ### 1. Load Configuration from File
 ```go
 // TR-369 Agent
-config, err := config.LoadTR369Config("configs/my-tr369-agent.env")
+config, err := config.LoadConfigFromYAML("tr369", "configs/")
 if err != nil {
     log.Fatal("Failed to load configuration:", err)
 }
 
 // TR-069 Agent
-config, err := config.LoadTR069Config("configs/my-tr069-agent.env")
+config, err := config.LoadConfigFromYAML("tr069", "configs/")
 if err != nil {
     log.Fatal("Failed to load configuration:", err)
 }

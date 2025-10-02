@@ -1,0 +1,72 @@
+# TR-369 USP Agent Configuration - Consul Enabled
+# ===============================================
+
+service_discovery:
+  consul_enabled: true
+  consul_addr: "localhost:8500"
+  consul_datacenter: "openusp-dev"
+
+device_info:
+  endpoint_id: "usp://plume-tr369-demo-agent-001"
+  product_class: "HomeGateway"
+  manufacturer: "Plue"
+  model_name: "USP-Gateway-v1"
+  serial_number: "Plume-USP-CONSUL-001"
+  software_version: "1.1.0"
+  hardware_version: "1.0"
+  device_type: "gateway"
+  oui: "00D04F"
+
+usp_protocol:
+  version: "1.4"
+  supported_versions: ["1.3", "1.4"]
+  agent_role: "agent"
+  command_key: "usp-agent-consul-001"
+
+mtp:
+  default_type: "websocket"
+
+  websocket:
+    url: "ws://localhost:8081/ws"
+    subprotocol: "usp.v1"
+    ping_interval: "30s"
+    pong_timeout: "5s"
+    reconnect_interval: "10s"
+    max_reconnect_attempts: 10
+    message_encoding: "protobuf"
+
+platform:
+  url: "http://localhost:6500"
+  api_version: "v1"
+  registration_endpoint: "/api/v1/devices"
+  heartbeat_interval: "60s"
+
+consul_integration:
+  service_discovery_enabled: true
+  mtp_service_name: "openusp-mtp-service"
+  api_gateway_service_name: "openusp-api-gateway"
+  health_check_interval: "10s"
+  service_tags: ["tr369", "usp", "agent", "consul", "v1.1.0"]
+
+agent_behavior:
+  auto_register: true
+  periodic_inform_enabled: true
+  periodic_inform_interval: "300s"
+  parameter_update_notification: true
+  event_notification: true
+  diagnostic_mode: false
+  max_retry_count: 3
+  retry_interval: "10s"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file: "logs/tr369-agent-consul.log"
+
+development:
+  mode: true
+  mock_data_enabled: false
+  test_mode: false
+  verbose_logging: false
+
