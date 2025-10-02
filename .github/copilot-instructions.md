@@ -8,18 +8,19 @@ This is a cloud-native microservice implementation of the Broadband Forum's TR-3
 - **Multi-Protocol Support**: STOMP, MQTT, WebSocket, and Unix Domain Socket MTPs (Message Transfer Protocols)
 - **TR-181 Device Model**: Complete support for the standardized device data model (Device:2 v2.19.1)
 - **Advanced USP Parsing**: Comprehensive USP Protocol Buffers parsing and validation for versions 1.3 and 1.4
-- **Dual Version Support**: Native support for both USP 1.3 and 1.4 with automatic version detection
-- **Device Lifecycle Management**: Agent/device onboarding, provisioning, and management
-- **Scalable Database Layer**: Multi-device data storage based on TR-181 data model hierarchy
-- **RESTful Management API**: Standard interfaces for device configuration and monitoring via API Gateway
+- **Dual Version Support**: Native support for both USP 1.3 and 1.4 with command-line version selection
+- **Device Lifecycle Management**: Agent/device onboarding, provisioning, and management with duplicate handling
+- **Robust Database Layer**: PostgreSQL with atomic upsert operations and soft-delete recovery
+- **Complete RESTful API**: Full CRUD operations including device deletion with comprehensive error handling
 - **Complete USP Operations**: Full TR-369 command set (Get, Set, Add, Delete, Operate, Notify, GetSupportedDM, GetInstances)
 - **Message Transport Layer**: Enterprise-grade MTP service with comprehensive USP message processing
 - **CWMP (TR-069) Support**: Backward compatibility with existing management systems
-- **Swagger UI Integration**: Interactive API documentation and testing interface for all REST endpoints
-- **Working Protocol Agents**: Complete TR-369 and TR-069 agents with onboarding functionality
-- **Development Infrastructure**: Comprehensive development scripts and Docker-based infrastructure
-- **Service Discovery**: Consul-enabled microservice architecture with automatic service registration
-- **Unified Configuration**: Single binary architecture with runtime Consul flag support
+- **Interactive API Documentation**: Complete Swagger UI integration with live testing capabilities
+- **Working Protocol Agents**: Complete TR-369 and TR-069 agents with enhanced onboarding functionality
+- **Production-Ready Infrastructure**: Comprehensive development scripts and Docker-based infrastructure
+- **Dynamic Service Discovery**: Consul-enabled microservice architecture with automatic service registration
+- **Unified Configuration**: Single binary architecture with runtime --consul flag and service-specific ports
+- **Comprehensive Monitoring**: Fixed Grafana dashboards with real-time metrics from all services
 
 ## Architecture Principles
 1. **Single Binary Architecture**: All services are unified binaries with runtime --consul flag support
@@ -349,16 +350,49 @@ openusp/
 ### 🔧 **Key Features Implemented**
 - **USP Message Processing**: Complete parsing pipeline for both v1.3 and v1.4
 - **Protocol Buffer Support**: Native protobuf marshaling/unmarshaling
-- **Version Detection**: Automatic USP version identification
+- **Version Detection**: Automatic USP version identification and command-line selection
 - **Operation Support**: All TR-369 operations (Get, Set, Add, Delete, Operate, Notify, GetSupportedDM, GetInstances)
 - **Response Generation**: Automatic USP response creation
 - **Multi-Transport**: MQTT, STOMP, WebSocket, Unix Domain Socket support
 - **Validation**: Comprehensive record and message validation
 - **Error Handling**: Detailed error collection and reporting
 - **REST API Gateway**: Complete device management API with gRPC backend
+- **Complete CRUD Operations**: Full device lifecycle with Create, Read, Update, Delete operations
+- **Database Constraint Handling**: PostgreSQL ON CONFLICT upsert with soft-delete recovery
 - **gRPC Microservices**: Internal service communication via Protocol Buffers
 - **Database Abstraction**: Repository pattern with GORM ORM and PostgreSQL
 - **Health Monitoring**: Comprehensive health checks across all services
+- **Interactive Documentation**: Complete Swagger UI with live API testing
+- **Monitoring Dashboards**: Fixed Grafana dashboards with real-time metrics
+
+## Critical Database Architecture
+
+### **Device Constraint Resolution** (Recently Fixed - October 2025)
+The platform now handles device re-registration scenarios properly with a robust database constraint resolution system:
+
+**Problem Solved**: 
+- Duplicate key constraint violation on `devices.endpoint_id` when devices attempt to re-register
+- Race conditions between SELECT and INSERT operations in concurrent scenarios
+- Soft-deleted devices preventing new registrations with same endpoint_id
+
+**Solution Implemented** (`internal/database/repository.go`):
+```go
+// PostgreSQL ON CONFLICT upsert with soft-delete recovery
+INSERT INTO devices (...) VALUES (...)
+ON CONFLICT (endpoint_id) 
+DO UPDATE SET 
+    // Update all device fields
+    deleted_at = NULL,           // Critical: Restore soft-deleted devices
+    updated_at = NOW()
+```
+
+**Benefits**:
+- **IoT Device Re-registration**: Devices can re-register with same endpoint_id without errors
+- **Atomic Operations**: Eliminates race conditions in high-concurrency scenarios  
+- **Soft-Delete Recovery**: Previously deleted devices are automatically restored
+- **Production Ready**: Handles real-world IoT device lifecycle management
+
+**API Integration**: Complete CRUD operations including DELETE endpoint with Swagger documentation
 
 ## Critical Configuration Details
 
@@ -436,34 +470,31 @@ make infra-status              # Check infrastructure health
 
 ## Service Endpoints
 
-### Production Endpoints (Default Ports)
-- **API Gateway**: `http://localhost:8080` (REST API Gateway)
-  - Health Check: `http://localhost:8080/health`
-  - Status: `http://localhost:8080/status`
-  - **Swagger UI**: `http://localhost:8080/swagger/index.html`
-  - Devices API: `http://localhost:8080/api/v1/devices`
-  - Parameters API: `http://localhost:8080/api/v1/parameters`
-  - Alerts API: `http://localhost:8080/api/v1/alerts`
-  - Sessions API: `http://localhost:8080/api/v1/sessions`
-- **Data Service**: `localhost:9092` (gRPC internal service)
-  - Health Check: gRPC HealthCheck method
-  - Status: gRPC GetStatus method
-  - All database operations via gRPC
-- **MTP Service**: `http://localhost:8081` 
-  - Demo UI: `http://localhost:8081/usp`
-  - Health Check: `http://localhost:8081/health`
-  - WebSocket: `ws://localhost:8081/ws`
-- **CWMP Service**: `http://localhost:7547` (Standard TR-069 port)
-  - Health Check: `http://localhost:7547/health`
-  - Status: `http://localhost:7547/status`
+### Dynamic Service Endpoints (Consul Discovery)
+- **Service Discovery**: All services register with Consul for dynamic port allocation
+- **API Gateway**: Dynamic ports with Consul registration
+  - Health Check: `/health`
+  - Status: `/status`
+  - **Swagger UI**: `/swagger/index.html`
+  - Complete REST API: `/api/v1/devices`, `/api/v1/parameters`, `/api/v1/alerts`, `/api/v1/sessions`
+- **Data Service**: Dynamic gRPC and HTTP ports
+  - gRPC: Internal service communication
+  - HTTP: Health checks and metrics (`/health`, `/status`, `/metrics`)
+- **MTP Service**: Dynamic ports with WebSocket support
+  - Demo UI: `/usp`
+  - Health Check: `/health`
+  - WebSocket: `/ws`
+- **CWMP Service**: Standard TR-069 port (7547) or dynamic
+  - Health Check: `/health`
+  - Status: `/status`
   - Authentication: Basic Auth (acs/acs123)
 - **USP Core Service**: gRPC internal communication
 
-### Development Endpoints (Alternative Ports)
-- **API Gateway**: `http://localhost:8082` (with Swagger UI)
-  - **Swagger UI**: `http://localhost:8082/swagger/index.html`
-  - All REST endpoints available with `/api/v1` prefix
-- **MTP Service**: `http://localhost:8083`
+### Static Configuration Endpoints (Environment Variables)
+- **API Gateway**: `OPENUSP_API_GATEWAY_PORT=6500` (default)
+- **MTP Service**: `OPENUSP_MTP_SERVICE_PORT=8081` (default)
+- **CWMP Service**: `OPENUSP_CWMP_SERVICE_PORT=7547` (TR-069 standard)
+- **Data Service**: `OPENUSP_DATA_SERVICE_ADDR=localhost:56400` (gRPC default)
 - **CWMP Service**: `http://localhost:7548`  
 - **Data Service**: `localhost:9093` (gRPC)
 - **PostgreSQL**: `localhost:5433` (for development)
@@ -610,4 +641,54 @@ To recreate this entire project from scratch using these instructions:
 - [ ] Modern build system with comprehensive targets
 - [ ] Production deployment guides complete
 
-This project represents a complete, production-ready TR-369 User Service Platform implementation with modern microservice architecture, comprehensive protocol support, and user-focused documentation.
+## Latest Improvements (October 2025)
+
+### ✅ **Recent Critical Fixes**
+
+1. **Database Constraint Resolution** 
+   - Fixed duplicate key constraint violation for `devices.endpoint_id`
+   - Implemented PostgreSQL ON CONFLICT upsert with atomic operations
+   - Added soft-delete recovery (sets `deleted_at = NULL` on update)
+   - Enables proper IoT device re-registration scenarios
+
+2. **Complete Device CRUD API**
+   - Added DELETE device endpoint with proper error handling
+   - Complete Swagger UI documentation for all CRUD operations
+   - Full device lifecycle management through REST API
+   - Comprehensive error responses and status codes
+
+3. **Enhanced Service Configuration**
+   - Service-specific environment variables (`OPENUSP_*_PORT`)
+   - Dynamic port allocation with Consul integration
+   - Runtime --consul flag support for all services
+   - Fixed port conflicts in development environments
+
+4. **Monitoring Dashboard Fixes**
+   - Fixed all 4 Grafana dashboards with correct data source UIDs
+   - Replaced non-existent metrics with available Go runtime metrics
+   - Real-time monitoring of all OpenUSP services
+   - Complete platform observability with Prometheus integration
+
+5. **Protocol Agent Enhancements**
+   - Enhanced TR-369 USP agent with improved WebSocket handling
+   - Improved TR-069 CWMP agent with flexible SOAP parsing
+   - Working device onboarding demonstrations
+   - Binary message handling and authentication
+
+### 🎯 **Current State Summary**
+- **Database Operations**: ✅ All CRUD operations working with constraint handling
+- **API Documentation**: ✅ Complete Swagger UI with interactive testing
+- **Service Discovery**: ✅ Dynamic Consul-based port allocation
+- **Monitoring**: ✅ All 4 Grafana dashboards displaying real-time metrics
+- **Protocol Compliance**: ✅ TR-369 USP and TR-069 CWMP fully functional
+- **Development Workflow**: ✅ Clean build system with comprehensive targets
+
+### 🚀 **Production Readiness**
+The OpenUSP platform now handles real-world IoT scenarios including:
+- Device re-registration with same endpoint_id (no more constraint violations)
+- Soft-deleted device recovery and restoration
+- High-concurrency device onboarding with atomic database operations
+- Complete API lifecycle management with proper error handling
+- Comprehensive monitoring and observability
+
+This project represents a complete, production-ready TR-369 User Service Platform implementation with modern microservice architecture, comprehensive protocol support, and robust database constraint handling for real-world IoT device management scenarios.
