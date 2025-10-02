@@ -420,7 +420,7 @@ func main() {
 	}
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfig("openusp-cwmp-service", "cwmp-service", 7547)
+	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-cwmp-service", "cwmp-service", 7547, "OPENUSP_CWMP_SERVICE_PORT")
 
 	// Initialize Consul if enabled
 	var registry *consul.ServiceRegistry

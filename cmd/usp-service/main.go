@@ -620,7 +620,7 @@ func main() {
 	}
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfig("openusp-usp-service", "usp-service", 56250)
+	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 56250, "OPENUSP_USP_SERVICE_PORT")
 
 	// Initialize Consul if enabled
 	var registry *consul.ServiceRegistry

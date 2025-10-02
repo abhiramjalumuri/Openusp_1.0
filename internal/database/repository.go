@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,6 +20,49 @@ func NewDeviceRepository(db *gorm.DB) *DeviceRepository {
 // Create creates a new device
 func (r *DeviceRepository) Create(device *Device) error {
 	return r.db.Create(device).Error
+}
+
+// CreateOrUpdate creates a new device or updates an existing one based on endpoint_id
+func (r *DeviceRepository) CreateOrUpdate(device *Device) error {
+	// Use PostgreSQL's ON CONFLICT to handle duplicates atomically
+	// This will INSERT or UPDATE based on the unique constraint on endpoint_id
+	
+	// First, try to find existing device to preserve ID and CreatedAt
+	var existing Device
+	err := r.db.Where("endpoint_id = ?", device.EndpointID).First(&existing).Error
+	
+	if err == nil {
+		// Device exists, update it
+		device.ID = existing.ID
+		device.CreatedAt = existing.CreatedAt
+		return r.db.Save(device).Error
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Some other error occurred
+		return err
+	}
+	
+	// Device doesn't exist, use ON CONFLICT to handle race conditions
+	// Use raw SQL for proper UPSERT with ON CONFLICT
+	return r.db.Exec(`
+		INSERT INTO devices (endpoint_id, product_class, manufacturer, model_name, serial_number, 
+			software_version, hardware_version, status, ip_address, connection_type, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (endpoint_id) 
+		DO UPDATE SET 
+			product_class = EXCLUDED.product_class,
+			manufacturer = EXCLUDED.manufacturer,
+			model_name = EXCLUDED.model_name,
+			serial_number = EXCLUDED.serial_number,
+			software_version = EXCLUDED.software_version,
+			hardware_version = EXCLUDED.hardware_version,
+			status = EXCLUDED.status,
+			ip_address = EXCLUDED.ip_address,
+			connection_type = EXCLUDED.connection_type,
+			deleted_at = NULL,
+			updated_at = NOW()`,
+		device.EndpointID, device.ProductClass, device.Manufacturer, device.ModelName,
+		device.SerialNumber, device.SoftwareVersion, device.HardwareVersion,
+		device.Status, device.IPAddress, device.ConnectionType).Error
 }
 
 // GetByID retrieves a device by ID

@@ -69,7 +69,7 @@ func (s *DataServiceServer) CreateDevice(ctx context.Context, req *pb.CreateDevi
 	}
 
 	device := database.ConvertProtoToDevice(req.Device)
-	if err := s.repos.Device.Create(device); err != nil {
+	if err := s.repos.Device.CreateOrUpdate(device); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create device: %v", err)
 	}
 

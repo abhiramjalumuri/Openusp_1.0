@@ -60,8 +60,8 @@ type APIGateway struct {
 
 // NewAPIGateway creates a new API Gateway instance
 func NewAPIGateway() (*APIGateway, error) {
-	// Load configuration
-	config := config.LoadDeploymentConfig("openusp-api-gateway", "api-gateway", 6500)
+	// Load configuration with service-specific port environment variable
+	config := config.LoadDeploymentConfigWithPortEnv("openusp-api-gateway", "api-gateway", 6500, "OPENUSP_API_GATEWAY_PORT")
 
 	gateway := &APIGateway{
 		config:  config,
@@ -523,6 +523,16 @@ func (gw *APIGateway) updateDevice(c *gin.Context) {
 }
 
 // Delete device
+// @Summary Delete Device
+// @Description Delete a device by ID from the OpenUSP platform
+// @Tags Devices
+// @Accept json
+// @Produce json
+// @Param id path int true "Device ID"
+// @Success 200 {object} map[string]interface{} "Device deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Failure 500 {object} map[string]interface{} "Failed to delete device"
+// @Router /devices/{id} [delete]
 func (gw *APIGateway) deleteDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -919,9 +929,9 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  CONSUL_ENABLED     - Enable Consul service discovery (default: true)")
-		fmt.Println("  SERVICE_PORT       - Server port (default: 6500)")
-		fmt.Println("  DATA_SERVICE_ADDR  - Data service gRPC address (default: localhost:56400)")
+		fmt.Println("  CONSUL_ENABLED           - Enable Consul service discovery (default: true)")
+		fmt.Println("  OPENUSP_API_GATEWAY_PORT - Server port (default: 6500)")
+		fmt.Println("  DATA_SERVICE_ADDR        - Data service gRPC address (default: localhost:56400)")
 		return
 	}
 
@@ -930,7 +940,7 @@ func main() {
 		os.Setenv("CONSUL_ENABLED", "true")
 	}
 	if *port != 6500 {
-		os.Setenv("SERVICE_PORT", fmt.Sprintf("%d", *port))
+		os.Setenv("OPENUSP_API_GATEWAY_PORT", fmt.Sprintf("%d", *port))
 	}
 
 	// Create API Gateway

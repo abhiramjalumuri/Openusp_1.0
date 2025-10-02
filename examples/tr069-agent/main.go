@@ -67,12 +67,12 @@ func discoverCWMPService() (string, error) {
 	if address == "127.0.0.1" {
 		address = "localhost" // Use localhost for better compatibility
 	}
-	
+
 	port := service.ServicePort
 	if port == 0 {
 		port = service.Port
 	}
-	
+
 	cwmpServiceURL := fmt.Sprintf("http://%s:%d", address, port)
 	log.Printf("✅ Found CWMP service at: %s", cwmpServiceURL)
 
@@ -171,7 +171,7 @@ func (c *CWMPClient) SendInform(inform *Inform) error {
 	// Set headers
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	req.Header.Set("SOAPAction", "")
-	
+
 	// Add basic auth if credentials provided
 	if c.username != "" && c.password != "" {
 		req.SetBasicAuth(c.username, c.password)

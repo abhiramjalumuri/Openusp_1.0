@@ -37,13 +37,18 @@ type DeploymentConfig struct {
 
 // LoadDeploymentConfig loads configuration from environment variables with defaults
 func LoadDeploymentConfig(serviceName, serviceType string, defaultPort int) *DeploymentConfig {
+	return LoadDeploymentConfigWithPortEnv(serviceName, serviceType, defaultPort, "SERVICE_PORT")
+}
+
+// LoadDeploymentConfigWithPortEnv loads configuration with custom port environment variable
+func LoadDeploymentConfigWithPortEnv(serviceName, serviceType string, defaultPort int, portEnvVar string) *DeploymentConfig {
 	config := &DeploymentConfig{
 		// Service Discovery defaults (enabled by default for development)
 		ConsulEnabled: getEnvBool("CONSUL_ENABLED", true),
 		ConsulAddr:    getEnvString("CONSUL_ADDR", "localhost:8500"),
 
 		// Service defaults
-		ServicePort: getEnvInt("SERVICE_PORT", defaultPort),
+		ServicePort: getEnvInt(portEnvVar, defaultPort),
 		ServiceName: serviceName,
 		ServiceType: serviceType,
 

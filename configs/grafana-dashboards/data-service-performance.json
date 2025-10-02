@@ -25,7 +25,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -76,10 +76,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "database_connections_active{job=\"openusp-data-service\"}",
+          "expr": "openusp_active_connections{job=\"openusp-data-service\"}",
           "legendFormat": "Active Connections",
           "range": false,
           "refId": "A"
@@ -91,7 +91,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -142,10 +142,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "device_count_total{job=\"openusp-data-service\"}",
+          "expr": "openusp_devices_onboarded_total{job=\"openusp-data-service\"}",
           "legendFormat": "Total Devices",
           "range": false,
           "refId": "A"
@@ -157,7 +157,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -235,10 +235,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(database_queries_total{job=\"openusp-data-service\"}[5m])",
+          "expr": "rate(go_memstats_alloc_bytes_total{job=\"openusp-data-service\"}[5m])",
           "legendFormat": "{{operation}}",
           "range": true,
           "refId": "A"
@@ -250,7 +250,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -328,10 +328,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(database_query_duration_seconds_sum{job=\"openusp-data-service\"}[5m]) / rate(database_query_duration_seconds_count{job=\"openusp-data-service\"}[5m]) * 1000",
+          "expr": "go_memstats_heap_alloc_bytes{job=\"openusp-data-service\"} / 1024 / 1024",
           "legendFormat": "{{operation}}",
           "range": true,
           "refId": "A"
@@ -343,7 +343,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -421,10 +421,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "grpc_server_handled_total{job=\"openusp-data-service\"}",
+          "expr": "go_goroutines{job=\"openusp-data-service\"}",
           "legendFormat": "{{grpc_method}} - {{grpc_code}}",
           "range": true,
           "refId": "A"
@@ -436,7 +436,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -514,10 +514,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "tr181_objects_loaded{job=\"openusp-data-service\"}",
+          "expr": "up{job=\"openusp-data-service\"}",
           "legendFormat": "TR-181 Objects",
           "range": true,
           "refId": "A"
@@ -525,10 +525,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "parameter_count_total{job=\"openusp-data-service\"}",
+          "expr": "process_resident_memory_bytes{job=\"openusp-data-service\"} / 1024 / 1024",
           "legendFormat": "Parameters",
           "range": true,
           "refId": "B"

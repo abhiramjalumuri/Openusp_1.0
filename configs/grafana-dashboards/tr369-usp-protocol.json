@@ -25,7 +25,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -103,10 +103,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "usp_messages_processed_total{job=\"openusp-mtp-service\"}",
+          "expr": "openusp_usp_messages_total{job=\"openusp-mtp-service\"}",
           "legendFormat": "Total Messages",
           "range": true,
           "refId": "A"
@@ -114,10 +114,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(usp_messages_processed_total{job=\"openusp-mtp-service\"}[5m])",
+          "expr": "rate(openusp_usp_messages_total{job=\"openusp-mtp-service\"}[5m])",
           "legendFormat": "Messages/sec",
           "range": true,
           "refId": "B"
@@ -129,7 +129,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -207,10 +207,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "usp_version_detected{job=\"openusp-mtp-service\"}",
+          "expr": "openusp_service_info{job=\"openusp-mtp-service\"}",
           "legendFormat": "USP v{{version}}",
           "range": true,
           "refId": "A"
@@ -222,7 +222,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -300,10 +300,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "usp_operations_total{job=\"openusp-mtp-service\"}",
+          "expr": "go_goroutines{job=\"openusp-mtp-service\"}",
           "legendFormat": "{{operation}}",
           "range": true,
           "refId": "A"
@@ -315,7 +315,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -393,10 +393,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "websocket_connections{job=\"openusp-mtp-service\"}",
+          "expr": "openusp_active_connections{job=\"openusp-mtp-service\"}",
           "legendFormat": "Active WebSocket Connections",
           "range": true,
           "refId": "A"
@@ -408,7 +408,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -486,10 +486,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "device_registrations_total{job=\"openusp-usp-service\"}",
+          "expr": "up{job=\"openusp-usp-service\"}",
           "legendFormat": "Total Registrations",
           "range": true,
           "refId": "A"
@@ -497,10 +497,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "active_devices{job=\"openusp-usp-service\"}",
+          "expr": "go_memstats_heap_alloc_bytes{job=\"openusp-usp-service\"} / 1024 / 1024",
           "legendFormat": "Active Devices",
           "range": true,
           "refId": "B"

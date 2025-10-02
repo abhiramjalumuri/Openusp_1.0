@@ -28,9 +28,9 @@ const (
 	deviceSoftwareVersion = "1.0.0"
 	deviceHardwareVersion = "1.0"
 	deviceProductClass    = "DemoAgent"
-	
+
 	// Protocol Version Support
-	defaultUSPVersion = "1.3"
+	defaultUSPVersion         = "1.3"
 	supportedProtocolVersions = "1.3,1.4"
 )
 
@@ -77,7 +77,7 @@ func printHelp() {
 
 // printAgentInfo displays agent and device information
 func printAgentInfo() {
-	fmt.Println("OpenUSP TR-369 Demo Agent Information") 
+	fmt.Println("OpenUSP TR-369 Demo Agent Information")
 	fmt.Println("====================================")
 	fmt.Println()
 	fmt.Println("Agent Configuration:")
@@ -108,9 +108,9 @@ func discoverMTPService() (string, error) {
 	// Try to discover via Consul
 	consulAddr := getEnvOrDefault("CONSUL_ADDR", "localhost:8500")
 	consulURL := fmt.Sprintf("http://%s/v1/catalog/service/openusp-mtp-service", consulAddr)
-	
+
 	log.Printf("🔍 Discovering MTP service via Consul at %s", consulURL)
-	
+
 	resp, err := http.Get(consulURL)
 	if err != nil {
 		// Fallback to default URL if Consul is not available
@@ -135,7 +135,7 @@ func discoverMTPService() (string, error) {
 	if address == "localhost" {
 		address = "localhost" // Keep localhost for local development
 	}
-	
+
 	wsURL := fmt.Sprintf("ws://%s:%d/ws", address, service.ServicePort)
 	log.Printf("✅ Discovered MTP service WebSocket URL: %s", wsURL)
 	return wsURL, nil
@@ -146,7 +146,7 @@ type USPClient struct {
 	endpointID   string
 	controllerID string
 	msgID        string
-	version      string  // USP protocol version ("1.3" or "1.4")
+	version      string // USP protocol version ("1.3" or "1.4")
 }
 
 func NewUSPClient(endpointID, controllerID, version string) *USPClient {
@@ -222,7 +222,7 @@ func (c *USPClient) createOnboardingMessageV13() ([]byte, error) {
 		},
 	}
 
-	// Create USP Record  
+	// Create USP Record
 	record := &pb_v1_3.Record{
 		Version:         "1.3",
 		ToId:            c.controllerID,

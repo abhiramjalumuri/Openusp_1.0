@@ -77,7 +77,7 @@ func main() {
 
 func NewDataService() (*DataService, error) {
 	// Load configuration
-	config := config.LoadDeploymentConfig("openusp-data-service", "data-service", 6400)
+	config := config.LoadDeploymentConfigWithPortEnv("openusp-data-service", "data-service", 6400, "OPENUSP_DATA_SERVICE_HTTP_PORT")
 
 	service := &DataService{
 		config:  config,

@@ -737,7 +737,7 @@ func main() {
 	}
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfig("openusp-mtp-service", "mtp-service", 8081)
+	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-mtp-service", "mtp-service", 8081, "OPENUSP_MTP_SERVICE_PORT")
 
 	// Initialize Consul if enabled
 	var registry *consul.ServiceRegistry

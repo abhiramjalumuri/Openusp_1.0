@@ -83,6 +83,38 @@ paths:
       summary: Create Device
       tags:
       - Devices
+  /devices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a device by ID from the OpenUSP platform
+      parameters:
+      - description: Device ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Device deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Failed to delete device
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete Device
+      tags:
+      - Devices
   /health:
     get:
       consumes:
