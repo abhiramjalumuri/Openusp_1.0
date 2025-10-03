@@ -52,7 +52,9 @@ openusp/
 │   ├── data-service/      # Database service
 │   ├── mtp-service/       # Message transport
 │   ├── usp-service/       # USP protocol engine
-│   └── cwmp-service/      # CWMP compatibility
+│   ├── cwmp-service/      # CWMP compatibility
+│   ├── usp-agent/         # TR-369 USP agent
+│   └── cwmp-agent/        # TR-069 CWMP agent
 ├── internal/              # Private application code
 │   ├── database/          # Database layer
 │   ├── grpc/             # gRPC implementations
@@ -65,7 +67,7 @@ openusp/
 │   ├── metrics/          # Monitoring
 │   ├── proto/            # Protocol buffers
 │   └── version/          # Version management
-├── examples/             # Example clients
+├── examples/             # Example implementations
 ├── configs/              # Configuration files
 ├── deployments/          # Deployment configs
 └── docs/                # Documentation
@@ -98,30 +100,34 @@ make version
 ### 3. Development Commands
 
 ```bash
-# Build all services
-make build
+# Build all services and agents
+make build-all
 
 # Build individual service
 make build-api-gateway
+
+# Build agents
+make build-usp-agent
+make build-cwmp-agent
 
 # Run tests
 make test
 
 # Format code
-make format
+make fmt
 
-# Lint code
+# Lint code  
 make lint
 
-# Run all checks
-make check
+# Run all quality checks
+make go-check
 ```
 
 ### 4. Running Services for Development
 
 ```bash
 # Start all services
-make start
+make start-all
 
 # Or start individual services in separate terminals
 make start-data-service
@@ -130,9 +136,13 @@ make start-mtp-service
 make start-usp-service
 make start-cwmp-service
 
-# View logs
-make logs
-# Or tail specific service
+# Start protocol agents
+make start-usp-agent
+make start-cwmp-agent
+
+# View logs for specific services
+make logs-api-gateway
+# Or tail specific service logs manually
 tail -f logs/api-gateway.log
 ```
 

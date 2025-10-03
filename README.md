@@ -50,8 +50,8 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
                   ┌─────────────────────────────┐
                   │      USP Core Service       │
                   │                             │
-                  │ • Dual Protocol Support    │
-                  │ • Device Lifecycle Mgmt    │
+                  │ • Dual Protocol Support     │
+                  │ • Device Lifecycle Mgmt     │
                   │ • TR-181 Integration        │
                   └─────────────────────────────┘
                                  │
@@ -87,7 +87,7 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
 ### Clone and Build
 
 ```bash
-git clone https://github.com/your-org/openusp.git
+git clone https://github.com/plume-design-inc/openusp.git
 cd openusp
 go mod tidy
 ```
@@ -154,6 +154,19 @@ DB_PORT=5433 go run cmd/data-service/main.go
 
 ## 🧪 Testing & Validation
 
+### Protocol Agent Testing
+```bash
+# Test TR-369 USP agent
+make start-usp-agent
+# or manually:
+go run cmd/usp-agent/main.go --config configs/usp-agent.yaml
+
+# Test TR-069 CWMP agent  
+make start-cwmp-agent  
+# or manually:
+go run cmd/cwmp-agent/main.go --config configs/cwmp-agent.yaml
+```
+
 ### USP Protocol Testing
 ```bash
 # Test USP message parsing (both v1.3 and v1.4)
@@ -172,9 +185,6 @@ curl -s http://localhost:7547/health
 curl -X POST -H "Content-Type: text/xml" -u acs:acs123 \
   -d '<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cwmp="urn:dslforum-org:cwmp-1-0"><soap:Body><cwmp:GetRPCMethods/></soap:Body></soap:Envelope>' \
   http://localhost:7547
-
-# Run CWMP test client
-go run examples/cwmp-test-client/main.go
 ```
 
 ### Database Testing
@@ -203,8 +213,8 @@ openusp/
 │   ├── mtp-service/          # Message Transfer Protocol service
 │   ├── cwmp-service/         # CWMP/TR-069 service
 │   ├── data-service/         # Database service
-│   ├── tr181-demo/           # TR-181 demonstration
-│   └── cwmp-test-client/     # CWMP testing client
+│   ├── usp-agent/            # TR-369 USP agent (TR-369 protocol client)
+│   └── cwmp-agent/           # TR-069 CWMP agent (TR-069 protocol client)
 ├── internal/                 # Private application code
 │   ├── usp/                  # USP protocol implementation
 │   │   └── parser.go         # USP 1.3/1.4 parser

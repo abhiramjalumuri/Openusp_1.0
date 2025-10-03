@@ -9,18 +9,18 @@ Welcome to the OpenUSP (Open User Service Platform) documentation. This project 
 - [**Installation**](INSTALLATION.md) - Complete installation instructions
 - [**User Guide**](USER_GUIDE.md) - How to use OpenUSP for device management
 - [**API Reference**](API_REFERENCE.md) - REST API documentation
-- [**Examples**](EXAMPLES.md) - Working examples and tutorials
+- [**Examples**](../README.md#-testing-and-validation) - Working examples and tutorials
 
 ### For Developers
 - [**Development Guide**](DEVELOPMENT.md) - Setting up development environment
-- [**Architecture**](ARCHITECTURE.md) - System design and components
+- [**Architecture**](../README.md#-architecture-overview) - System design and components
 - [**Contributing**](CONTRIBUTING.md) - How to contribute to the project
-- [**Testing**](TESTING.md) - Running tests and validation
+- [**Testing**](../README.md#-testing-and-validation) - Running tests and validation
 
 ### For Advanced Users
 - [**Configuration**](CONFIGURATION.md) - Advanced configuration options
 - [**Deployment**](DEPLOYMENT.md) - Production deployment strategies
-- [**Protocol Details**](PROTOCOLS.md) - TR-369 USP and TR-069 CWMP details
+- [**Protocol Details**](../README.md#-key-features) - TR-369 USP and TR-069 CWMP details
 - [**Troubleshooting**](TROUBLESHOOTING.md) - Common issues and solutions
 
 ## 🚀 What is OpenUSP?

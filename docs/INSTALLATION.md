@@ -270,7 +270,7 @@ After successful installation:
 
 1. **Quick Start**: Follow the [Quick Start Guide](QUICKSTART.md)
 2. **User Guide**: Read the [User Guide](USER_GUIDE.md)
-3. **Examples**: Try the [Examples](EXAMPLES.md)
+3. **Examples**: Try the [Examples](../README.md#-testing-and-validation)
 4. **Development**: Set up [Development Environment](DEVELOPMENT.md)
 
 ## Production Deployment
@@ -278,6 +278,6 @@ After successful installation:
 For production environments, see:
 - [Deployment Guide](DEPLOYMENT.md)
 - [Configuration Reference](CONFIGURATION.md)
-- [Security Best Practices](SECURITY.md)
+- [Security Best Practices](TROUBLESHOOTING.md#security-considerations)
 
 Installation complete! 🎉

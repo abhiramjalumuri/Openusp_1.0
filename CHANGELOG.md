@@ -5,6 +5,44 @@ All notable changes to the OpenUSP project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-10-03
+
+### Fixed
+
+#### TR-369 Compliance Fix
+- **TR-369 Compliance**: Removed non-compliant direct API Gateway registration from USP agent
+- **Device Registration**: Device registration now properly uses USP Notify OnBoard messages via MTP service
+- **Architecture Verification**: Confirmed correct TR-369 flow: Agent → MTP → USP Service → Data Service
+
+#### Agent Architecture Consolidation
+- **Agent Restructuring**: Moved protocol agents to proper locations under `cmd/` directory:
+  - `examples/tr369-agent` → `cmd/usp-agent` (TR-369 USP agent)
+  - `examples/tr069-agent` → `cmd/cwmp-agent` (TR-069 CWMP agent)
+- **YAML Configuration**: Agents now use YAML configuration files:
+  - `configs/usp-agent.yaml` for TR-369 USP agent
+  - `configs/cwmp-agent.yaml` for TR-069 CWMP agent
+- **Makefile Updates**: Updated build targets to reflect new agent locations:
+  - `make build-usp-agent`, `make start-usp-agent`
+  - `make build-cwmp-agent`, `make start-cwmp-agent`
+
+#### Service Configuration Improvements
+- **Dual-Port Architecture**: Enhanced service configuration with separate ports for protocol and health endpoints
+- **Service Discovery**: Improved Consul integration with proper service registration
+- **Port Management**: Better port conflict resolution in development environments
+
+#### Code Cleanup
+- **Configuration Consolidation**: Removed redundant example configurations and consolidated to main configs
+- **Deprecated Code Removal**: Removed unused test utilities and configuration files
+- **Documentation Updates**: Updated all documentation to reflect new agent structure
+
+### Enhanced
+
+#### Documentation
+- **README Updates**: Updated project structure and usage examples
+- **Quick Start Guide**: Revised to use new agent commands and structure
+- **Configuration Guide**: Added YAML configuration documentation for agents
+- **Development Guide**: Updated build and development workflows
+
 ## [1.0.1] - 2025-10-01
 
 ### Fixed

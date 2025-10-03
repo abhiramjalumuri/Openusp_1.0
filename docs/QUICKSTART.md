@@ -34,16 +34,16 @@ You should see all services as "healthy".
 ## Step 3: Build and Start OpenUSP
 
 ```bash
-# Build all OpenUSP services
-make build
+# Build all OpenUSP services and agents
+make build-all
 
 # Start all services
-make start
+make start-all
 ```
 
 This will start:
 - **API Gateway** (REST API + Swagger UI)
-- **Data Service** (Database operations)
+- **Data Service** (Database operations)  
 - **MTP Service** (Message transport)
 - **USP Service** (TR-369 protocol engine)
 - **CWMP Service** (TR-069 compatibility)
@@ -72,21 +72,24 @@ curl http://localhost:6500/health
 
 ```bash
 # Check all services
-make status
+make ou-status
 
 # View service endpoints
-make show-endpoints
+make show-static-endpoints
 ```
 
-## Step 5: Try Examples
+## Step 5: Try Protocol Agents
 
 ```bash
-# Run TR-369 USP agent example
-make run-examples
+# Run TR-369 USP agent (YAML-configured)
+make start-usp-agent
 
-# Or run individually
-./build/tr369-agent
-./build/tr069-agent
+# Run TR-069 CWMP agent (YAML-configured) 
+make start-cwmp-agent
+
+# Or run individually with custom configs
+./build/usp-agent --config configs/usp-agent.yaml
+./build/cwmp-agent --config configs/cwmp-agent.yaml
 ```
 
 ## 🎯 What's Next?
@@ -94,18 +97,18 @@ make run-examples
 ### For Normal Users
 - Explore the [**Swagger UI**](http://localhost:6500/swagger/index.html) to test the APIs
 - Read the [**User Guide**](USER_GUIDE.md) for device management
-- Check out [**Examples**](EXAMPLES.md) for common use cases
+- Check out [**Examples**](../README.md#-testing-and-validation) for common use cases
 
 ### For Developers
 - Set up the [**Development Environment**](DEVELOPMENT.md)
-- Read the [**Architecture Guide**](ARCHITECTURE.md)
+- Read the [**Architecture Guide**](DEPLOYMENT.md#architecture-patterns)
 - Explore the [**API Reference**](API_REFERENCE.md)
 
 ## 🛑 Stopping Services
 
 ```bash
 # Stop all services
-make stop
+make stop-all
 
 # Stop only infrastructure
 make infra-down
@@ -121,11 +124,14 @@ make infra-clean
 # Check infrastructure is running
 make infra-status
 
-# Check logs
-make logs
+# Check logs (example for api-gateway)
+make logs-api-gateway
+
+# Or manually check specific service logs
+tail -f logs/api-gateway.log
 
 # Restart everything
-make restart
+make stop-all && make start-all
 ```
 
 ### Port Conflicts

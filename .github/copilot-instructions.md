@@ -64,8 +64,13 @@ openusp/
 │   │   └── main.go           # Unified binary with TR-369 compliance engine
 │   ├── mtp-service/          # Enhanced Message Transfer Protocol service with USP parsing
 │   │   └── main.go           # Unified binary with multi-transport support
-│   └── cwmp-service/         # CWMP/TR-069 service for backward compatibility
-│       └── main.go           # Unified binary with SOAP/XML processing
+│   ├── cwmp-service/         # CWMP/TR-069 service for backward compatibility
+│   │   └── main.go           # Unified binary with SOAP/XML processing
+│   ├── usp-agent/            # TR-369 USP protocol agent (YAML-configured)
+│   │   ├── main.go           # Complete USP agent with onboarding functionality
+│   │   └── README.md         # Agent usage and configuration
+│   └── cwmp-agent/           # TR-069 CWMP protocol agent (YAML-configured)
+│       └── main.go           # Complete CWMP agent with onboarding functionality
 ├── internal/                 # Private application code  
 │   ├── usp/                  # Comprehensive USP protocol implementation with parser
 │   │   └── parser.go         # Advanced USP 1.3/1.4 record and message parser
@@ -106,13 +111,9 @@ openusp/
 │   │   └── tr-106-types.xml             # TR-106 data types
 │   └── version/             # Version management
 │       └── version.go       # Application version information
-├── examples/                # Working protocol agents (onboarding functionality only)
-│   ├── tr369-agent/         # TR-369 USP agent with onboarding
-│   │   ├── main.go          # Complete WebSocket-based USP agent
-│   │   └── README.md        # Agent usage and configuration
-│   ├── tr069-agent/         # TR-069 agent with onboarding
-│   │   └── main.go          # Complete SOAP/XML CWMP agent with onboarding
-│   └── README.md            # Examples overview and usage
+├── examples/                # Example implementations and remaining demos
+│   └── tr369-agent/         # Legacy TR-369 example (preserved for compatibility)
+│       └── main.go          # Minimal TR-369 example implementation
 ├── test/                    # Test files and demonstrations
 │   ├── usp_parsing_demo.go  # USP parsing functionality demonstration
 │   ├── consul_demo.go       # Consul service discovery demonstration
@@ -161,8 +162,8 @@ openusp/
 │   ├── mtp-service          # MTP Service binary
 │   ├── usp-service          # USP Service binary
 │   ├── cwmp-service         # CWMP Service binary
-│   ├── tr369-agent          # TR-369 agent binary
-│   └── tr069-agent          # TR-069 agent binary
+│   ├── usp-agent            # TR-369 USP agent binary
+│   └── cwmp-agent           # TR-069 CWMP agent binary
 └── Makefile                 # Modern build system with standard targets
 ├── deployments/             # Docker, Kubernetes configs
 ├── scripts/                 # Build and deployment scripts
@@ -296,11 +297,11 @@ openusp/
     - Parameter path management with CWMP compatibility
     - Parameter type detection and writability validation
 
-11. **Working Protocol Examples** (`examples/`)
-    - **TR-369 USP Agent** (`examples/tr369-agent/main.go`): Complete WebSocket-based USP agent
-    - **TR-069 Agent** (`examples/tr069-agent/main.go`): Complete SOAP/XML CWMP agent
-    - Both examples work with the OpenUSP platform and demonstrate real protocol communication
-    - Examples include proper binary message handling, authentication, and error handling
+11. **Working Protocol Agents** (`cmd/`)
+    - **TR-369 USP Agent** (`cmd/usp-agent/main.go`): Complete YAML-configured USP agent with onboarding
+    - **TR-069 CWMP Agent** (`cmd/cwmp-agent/main.go`): Complete YAML-configured CWMP agent with onboarding
+    - Both agents work with the OpenUSP platform and demonstrate real protocol communication
+    - Agents include proper binary message handling, authentication, and TR-369 compliance
 
 12. **Development Infrastructure**
     - **Swagger UI Documentation** (`docs/docs.go`, `docs/SWAGGER_UI.md`)
@@ -321,11 +322,11 @@ openusp/
    - Health check integration
    - Graceful shutdown handling
 
-8. **Working Protocol Agents** (`examples/`)
-   - **TR-369 USP Agent** (`examples/tr369-agent/main.go`): Complete WebSocket-based USP agent with onboarding
-   - **TR-069 Agent** (`examples/tr069-agent/main.go`): Complete SOAP/XML CWMP agent with onboarding
+8. **Working Protocol Agents** (`cmd/`)
+   - **TR-369 USP Agent** (`cmd/usp-agent/main.go`): Complete YAML-configured USP agent with onboarding
+   - **TR-069 CWMP Agent** (`cmd/cwmp-agent/main.go`): Complete YAML-configured CWMP agent with onboarding
    - Both agents work with the OpenUSP platform and demonstrate real protocol communication
-   - Examples include proper binary message handling, authentication, and error handling
+   - Agents include proper binary message handling, authentication, and TR-369 compliance
 
 9. **Comprehensive Documentation** (`docs/`)
    - **README.md**: Project overview and quick start
@@ -342,7 +343,7 @@ openusp/
 10. **Modern Build System** (`Makefile`)
     - **Infrastructure Management**: infra-up, infra-down, infra-status, infra-clean for PostgreSQL, Consul, RabbitMQ, MQTT, Grafana, Prometheus
     - **Service Building**: build-api-gateway, build-data-service, build-usp-service, build-mtp-service, build-cwmp-service
-    - **Agent Building**: build-tr369-agent, build-tr069-agent for protocol agents
+    - **Agent Building**: build-usp-agent, build-cwmp-agent for protocol agents
     - **Service Management**: start-*, stop-*, clean-* targets for all services
     - **Comprehensive Targets**: build-all, start-all, stop-all, clean-all
     - **Version Support**: All binaries support --version flag with proper LDFLAGS injection
@@ -446,8 +447,8 @@ make start-cwmp-service         # CWMP/TR-069 service
 make start-usp-service          # USP core service
 
 # Start Working Protocol Agents
-make start-tr369-agent          # TR-369 USP agent with onboarding
-make start-tr069-agent          # TR-069 agent with onboarding
+make start-usp-agent            # TR-369 USP agent with onboarding
+make start-cwmp-agent           # TR-069 CWMP agent with onboarding
 
 # Check Status
 make consul-status              # View registered services
@@ -506,8 +507,8 @@ make infra-status              # Check infrastructure health
 - **Version Support**: Validated with both USP 1.3 and 1.4 messages
 - **Multi-Transport**: WebSocket, MQTT, STOMP, Unix Domain Socket ready
 - **Working Examples**: 
-  - TR-369 USP Client: `make run-tr369-example`
-  - TR-069 CWMP Client: `make run-tr069-example`
+  - TR-369 USP Agent: `make start-usp-agent`
+  - TR-069 CWMP Agent: `make start-cwmp-agent`
 - **Swagger UI Testing**: Interactive API testing at `/swagger/index.html`
 - **Development Workflows**:
   - Full platform: `make run-dev-swagger`
@@ -557,8 +558,8 @@ make build-all
 make start-all
 
 # Run protocol agents
-make start-tr369-agent
-make start-tr069-agent
+make start-usp-agent
+make start-cwmp-agent
 
 # Check service discovery status
 make consul-status

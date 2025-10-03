@@ -3,11 +3,11 @@
 
 # Agent Device Information
 device_info:
-  endpoint_id: "os:PlumeAgent:000028833"
+  endpoint_id: "os:OpenUSPTest:000028833"
   product_class: "HomeGateway"
-  manufacturer: "Plume"
-  model_name: "USP-Gateway-v2"
-  serial_number: "PLUME-USP-005"
+  manufacturer: "Plume Design"
+  model_name: "USP-Gateway-v10000"
+  serial_number: "PLUME-USP-00abcd5"
   software_version: "1.1.0"
   hardware_version: "1.0"
   device_type: "gateway"

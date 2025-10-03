@@ -1,151 +1,169 @@
-# Protocol Agent Configuration Guide
+# OpenUSP Configuration Guide
 
-This directory contains comprehensive configuration files for TR-369 USP and TR-069 CWMP agents with support for both Consul-enabled and standalone deployments.
+This directory contains configuration files for OpenUSP services and protocol agents.
 
 ## Configuration Files Overview
 
-### Base Configuration Files
-- `tr369-agent.env` - Default TR-369 USP agent configuration with all available options
-- `tr069-agent.env` - Default TR-069 CWMP agent configuration with all available options
+### Service Configuration
+- `openusp.env` - Main environment configuration for all OpenUSP services
+- `version.env` - Version information and build metadata
 
-### Example Configuration Files
-- `examples/tr369-consul-enabled.env` - Production TR-369 setup with Consul service discovery
-- `examples/tr369-consul-disabled.env` - Standalone TR-369 setup with static configuration
-- `examples/tr069-consul-enabled.env` - Production TR-069 setup with Consul service discovery  
-- `examples/tr069-consul-disabled.env` - Standalone TR-069 setup with static configuration
+### Agent Configuration (YAML-based)
+- `usp-agent.yaml` - TR-369 USP agent configuration (replaces tr369-agent.env)
+- `cwmp-agent.yaml` - TR-069 CWMP agent configuration (replaces tr069-agent.env)
+
+### Infrastructure Configuration
+- `init-db.sql` - Database initialization script
+- `mosquitto.conf` - MQTT broker configuration
+- `prometheus-dev.yml` - Prometheus monitoring configuration
+- `grafana-*.yml` - Grafana dashboard and data source configuration
 
 ## Quick Start
 
-### TR-369 USP Agent
+### TR-369 USP Agent (YAML Configuration)
 
-#### With Consul Service Discovery (Recommended for Development)
 ```bash
-# Copy example configuration
-cp configs/examples/tr369-consul-enabled.env configs/my-tr369-agent.env
+# Use default configuration
+make start-usp-agent
 
+# Or customize and run manually
+cp configs/usp-agent.yaml configs/my-usp-agent.yaml
 # Edit device-specific settings
-nano configs/my-tr369-agent.env
+nano configs/my-usp-agent.yaml
+# Run with custom config
+./build/usp-agent --config configs/my-usp-agent.yaml
 
-# Run the agent
-./build/tr369-agent --config configs/my-tr369-agent.env
+# Validate configuration only
+./build/usp-agent --config configs/my-usp-agent.yaml --validate-only
 ```
 
-#### Standalone Deployment (Production/Remote Devices)
+### TR-069 CWMP Agent (YAML Configuration)
+
 ```bash
-# Copy standalone configuration
-cp configs/examples/tr369-consul-disabled.env configs/my-tr369-agent.env
+# Use default configuration  
+make start-cwmp-agent
 
-# Configure static endpoints and device information
-nano configs/my-tr369-agent.env
-
-# Run the agent
-./build/tr369-agent --config configs/my-tr369-agent.env
-```
-
-### TR-069 CWMP Agent
-
-#### With Consul Service Discovery (Recommended for Development)
-```bash
-# Copy example configuration
-cp configs/examples/tr069-consul-enabled.env configs/my-tr069-agent.env
-
+# Or customize and run manually
+cp configs/cwmp-agent.yaml configs/my-cwmp-agent.yaml
 # Edit device-specific settings
-nano configs/my-tr069-agent.env
-
-# Run the agent
-./build/tr069-agent --config configs/my-tr069-agent.env
+nano configs/my-cwmp-agent.yaml
+# Run with custom config
+./build/cwmp-agent --config configs/my-cwmp-agent.yaml
 ```
 
-#### Standalone Deployment (Production/Remote Devices)
-```bash
-# Copy standalone configuration
-cp configs/examples/tr069-consul-disabled.env configs/my-tr069-agent.env
+## YAML Configuration Structure
 
-# Configure static endpoints and device information
-nano configs/my-tr069-agent.env
+### USP Agent Configuration (`usp-agent.yaml`)
 
-# Run the agent
-./build/tr069-agent --config configs/my-tr069-agent.env
+```yaml
+# Device identification
+device_info:
+  endpoint_id: "proto://usp-agent-001"
+  manufacturer: "OpenUSP"
+  model_name: "USP Gateway"
+  serial_number: "USP-001-2024"
+  software_version: "1.1.0"
+  hardware_version: "1.0"
+  device_type: "gateway"
+  oui: "00D04F"
+
+# USP protocol settings
+usp_protocol:
+  version: "1.3"                        # USP version (1.3 or 1.4)
+  supported_versions: ["1.3", "1.4"]   # Supported versions
+  agent_role: "device"
+  command_key: "usp-agent-001"
+
+# Message Transport Protocol
+mtp:
+  type: "websocket"                     # websocket, mqtt, stomp, uds
+  
+  websocket:
+    url: "ws://localhost:8081/ws"       # WebSocket endpoint
+    ping_interval: "30s"
+    reconnect_interval: "5s"
+    max_reconnect_attempts: 10
+    
+  mqtt:
+    broker_url: "tcp://localhost:1883"
+    client_id: "usp-agent-001"
+    topic_request: "usp/agent/request"
+    topic_response: "usp/agent/response"
+    
+# Platform integration
+platform:
+  url: "http://localhost:6500"          # API Gateway URL
+  auto_register: true                   # Auto-register device
+  heartbeat_interval: "60s"
+
+# Agent behavior
+agent_behavior:
+  periodic_inform_enabled: true
+  periodic_inform_interval: "300s"
+  parameter_update_notification: true
+  event_notification: true
+
+# Security (optional)
+security:
+  tls_enabled: false
+  tls_cert_file: ""
+  tls_key_file: ""
+  
+# Logging
+logging:
+  level: "info"                         # debug, info, warn, error
+  format: "json"                        # json, text
+  output: "stdout"                      # stdout, file
 ```
 
-## Configuration Sections
+### CWMP Agent Configuration (`cwmp-agent.yaml`)
 
-### 1. Service Discovery
-Configure Consul integration for automatic service endpoint discovery:
-```bash
-CONSUL_ENABLED=true                    # Enable/disable Consul integration
-CONSUL_ADDR=localhost:8500             # Consul server address
-CONSUL_DATACENTER=openusp-dev          # Consul datacenter
+```yaml  
+# Device identification
+device_info:
+  endpoint_id: "cwmp://cwmp-agent-001"
+  manufacturer: "OpenUSP"
+  model_name: "CWMP Gateway"
+  serial_number: "CWMP-001-2024"
+  oui: "00D04F"
+
+# CWMP protocol settings
+cwmp_protocol:
+  version: "1.4"                        # CWMP version
+  supported_versions: ["1.0", "1.1", "1.2", "1.3", "1.4"]
+  agent_role: "cpe"
+
+# ACS (Auto Configuration Server)
+acs:
+  url: "http://localhost:7547"          # Standard TR-069 port
+  username: "acs"
+  password: "acs123"
+  periodic_inform_enabled: true
+  periodic_inform_interval: "300s"
+
+# Connection Request (for ACS-initiated sessions)
+connection_request:
+  url: "http://localhost:9999/cr"
+  username: "cr"
+  password: "cr123"
+
+# Platform integration
+platform:
+  url: "http://localhost:6500"          # API Gateway URL
+  auto_register: true
+
+# SOAP/XML settings
+soap_xml:
+  soap_version: "1.1"
+  strict_parsing: false
+  pretty_print: false
+
+# Session management
+session:
+  timeout: "300s"
+  max_concurrent: 5
+  keep_alive: true
 ```
-
-### 2. Device Information
-Define device identity and capabilities:
-```bash
-TR369_ENDPOINT_ID=proto://my-device-001    # Unique device identifier
-TR369_MANUFACTURER=ACME Corp               # Device manufacturer
-TR369_MODEL_NAME=ACME-Gateway-Pro          # Device model
-TR369_SERIAL_NUMBER=ACME-001234            # Device serial number
-TR369_SOFTWARE_VERSION=1.1.0              # Current software version
-```
-
-### 3. Protocol Configuration
-
-#### TR-369 USP Protocol
-```bash
-USP_VERSION=1.4                        # USP protocol version (1.3 or 1.4)
-USP_SUPPORTED_VERSIONS=1.3,1.4         # Supported USP versions
-MTP_TYPE=websocket                     # Message Transport Protocol type
-```
-
-#### TR-069 CWMP Protocol
-```bash
-CWMP_VERSION=1.4                       # CWMP protocol version
-CWMP_SUPPORTED_VERSIONS=1.0,1.1,1.2,1.3,1.4  # Supported CWMP versions
-ACS_URL=http://localhost:7547          # Auto Configuration Server URL
-```
-
-### 4. Message Transport Protocols (MTP)
-
-#### WebSocket MTP (TR-369)
-```bash
-MTP_TYPE=websocket
-WEBSOCKET_URL=ws://localhost:8081/ws   # WebSocket endpoint URL
-WEBSOCKET_PING_INTERVAL=30s           # WebSocket ping interval
-WEBSOCKET_RECONNECT_INTERVAL=5s       # Reconnection interval on failure
-```
-
-#### MQTT MTP (TR-369)
-```bash
-MTP_TYPE=mqtt
-MQTT_BROKER_URL=tcp://localhost:1883  # MQTT broker URL
-MQTT_CLIENT_ID=usp-agent-001          # MQTT client identifier
-MQTT_USERNAME=usp                     # MQTT authentication username
-MQTT_PASSWORD=usp123                  # MQTT authentication password
-```
-
-#### STOMP MTP (TR-369)
-```bash
-MTP_TYPE=stomp
-STOMP_BROKER_URL=tcp://localhost:61613       # STOMP broker URL
-STOMP_DESTINATION_REQUEST=/queue/usp.request # STOMP request destination
-STOMP_USERNAME=usp                           # STOMP authentication username
-```
-
-### 5. Consul Integration Scenarios
-
-#### Consul Enabled (Automatic Service Discovery)
-When `CONSUL_ENABLED=true`:
-- Agent automatically discovers OpenUSP platform services
-- MTP service endpoints are resolved dynamically
-- API Gateway endpoints are discovered automatically
-- Health checks are registered with Consul
-- Service tags enable environment-specific discovery
-
-Configuration:
-```bash
-CONSUL_ENABLED=true
-CONSUL_SERVICE_DISCOVERY_ENABLED=true
-CONSUL_MTP_SERVICE_NAME=openusp-mtp-service
 CONSUL_API_GATEWAY_SERVICE_NAME=openusp-api-gateway
 ```
 
