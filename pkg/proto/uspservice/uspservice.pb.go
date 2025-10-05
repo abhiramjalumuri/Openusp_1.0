@@ -418,8 +418,6 @@ type StatusResponse struct {
 	Version           string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	Uptime            string                 `protobuf:"bytes,3,opt,name=uptime,proto3" json:"uptime,omitempty"`
 	ProcessedMessages int32                  `protobuf:"varint,4,opt,name=processed_messages,json=processedMessages,proto3" json:"processed_messages,omitempty"`
-	OnboardedDevices  int32                  `protobuf:"varint,5,opt,name=onboarded_devices,json=onboardedDevices,proto3" json:"onboarded_devices,omitempty"`
-	Statistics        map[string]string      `protobuf:"bytes,6,rep,name=statistics,proto3" json:"statistics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -482,14 +480,146 @@ func (x *StatusResponse) GetProcessedMessages() int32 {
 	return 0
 }
 
-func (x *StatusResponse) GetOnboardedDevices() int32 {
+// Request for TR-369 proactive onboarding when MTP connection succeeds but no USP messages received
+type ProactiveOnboardingRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId        string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`                                                                                                // Generated endpoint ID for proactive onboarding
+	UspVersion        string                 `protobuf:"bytes,2,opt,name=usp_version,json=uspVersion,proto3" json:"usp_version,omitempty"`                                                                                                // USP protocol version to use (1.3 or 1.4)
+	ConnectionContext map[string]string      `protobuf:"bytes,3,rep,name=connection_context,json=connectionContext,proto3" json:"connection_context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // MTP connection context information
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ProactiveOnboardingRequest) Reset() {
+	*x = ProactiveOnboardingRequest{}
+	mi := &file_pkg_proto_uspservice_uspservice_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProactiveOnboardingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProactiveOnboardingRequest) ProtoMessage() {}
+
+func (x *ProactiveOnboardingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_proto_uspservice_uspservice_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProactiveOnboardingRequest.ProtoReflect.Descriptor instead.
+func (*ProactiveOnboardingRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_proto_uspservice_uspservice_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ProactiveOnboardingRequest) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *ProactiveOnboardingRequest) GetUspVersion() string {
+	if x != nil {
+		return x.UspVersion
+	}
+	return ""
+}
+
+func (x *ProactiveOnboardingRequest) GetConnectionContext() map[string]string {
+	if x != nil {
+		return x.ConnectionContext
+	}
+	return nil
+}
+
+// Response from proactive onboarding handling
+type ProactiveOnboardingResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Success          bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`                                          // True if proactive onboarding was initiated
+	Message          string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                                           // Status message or error description
+	OnboardingStatus string                 `protobuf:"bytes,3,opt,name=onboarding_status,json=onboardingStatus,proto3" json:"onboarding_status,omitempty"` // Current onboarding status
+	AgentId          string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                            // Agent ID being onboarded
+	OnboardedDevices int32                  `protobuf:"varint,5,opt,name=onboarded_devices,json=onboardedDevices,proto3" json:"onboarded_devices,omitempty"`
+	Statistics       map[string]string      `protobuf:"bytes,6,rep,name=statistics,proto3" json:"statistics,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProactiveOnboardingResponse) Reset() {
+	*x = ProactiveOnboardingResponse{}
+	mi := &file_pkg_proto_uspservice_uspservice_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProactiveOnboardingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProactiveOnboardingResponse) ProtoMessage() {}
+
+func (x *ProactiveOnboardingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_proto_uspservice_uspservice_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProactiveOnboardingResponse.ProtoReflect.Descriptor instead.
+func (*ProactiveOnboardingResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_proto_uspservice_uspservice_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ProactiveOnboardingResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ProactiveOnboardingResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ProactiveOnboardingResponse) GetOnboardingStatus() string {
+	if x != nil {
+		return x.OnboardingStatus
+	}
+	return ""
+}
+
+func (x *ProactiveOnboardingResponse) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ProactiveOnboardingResponse) GetOnboardedDevices() int32 {
 	if x != nil {
 		return x.OnboardedDevices
 	}
 	return 0
 }
 
-func (x *StatusResponse) GetStatistics() map[string]string {
+func (x *ProactiveOnboardingResponse) GetStatistics() map[string]string {
 	if x != nil {
 		return x.Statistics
 	}
@@ -535,22 +665,37 @@ const file_pkg_proto_uspservice_uspservice_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x0f\n" +
-	"\rStatusRequest\"\xcc\x02\n" +
+	"\rStatusRequest\"\x94\x01\n" +
 	"\x0eStatusResponse\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
 	"\x06uptime\x18\x03 \x01(\tR\x06uptime\x12-\n" +
-	"\x12processed_messages\x18\x04 \x01(\x05R\x11processedMessages\x12+\n" +
-	"\x11onboarded_devices\x18\x05 \x01(\x05R\x10onboardedDevices\x12J\n" +
+	"\x12processed_messages\x18\x04 \x01(\x05R\x11processedMessages\"\x92\x02\n" +
+	"\x1aProactiveOnboardingRequest\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12\x1f\n" +
+	"\vusp_version\x18\x02 \x01(\tR\n" +
+	"uspVersion\x12l\n" +
+	"\x12connection_context\x18\x03 \x03(\v2=.uspservice.ProactiveOnboardingRequest.ConnectionContextEntryR\x11connectionContext\x1aD\n" +
+	"\x16ConnectionContextEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x02\n" +
+	"\x1bProactiveOnboardingResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12+\n" +
+	"\x11onboarding_status\x18\x03 \x01(\tR\x10onboardingStatus\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12+\n" +
+	"\x11onboarded_devices\x18\x05 \x01(\x05R\x10onboardedDevices\x12W\n" +
 	"\n" +
-	"statistics\x18\x06 \x03(\v2*.uspservice.StatusResponse.StatisticsEntryR\n" +
+	"statistics\x18\x06 \x03(\v27.uspservice.ProactiveOnboardingResponse.StatisticsEntryR\n" +
 	"statistics\x1a=\n" +
 	"\x0fStatisticsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xf6\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xe4\x02\n" +
 	"\n" +
 	"USPService\x12R\n" +
-	"\x11ProcessUSPMessage\x12\x1d.uspservice.USPMessageRequest\x1a\x1e.uspservice.USPMessageResponse\x12I\n" +
+	"\x11ProcessUSPMessage\x12\x1d.uspservice.USPMessageRequest\x1a\x1e.uspservice.USPMessageResponse\x12l\n" +
+	"\x19HandleProactiveOnboarding\x12&.uspservice.ProactiveOnboardingRequest\x1a'.uspservice.ProactiveOnboardingResponse\x12I\n" +
 	"\x10GetServiceHealth\x12\x19.uspservice.HealthRequest\x1a\x1a.uspservice.HealthResponse\x12I\n" +
 	"\x10GetServiceStatus\x12\x19.uspservice.StatusRequest\x1a\x1a.uspservice.StatusResponseB\x1eZ\x1copenusp/pkg/proto/uspserviceb\x06proto3"
 
@@ -566,33 +711,39 @@ func file_pkg_proto_uspservice_uspservice_proto_rawDescGZIP() []byte {
 	return file_pkg_proto_uspservice_uspservice_proto_rawDescData
 }
 
-var file_pkg_proto_uspservice_uspservice_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_pkg_proto_uspservice_uspservice_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_pkg_proto_uspservice_uspservice_proto_goTypes = []any{
-	(*USPMessageRequest)(nil),  // 0: uspservice.USPMessageRequest
-	(*USPMessageResponse)(nil), // 1: uspservice.USPMessageResponse
-	(*DeviceInfo)(nil),         // 2: uspservice.DeviceInfo
-	(*HealthRequest)(nil),      // 3: uspservice.HealthRequest
-	(*HealthResponse)(nil),     // 4: uspservice.HealthResponse
-	(*StatusRequest)(nil),      // 5: uspservice.StatusRequest
-	(*StatusResponse)(nil),     // 6: uspservice.StatusResponse
-	nil,                        // 7: uspservice.USPMessageRequest.MetadataEntry
-	nil,                        // 8: uspservice.StatusResponse.StatisticsEntry
+	(*USPMessageRequest)(nil),           // 0: uspservice.USPMessageRequest
+	(*USPMessageResponse)(nil),          // 1: uspservice.USPMessageResponse
+	(*DeviceInfo)(nil),                  // 2: uspservice.DeviceInfo
+	(*HealthRequest)(nil),               // 3: uspservice.HealthRequest
+	(*HealthResponse)(nil),              // 4: uspservice.HealthResponse
+	(*StatusRequest)(nil),               // 5: uspservice.StatusRequest
+	(*StatusResponse)(nil),              // 6: uspservice.StatusResponse
+	(*ProactiveOnboardingRequest)(nil),  // 7: uspservice.ProactiveOnboardingRequest
+	(*ProactiveOnboardingResponse)(nil), // 8: uspservice.ProactiveOnboardingResponse
+	nil,                                 // 9: uspservice.USPMessageRequest.MetadataEntry
+	nil,                                 // 10: uspservice.ProactiveOnboardingRequest.ConnectionContextEntry
+	nil,                                 // 11: uspservice.ProactiveOnboardingResponse.StatisticsEntry
 }
 var file_pkg_proto_uspservice_uspservice_proto_depIdxs = []int32{
-	7, // 0: uspservice.USPMessageRequest.metadata:type_name -> uspservice.USPMessageRequest.MetadataEntry
-	2, // 1: uspservice.USPMessageResponse.device_info:type_name -> uspservice.DeviceInfo
-	8, // 2: uspservice.StatusResponse.statistics:type_name -> uspservice.StatusResponse.StatisticsEntry
-	0, // 3: uspservice.USPService.ProcessUSPMessage:input_type -> uspservice.USPMessageRequest
-	3, // 4: uspservice.USPService.GetServiceHealth:input_type -> uspservice.HealthRequest
-	5, // 5: uspservice.USPService.GetServiceStatus:input_type -> uspservice.StatusRequest
-	1, // 6: uspservice.USPService.ProcessUSPMessage:output_type -> uspservice.USPMessageResponse
-	4, // 7: uspservice.USPService.GetServiceHealth:output_type -> uspservice.HealthResponse
-	6, // 8: uspservice.USPService.GetServiceStatus:output_type -> uspservice.StatusResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	9,  // 0: uspservice.USPMessageRequest.metadata:type_name -> uspservice.USPMessageRequest.MetadataEntry
+	2,  // 1: uspservice.USPMessageResponse.device_info:type_name -> uspservice.DeviceInfo
+	10, // 2: uspservice.ProactiveOnboardingRequest.connection_context:type_name -> uspservice.ProactiveOnboardingRequest.ConnectionContextEntry
+	11, // 3: uspservice.ProactiveOnboardingResponse.statistics:type_name -> uspservice.ProactiveOnboardingResponse.StatisticsEntry
+	0,  // 4: uspservice.USPService.ProcessUSPMessage:input_type -> uspservice.USPMessageRequest
+	7,  // 5: uspservice.USPService.HandleProactiveOnboarding:input_type -> uspservice.ProactiveOnboardingRequest
+	3,  // 6: uspservice.USPService.GetServiceHealth:input_type -> uspservice.HealthRequest
+	5,  // 7: uspservice.USPService.GetServiceStatus:input_type -> uspservice.StatusRequest
+	1,  // 8: uspservice.USPService.ProcessUSPMessage:output_type -> uspservice.USPMessageResponse
+	8,  // 9: uspservice.USPService.HandleProactiveOnboarding:output_type -> uspservice.ProactiveOnboardingResponse
+	4,  // 10: uspservice.USPService.GetServiceHealth:output_type -> uspservice.HealthResponse
+	6,  // 11: uspservice.USPService.GetServiceStatus:output_type -> uspservice.StatusResponse
+	8,  // [8:12] is the sub-list for method output_type
+	4,  // [4:8] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_pkg_proto_uspservice_uspservice_proto_init() }
@@ -606,7 +757,7 @@ func file_pkg_proto_uspservice_uspservice_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_proto_uspservice_uspservice_proto_rawDesc), len(file_pkg_proto_uspservice_uspservice_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

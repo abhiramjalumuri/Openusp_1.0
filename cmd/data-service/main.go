@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 )
 
 // DataService represents a modern unified data service
@@ -143,7 +144,17 @@ func (ds *DataService) registerService() error {
 }
 
 func (ds *DataService) setupgRPCServer() {
-	ds.grpcServer = grpc.NewServer()
+	// Configure gRPC server with keepalive enforcement to prevent ENHANCE_YOUR_CALM errors
+	ds.grpcServer = grpc.NewServer(
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    60 * time.Second, // Send keepalive pings every 60 seconds
+			Timeout: 10 * time.Second, // Wait 10 seconds for keepalive ping ack
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second, // Minimum allowed time between client pings
+			PermitWithoutStream: true,             // Allow pings even when no streams are active
+		}),
+	)
 	ds.healthSrv = health.NewServer()
 
 	// Register health service

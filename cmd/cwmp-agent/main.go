@@ -102,11 +102,11 @@ func getCWMPCredentials() (string, string) {
 
 // DeviceInfo represents device information for CWMP agent
 type DeviceInfo struct {
-	Manufacturer string
-	ProductClass string
-	SerialNumber string
-	OUI          string
-	ModelName    string
+	Manufacturer    string
+	ProductClass    string
+	SerialNumber    string
+	OUI             string
+	ModelName       string
 	SoftwareVersion string
 	HardwareVersion string
 }

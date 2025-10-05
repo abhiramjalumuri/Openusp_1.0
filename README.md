@@ -15,6 +15,7 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
 - **✅ Advanced Message Parsing**: Comprehensive protocol buffer parsing and validation
 - **✅ Multi-Transport Protocols**: MQTT, STOMP, WebSocket, Unix Domain Socket MTPs
 - **✅ Session Contexts**: NoSessionContext, SessionContext, WebSocketConnect support
+- **🆕 Proactive Device Onboarding**: Factory default agent support without initial NOTIFY messages
 
 ### TR-069 CWMP Backward Compatibility
 - **✅ Full CWMP Protocol**: Complete TR-069 implementation with SOAP/XML processing

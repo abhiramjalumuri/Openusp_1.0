@@ -39,6 +39,8 @@ This is a cloud-native microservice implementation of the Broadband Forum's TR-3
 14. **Observability**: Prometheus metrics, structured logging, health checks, and comprehensive error handling
 15. **Protocol Compliance**: Full TR-369 specification compliance with comprehensive USP operation support
 16. **CWMP Service**: Separate service for TR-069 backward compatibility
+17. **Industry-Standard Connection Management**: Circuit breaker patterns, exponential backoff retry logic, connection health monitoring
+18. **Production Resilience**: Netflix Hystrix-style circuit breakers, Google SRE retry patterns, Kubernetes service mesh capabilities
 
 ## Technology Stack
 - **Language**: Go (Golang) 1.24+
@@ -66,6 +68,8 @@ openusp/
 │   │   └── main.go           # Unified binary with multi-transport support
 │   ├── cwmp-service/         # CWMP/TR-069 service for backward compatibility
 │   │   └── main.go           # Unified binary with SOAP/XML processing
+│   ├── connection-manager/   # Industry-standard connection management service
+│   │   └── main.go           # Circuit breaker patterns, service discovery, connection pooling
 │   ├── usp-agent/            # TR-369 USP protocol agent (YAML-configured)
 │   │   ├── main.go           # Complete USP agent with onboarding functionality
 │   │   └── README.md         # Agent usage and configuration
@@ -85,7 +89,9 @@ openusp/
 │   │   └── converters.go     # Bidirectional conversion between database models and gRPC messages
 │   ├── grpc/                 # gRPC service implementations
 │   │   ├── dataservice_server.go  # gRPC server implementation for data service
-│   │   └── dataservice_client.go  # gRPC client wrapper for API Gateway
+│   │   ├── dataservice_client.go  # gRPC client wrapper for API Gateway
+│   │   ├── uspservice_server.go   # USP service with industry-standard connection management
+│   │   └── connection_management.go # Circuit breaker, exponential backoff, retry logic
 │   ├── cwmp/                 # CWMP/TR-069 protocol implementation
 │   │   ├── processor.go      # SOAP/XML message processing
 │   │   └── onboarding.go     # TR-069 device onboarding functionality
@@ -94,7 +100,10 @@ openusp/
 │   ├── config/               # Configuration management
 │   │   └── deployment.go     # Unified configuration system with environment variables
 │   ├── service/              # Service lifecycle management
-│   │   └── manager.go        # Service manager with Consul integration
+│   │   ├── manager.go        # Service manager with Consul integration
+│   │   ├── connection_manager.go # Industry-standard connection manager with circuit breaker
+│   │   └── client/           # Connection client libraries
+│   │       └── connection_client.go # Connection client for microservice communication
 │   ├── consul/               # Service discovery
 │   │   └── client.go         # Consul client wrapper
 │   ├── metrics/              # Monitoring and observability
@@ -104,6 +113,10 @@ openusp/
 │   │   │   ├── dataservice.proto        # gRPC service and message definitions
 │   │   │   ├── dataservice.pb.go        # Generated Protocol Buffer code
 │   │   │   └── dataservice_grpc.pb.go   # Generated gRPC service code
+│   │   ├── connectionservice/ # Connection management service protocol definitions
+│   │   │   ├── connectionservice.proto  # Circuit breaker and connection management RPCs
+│   │   │   ├── connectionservice.pb.go  # Generated Protocol Buffer code
+│   │   │   └── connectionservice_grpc.pb.go # Generated gRPC service code
 │   │   ├── v1_3/            # USP 1.3 protocol buffers
 │   │   └── v1_4/            # USP 1.4 protocol buffers  
 │   ├── datamodel/           # TR-181 XML schemas and types
@@ -111,9 +124,7 @@ openusp/
 │   │   └── tr-106-types.xml             # TR-106 data types
 │   └── version/             # Version management
 │       └── version.go       # Application version information
-├── examples/                # Example implementations and remaining demos
-│   └── tr369-agent/         # Legacy TR-369 example (preserved for compatibility)
-│       └── main.go          # Minimal TR-369 example implementation
+
 ├── test/                    # Test files and demonstrations
 │   ├── usp_parsing_demo.go  # USP parsing functionality demonstration
 │   ├── consul_demo.go       # Consul service discovery demonstration
@@ -394,6 +405,45 @@ DO UPDATE SET
 - **Production Ready**: Handles real-world IoT device lifecycle management
 
 **API Integration**: Complete CRUD operations including DELETE endpoint with Swagger documentation
+
+## Industry-Standard Connection Management
+
+### **Circuit Breaker Pattern** (Netflix Hystrix Style)
+The platform implements production-grade circuit breaker patterns to prevent cascade failures:
+
+**Components**:
+- **Failure Detection**: Automatic detection of service unavailability with configurable thresholds
+- **Circuit States**: Open (failures blocked), Closed (normal operation), Half-Open (testing recovery)
+- **Automatic Recovery**: Circuit closes after timeout period when service becomes available
+- **Thread-Safe Operations**: All circuit breaker state changes protected by mutex
+
+**Implementation** (`internal/grpc/connection_management.go`):
+```go
+sendMessageToAgentWithCircuitBreaker()  // Main entry point with circuit breaker
+sendMessageWithRetry()                 // Exponential backoff retry logic
+ensureMTPConnection()                  // Connection health management
+reconnectMTPServiceUnsafe()           // Thread-safe reconnection
+```
+
+### **Exponential Backoff Retry Logic**
+Google SRE-style retry patterns with jitter support:
+- **Configurable Retries**: `maxRetries` with exponential backoff delays
+- **Base Delay**: Starting at 1 second with 2x multiplier per retry
+- **Jitter Support**: Prevents thundering herd problems in distributed systems
+- **Circuit Integration**: Works with circuit breaker for comprehensive error handling
+
+### **Connection Health Monitoring**
+Kubernetes service mesh-style connection lifecycle management:
+- **gRPC Keepalive**: Proper connection state monitoring with keepalive parameters
+- **Connection State Tracking**: Real-time connection status monitoring
+- **Automatic Reconnection**: Background reconnection when connections are lost
+- **Resource Management**: Proper connection cleanup and resource management
+
+### **Service Discovery Integration**
+- **Dynamic Port Resolution**: Services find each other via Consul regardless of startup order
+- **Health Monitoring**: Continuous health checks for all registered services
+- **Graceful Degradation**: Services can operate independently when dependencies unavailable
+- **Load Balancing Ready**: Architecture supports multiple instances of each service
 
 ## Critical Configuration Details
 

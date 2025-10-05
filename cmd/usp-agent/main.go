@@ -184,15 +184,34 @@ func NewUSPClient(endpointID, controllerID, version string) *USPClient {
 }
 
 func (c *USPClient) Connect(url string) error {
+	return c.ConnectWithSubprotocol(url, "")
+}
+
+func (c *USPClient) ConnectWithSubprotocol(url, subprotocol string) error {
 	log.Printf("Connecting to MTP Service at: %s", url)
 
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	// Set up WebSocket headers with subprotocol if specified
+	var headers http.Header
+	if subprotocol != "" {
+		headers = http.Header{}
+		headers.Set("Sec-WebSocket-Protocol", subprotocol)
+		log.Printf("Using WebSocket subprotocol: %s", subprotocol)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(url, headers)
 	if err != nil {
 		return fmt.Errorf("failed to connect to WebSocket: %w", err)
 	}
 
 	c.conn = conn
-	log.Printf("Connected to MTP Service successfully")
+
+	// Log the selected subprotocol
+	selectedSubprotocol := conn.Subprotocol()
+	if selectedSubprotocol != "" {
+		log.Printf("Connected to MTP Service successfully (subprotocol: %s)", selectedSubprotocol)
+	} else {
+		log.Printf("Connected to MTP Service successfully")
+	}
 	return nil
 }
 
@@ -675,8 +694,16 @@ func main() {
 	// Get WebSocket URL from configuration
 	wsURL := getMTPServiceURLWithConfig(agentConfig)
 
+	// Get WebSocket subprotocol from configuration
+	var subprotocol string
+	if agentConfig != nil && agentConfig.WebSocketSubprotocol != "" {
+		subprotocol = agentConfig.WebSocketSubprotocol
+	} else {
+		subprotocol = "v1.usp" // Default USP WebSocket subprotocol
+	}
+
 	// Connect to MTP Service (device registration will happen via USP Notify OnBoard message per TR-369)
-	if err := client.Connect(wsURL); err != nil {
+	if err := client.ConnectWithSubprotocol(wsURL, subprotocol); err != nil {
 		log.Fatalf("Failed to connect to MTP Service: %v", err)
 	}
 

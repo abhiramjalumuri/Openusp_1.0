@@ -33,6 +33,9 @@ type DeploymentConfig struct {
 	// Health Check Configuration
 	HealthCheckInterval time.Duration `json:"health_check_interval"`
 	HealthCheckTimeout  time.Duration `json:"health_check_timeout"`
+
+	// MTP Configuration (for MTP service)
+	MTPConfig *MTPConfig `json:"mtp_config,omitempty"`
 }
 
 // LoadDeploymentConfig loads configuration from environment variables with defaults
@@ -121,4 +124,18 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// LoadMTPConfig loads MTP-specific configuration from environment variables
+func LoadMTPConfig() *MTPConfig {
+	return &MTPConfig{
+		// Transport Protocol Enablement
+		WebSocketEnabled:  getEnvBool("OPENUSP_MTP_WEBSOCKET_ENABLED", true),
+		MQTTEnabled:       getEnvBool("OPENUSP_MTP_MQTT_ENABLED", true),
+		STOMPEnabled:      getEnvBool("OPENUSP_MTP_STOMP_ENABLED", true),
+		UnixSocketEnabled: getEnvBool("OPENUSP_MTP_UDS_ENABLED", true),
+
+		// Transport-specific Configuration
+		UnixSocketPath: getEnvString("OPENUSP_MTP_UDS_SOCKET_PATH", "/tmp/openusp.sock"),
+	}
 }

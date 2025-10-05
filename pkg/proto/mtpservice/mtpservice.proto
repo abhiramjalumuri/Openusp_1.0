@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package mtpservice;
+
+option go_package = "openusp/pkg/proto/mtpservice";
+
+// MTP Service provides message transport protocol functionality
+service MTPService {
+    // SendMessageToAgent sends a USP message to a specific agent via the appropriate transport
+    rpc SendMessageToAgent(SendMessageRequest) returns (SendMessageResponse);
+    
+    // GetConnectedAgents returns a list of currently connected agents
+    rpc GetConnectedAgents(GetConnectedAgentsRequest) returns (GetConnectedAgentsResponse);
+    
+    // GetServiceHealth returns the health status of the MTP service
+    rpc GetServiceHealth(HealthRequest) returns (HealthResponse);
+}
+
+// Request to send a message to an agent
+message SendMessageRequest {
+    string agent_id = 1;                   // Target agent endpoint ID
+    bytes usp_message = 2;                 // USP message data to send
+    string transport_type = 3;             // Transport type (WebSocket, MQTT, STOMP, UDS)
+    map<string, string> metadata = 4;      // Additional metadata
+}
+
+// Response from sending message to agent
+message SendMessageResponse {
+    bool success = 1;                      // Whether message was sent successfully
+    string error_message = 2;              // Error message if sending failed
+    string transport_used = 3;             // Transport type actually used
+}
+
+// Request to get connected agents
+message GetConnectedAgentsRequest {
+    string transport_type = 1;             // Filter by transport type (optional)
+}
+
+// Response with connected agents
+message GetConnectedAgentsResponse {
+    repeated ConnectedAgent agents = 1;
+}
+
+// Information about a connected agent
+message ConnectedAgent {
+    string agent_id = 1;                   // Agent endpoint ID
+    string transport_type = 2;             // Transport type being used
+    int64 connected_at = 3;                // Connection timestamp
+    string client_id = 4;                  // Internal client ID
+}
+
+// Health check request
+message HealthRequest {
+    // Empty for now
+}
+
+// Health check response
+message HealthResponse {
+    string status = 1;                     // "healthy" or "unhealthy"
+    string message = 2;                    // Additional health information
+    int64 timestamp = 3;                   // Health check timestamp
+}

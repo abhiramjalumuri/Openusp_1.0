@@ -9,6 +9,9 @@ service USPService {
     // ProcessUSPMessage processes incoming USP messages and returns responses
     rpc ProcessUSPMessage(USPMessageRequest) returns (USPMessageResponse);
     
+    // HandleProactiveOnboarding handles TR-369 proactive onboarding when MTP connection succeeds
+    rpc HandleProactiveOnboarding(ProactiveOnboardingRequest) returns (ProactiveOnboardingResponse);
+    
     // GetServiceHealth returns the health status of the USP service
     rpc GetServiceHealth(HealthRequest) returns (HealthResponse);
     
@@ -69,6 +72,21 @@ message StatusResponse {
     string version = 2;
     string uptime = 3;
     int32 processed_messages = 4;
+}
+
+// Request for TR-369 proactive onboarding when MTP connection succeeds but no USP messages received
+message ProactiveOnboardingRequest {
+    string endpoint_id = 1;                // Generated endpoint ID for proactive onboarding
+    string usp_version = 2;                // USP protocol version to use (1.3 or 1.4)
+    map<string, string> connection_context = 3;  // MTP connection context information
+}
+
+// Response from proactive onboarding handling
+message ProactiveOnboardingResponse {
+    bool success = 1;                      // True if proactive onboarding was initiated
+    string message = 2;                    // Status message or error description
+    string onboarding_status = 3;          // Current onboarding status
+    string agent_id = 4;                   // Agent ID being onboarded
     int32 onboarded_devices = 5;
     map<string, string> statistics = 6;
 }

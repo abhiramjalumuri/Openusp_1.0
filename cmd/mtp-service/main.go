@@ -5,24 +5,29 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"openusp/internal/grpc"
 	"openusp/internal/usp"
 	"openusp/pkg/config"
 	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
+	"openusp/pkg/proto/mtpservice"
+	"openusp/pkg/proto/uspservice"
 	"openusp/pkg/proto/v1_3"
 	"openusp/pkg/proto/v1_4"
+	"openusp/pkg/service/client"
 	"openusp/pkg/version"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,9 +35,11 @@ import (
 type SimpleMTPService struct {
 	webSocketPort    int
 	healthPort       int
+	grpcPort         int
 	unixSocketPath   string
 	webSocketServer  *http.Server // WebSocket protocol server (standard port 8081)
 	healthServer     *http.Server // Health/admin server (dynamic port)
+	grpcServer       *grpc.Server // gRPC server for USP service communication
 	messageHandler   MessageHandler
 	connectedClients map[string]time.Time
 	upgrader         websocket.Upgrader
@@ -40,16 +47,26 @@ type SimpleMTPService struct {
 	mu               sync.RWMutex
 }
 
+// ConnectionContext provides context about the connection for message processing
+type ConnectionContext struct {
+	ClientID      string
+	TransportType string
+	WebSocketConn *websocket.Conn // For WebSocket connections
+	// Additional transport-specific fields can be added here
+}
+
 // MessageHandler defines the interface for handling USP messages
 type MessageHandler interface {
 	ProcessUSPMessage(data []byte) ([]byte, error)
+	ProcessUSPMessageWithContext(data []byte, connCtx *ConnectionContext) ([]byte, error)
 	DetectUSPVersion(data []byte) (string, error)
 }
 
 // Config holds configuration for MTP service
 type Config struct {
-	WebSocketPort    int    // Standard WebSocket port (8081)
-	HealthPort       int    // Dynamic port for health/status/metrics
+	WebSocketPort    int // Standard WebSocket port (8081)
+	HealthPort       int // Dynamic port for health/status/metrics
+	GRPCPort         int // gRPC port for USP service communication
 	UnixSocketPath   string
 	EnableWebSocket  bool
 	EnableUnixSocket bool
@@ -57,19 +74,40 @@ type Config struct {
 	EnableSTOMP      bool
 }
 
-// DefaultConfig returns default MTP service configuration
+// DefaultConfig returns default MTP service configuration with calculated gRPC port
 func DefaultConfig(healthPort int) *Config {
-	// WebSocket protocol always uses standard USP MTP port
+	return DefaultConfigWithPorts(healthPort, healthPort+1000)
+}
+
+// DefaultConfigWithPorts returns MTP service configuration with specified ports
+func DefaultConfigWithPorts(healthPort, grpcPort int) *Config {
+	// WebSocket protocol uses standard USP MTP port (8081), but can be overridden
 	webSocketPort := 8081
+
+	// Check if port is overridden via environment variable
+	if portStr := os.Getenv("MTP_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			webSocketPort = p
+		}
+	}
+	if portStr := os.Getenv("SERVICE_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			webSocketPort = p
+		}
+	}
+
+	// Load MTP configuration from environment
+	mtpConfig := config.LoadMTPConfig()
 
 	return &Config{
 		WebSocketPort:    webSocketPort,
 		HealthPort:       healthPort,
-		UnixSocketPath:   "/tmp/usp-agent.sock",
-		EnableWebSocket:  true,
-		EnableUnixSocket: true,
-		EnableMQTT:       true,
-		EnableSTOMP:      true,
+		GRPCPort:         grpcPort, // Use the provided gRPC port
+		UnixSocketPath:   mtpConfig.UnixSocketPath,
+		EnableWebSocket:  mtpConfig.WebSocketEnabled,
+		EnableUnixSocket: mtpConfig.UnixSocketEnabled,
+		EnableMQTT:       mtpConfig.MQTTEnabled,
+		EnableSTOMP:      mtpConfig.STOMPEnabled,
 	}
 }
 
@@ -81,6 +119,7 @@ func NewSimpleMTPService(config *Config, handler MessageHandler) (*SimpleMTPServ
 	return &SimpleMTPService{
 		webSocketPort:    config.WebSocketPort,
 		healthPort:       config.HealthPort,
+		grpcPort:         config.GRPCPort,
 		unixSocketPath:   config.UnixSocketPath,
 		messageHandler:   handler,
 		connectedClients: make(map[string]time.Time),
@@ -89,6 +128,7 @@ func NewSimpleMTPService(config *Config, handler MessageHandler) (*SimpleMTPServ
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins for demo
 			},
+			Subprotocols: []string{"v1.usp"}, // Support USP WebSocket subprotocol
 		},
 	}, nil
 }
@@ -135,9 +175,35 @@ func (s *SimpleMTPService) Start(ctx context.Context) error {
 		}
 	}()
 
+	// Create and start gRPC server for MTP service
+	s.grpcServer = grpc.NewServer()
+
+	// Register the MTP service - need to cast messageHandler to USPMessageHandler
+	if uspHandler, ok := s.messageHandler.(*USPMessageHandler); ok {
+		mtpservice.RegisterMTPServiceServer(s.grpcServer, uspHandler)
+		log.Printf("✅ Registered MTP gRPC service with agent connection support")
+	} else {
+		log.Printf("⚠️ Message handler is not USPMessageHandler - gRPC service registration skipped")
+	}
+
+	// Start gRPC server
+	go func() {
+		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.grpcPort))
+		if err != nil {
+			log.Printf("❌ Failed to listen on gRPC port %d: %v", s.grpcPort, err)
+			return
+		}
+
+		log.Printf("🔌 Starting gRPC server on port %d", s.grpcPort)
+		if err := s.grpcServer.Serve(lis); err != nil {
+			log.Printf("❌ gRPC server error: %v", err)
+		}
+	}()
+
 	log.Printf("✅ Simple MTP Service started")
 	log.Printf("   📡 WebSocket Port: %d (USP Protocol)", s.webSocketPort)
 	log.Printf("   🏥 Health API Port: %d (Dynamic)", s.healthPort)
+	log.Printf("   🔧 gRPC Port: %d (MTP Service Communication)", s.grpcPort)
 	return nil
 }
 
@@ -163,6 +229,83 @@ func (s *SimpleMTPService) Stop() {
 	}
 
 	log.Println("✅ Simple MTP Service stopped")
+}
+
+// triggerProactiveOnboarding implements TR-369 proactive onboarding when MTP connection succeeds
+// but agent doesn't send USP messages (like obuspa in factory default state)
+func (s *SimpleMTPService) triggerProactiveOnboarding(clientID, selectedSubprotocol string) {
+	// Per TR-369 Section 3.3.2: Controller-initiated discovery
+	// Wait for initial stabilization period to see if agent sends messages
+	stabilizationPeriod := 5 * time.Second
+	log.Printf("🔍 ProactiveOnboarding: Monitoring client %s for %v (TR-369 stabilization)", clientID, stabilizationPeriod)
+
+	time.Sleep(stabilizationPeriod)
+
+	// Check if client is still connected and hasn't sent any USP messages
+	s.mu.RLock()
+	_, stillConnected := s.connectedClients[clientID]
+	s.mu.RUnlock()
+
+	if !stillConnected {
+		log.Printf("📱 ProactiveOnboarding: Client %s disconnected during stabilization - skipping", clientID)
+		return
+	}
+
+	// Generate a synthetic endpoint ID for the proactive onboarding
+	// In real scenarios, this would be derived from client certificates or other MTP-level info
+	endpointID := fmt.Sprintf("proto::proactive-%s", clientID)
+
+	// Determine USP version - default to 1.3 if subprotocol doesn't specify
+	uspVersion := "1.3"
+	if selectedSubprotocol == "v1.usp" || selectedSubprotocol == "" {
+		uspVersion = "1.3" // Default USP version
+	}
+
+	log.Printf("🚀 ProactiveOnboarding: Initiating TR-369 controller-driven discovery for %s (USP %s)", endpointID, uspVersion)
+
+	// Create connection context per TR-369 requirements
+	connectionContext := map[string]interface{}{
+		"transport_type": "WebSocket",
+		"client_id":      clientID,
+		"subprotocol":    selectedSubprotocol,
+		"initiated_by":   "controller",
+		"reason":         "no_usp_messages_received",
+		"mtp_version":    "1.0",
+	}
+
+	// Call USP service to handle proactive onboarding
+	if uspHandler, ok := s.messageHandler.(*USPMessageHandler); ok {
+		log.Printf("📡 ProactiveOnboarding: Notifying USP service of new connection: %s", endpointID)
+
+		// Send proactive onboarding request to USP service
+		// This follows TR-369 Section 3.3.2 - Controller-initiated Discovery
+		go func() {
+			err := uspHandler.notifyProactiveOnboarding(endpointID, uspVersion, connectionContext)
+			if err != nil {
+				log.Printf("❌ ProactiveOnboarding: Failed to notify USP service for %s: %v", endpointID, err)
+			} else {
+				log.Printf("✅ ProactiveOnboarding: Successfully initiated for %s", endpointID)
+			}
+		}()
+	} else {
+		log.Printf("❌ ProactiveOnboarding: Message handler is not USPMessageHandler for %s", endpointID)
+	}
+}
+
+// triggerProactiveOnboardingWithRealEndpoint triggers proactive onboarding using the actual agent endpoint ID
+func (h *USPMessageHandler) triggerProactiveOnboardingWithRealEndpoint(realEndpointID, uspVersion string, connectionContext map[string]interface{}) {
+	// TR-369 stabilization period - wait 5 seconds after WebSocket connection
+	time.Sleep(5 * time.Second)
+
+	log.Printf("🚀 ProactiveOnboarding: Initiating TR-369 controller-driven discovery for %s (USP %s)", realEndpointID, uspVersion)
+
+	// Notify USP service to start proactive onboarding with the real endpoint ID
+	err := h.notifyProactiveOnboarding(realEndpointID, uspVersion, connectionContext)
+	if err != nil {
+		log.Printf("❌ ProactiveOnboarding: Failed to notify USP service for %s: %v", realEndpointID, err)
+	} else {
+		log.Printf("✅ ProactiveOnboarding: Successfully initiated for %s", realEndpointID)
+	}
 }
 
 // handleUSPWebSocketDemo provides a demo WebSocket endpoint
@@ -284,7 +427,12 @@ func (s *SimpleMTPService) handleUSPWebSocket(w http.ResponseWriter, r *http.Req
 	// Update active connections metric
 	s.metrics.SetActiveConnections(float64(len(s.connectedClients)))
 
-	log.Printf("📱 WebSocket client connected: %s", clientID)
+	// Log the selected subprotocol for debugging
+	selectedSubprotocol := conn.Subprotocol()
+	log.Printf("📱 WebSocket client connected: %s (subprotocol: %s)", clientID, selectedSubprotocol)
+
+	// Note: Proactive onboarding will be triggered after we receive the WebSocket Connect record
+	// and extract the real agent endpoint ID (not synthetic client ID)
 
 	defer func() {
 		s.mu.Lock()
@@ -308,8 +456,34 @@ func (s *SimpleMTPService) handleUSPWebSocket(w http.ResponseWriter, r *http.Req
 			break
 		}
 
+		// Handle WebSocket PING/PONG frames - obuspa handles its own keep-alive
+		if messageType == websocket.PingMessage {
+			log.Printf("🏓 Received WebSocket PING from client %s - letting obuspa handle keep-alive", clientID)
+			// Do NOT send PONG response - obuspa expects to handle its own keep-alive mechanism
+			// Sending WebSocket PONG confuses obuspa's USP record parsing
+			continue
+		}
+
+		if messageType == websocket.PongMessage {
+			log.Printf("🏓 Received WebSocket PONG from client %s", clientID)
+			// PONG received - connection is alive, no response needed
+			continue
+		}
+
+		if messageType == websocket.TextMessage {
+			log.Printf("⚠️ Received unexpected text message from client %s: %s", clientID, string(payload))
+			continue
+		}
+
 		if messageType == websocket.BinaryMessage && s.messageHandler != nil {
 			recvSize := len(payload)
+
+			// Skip empty binary messages
+			if recvSize == 0 {
+				log.Printf("⚠️ Received empty binary message from client %s", clientID)
+				continue
+			}
+
 			log.Printf("📨 Received USP message from client %s (size: %d bytes)", clientID, recvSize)
 
 			// Detect USP version for metrics
@@ -319,7 +493,15 @@ func (s *SimpleMTPService) handleUSPWebSocket(w http.ResponseWriter, r *http.Req
 			}
 
 			start := time.Now()
-			response, err := s.messageHandler.ProcessUSPMessage(payload)
+
+			// Create connection context for agent registration
+			connCtx := &ConnectionContext{
+				ClientID:      clientID,
+				TransportType: "WebSocket",
+				WebSocketConn: conn,
+			}
+
+			response, err := s.messageHandler.ProcessUSPMessageWithContext(payload, connCtx)
 			procDur := time.Since(start)
 
 			if err != nil {
@@ -445,33 +627,46 @@ func (s *SimpleMTPService) handleSimulate(w http.ResponseWriter, r *http.Request
 
 // USPMessageHandler provides comprehensive USP message handling with parsing
 type USPMessageHandler struct {
-	parser         *usp.USPParser
-	uspClient      *grpc.USPServiceClient
-	uspServiceAddr string
+	parser           *usp.USPParser
+	connectionClient *client.OpenUSPConnectionClient
+	consulRegistry   *consul.ServiceRegistry
+
+	// Agent connection tracking
+	connectedAgents map[string]*ConnectedAgent // agentID -> connection info
+	agentsMutex     sync.RWMutex
+
+	// Embed the unimplemented server to satisfy the gRPC interface
+	mtpservice.UnimplementedMTPServiceServer
+}
+
+// ConnectedAgent represents a connected agent
+type ConnectedAgent struct {
+	AgentID       string
+	ClientID      string
+	TransportType string
+	ConnectedAt   time.Time
+	WebSocketConn *websocket.Conn // For WebSocket transport
 }
 
 // NewUSPMessageHandler creates a new USP message handler that forwards to USP service
-func NewUSPMessageHandler(uspServiceAddr string) *USPMessageHandler {
+func NewUSPMessageHandler(registry *consul.ServiceRegistry) *USPMessageHandler {
+	// Create connection client for service discovery
+	connectionClient, err := client.NewOpenUSPConnectionClient(registry)
+	if err != nil {
+		log.Fatalf("Failed to create connection client: %v", err)
+	}
+
 	return &USPMessageHandler{
-		parser:         usp.NewUSPParser(),
-		uspServiceAddr: uspServiceAddr,
+		parser:           usp.NewUSPParser(),
+		connectionClient: connectionClient,
+		consulRegistry:   registry,
+		connectedAgents:  make(map[string]*ConnectedAgent),
 	}
 }
 
-// initUSPServiceClient initializes the USP service client connection
-func (h *USPMessageHandler) initUSPServiceClient() error {
-	if h.uspClient != nil {
-		return nil // Already initialized
-	}
-
-	var err error
-	h.uspClient, err = grpc.NewUSPServiceClient(h.uspServiceAddr)
-	if err != nil {
-		return fmt.Errorf("failed to create USP service client: %w", err)
-	}
-
-	log.Printf("✅ Connected to USP Service at %s", h.uspServiceAddr)
-	return nil
+// getUSPServiceClient gets a USP service client via connection manager
+func (h *USPMessageHandler) getUSPServiceClient() (uspservice.USPServiceClient, error) {
+	return h.connectionClient.GetUSPServiceClient()
 }
 
 func (h *USPMessageHandler) DetectUSPVersion(data []byte) (string, error) {
@@ -483,24 +678,122 @@ func (h *USPMessageHandler) DetectUSPVersion(data []byte) (string, error) {
 }
 
 func (h *USPMessageHandler) ProcessUSPMessage(data []byte) ([]byte, error) {
+	return h.ProcessUSPMessageWithContext(data, nil)
+}
+
+func (h *USPMessageHandler) ProcessUSPMessageWithContext(data []byte, connCtx *ConnectionContext) ([]byte, error) {
 	messageCount++
 
-	// Initialize USP service client if needed
-	if err := h.initUSPServiceClient(); err != nil {
-		log.Printf("⚠️ USP service connection failed: %v", err)
-		// Fall back to simple parsing and response
-		return h.processUSPMessageLocally(data)
+	// First, check if this is an MTP-level message that should be handled locally
+	// Parse the USP record to determine the message type
+	parsed, err := h.parser.ParseUSP(data)
+	if err != nil {
+		log.Printf("❌ Failed to parse USP record: %v", err)
+		return nil, fmt.Errorf("failed to parse USP record: %w", err)
 	}
+
+	// Handle MTP-level messages directly (per TR-369 specification)
+	if parsed.Record != nil {
+		log.Printf("🔍 DEBUG: Received record type: %s, Version: %s, FromID: %s, ToID: %s",
+			parsed.Record.RecordType, parsed.Record.Version, parsed.Record.FromID, parsed.Record.ToID)
+
+		// Register agent connection when we see WebSocketConnect (for transport layer tracking)
+		if parsed.Record.RecordType == "WebSocketConnect" && connCtx != nil {
+			h.registerAgent(parsed.Record.FromID, connCtx)
+			log.Printf("🔗 Agent %s connected via WebSocket - forwarding connect record to USP service", parsed.Record.FromID)
+
+			// Trigger proactive onboarding with the REAL endpoint ID from the USP record
+			// This addresses the obuspa factory default issue where agents connect but don't send NOTIFY
+			realEndpointID := parsed.Record.FromID
+			uspVersion := string(parsed.Record.Version)
+
+			log.Printf("🚀 ProactiveOnboarding: Triggering with real endpoint ID: %s (USP %s)", realEndpointID, uspVersion)
+
+			// Create connection context for proactive onboarding
+			proactiveContext := map[string]interface{}{
+				"transport_type": connCtx.TransportType,
+				"client_id":      connCtx.ClientID,
+				"endpoint_id":    realEndpointID,
+				"usp_version":    uspVersion,
+				"initiated_by":   "controller",
+				"reason":         "no_usp_messages_received",
+				"mtp_version":    "1.0",
+			}
+
+			// Trigger proactive onboarding after stabilization period
+			go h.triggerProactiveOnboardingWithRealEndpoint(realEndpointID, uspVersion, proactiveContext)
+		}
+
+		// Forward ALL USP records to USP Service - MTP only handles transport layer
+		log.Printf("� Forwarding USP record (%s) to USP service for processing", parsed.Record.RecordType)
+
+		// All USP records (including connect records) should be processed by USP Service
+		// MTP Service only provides transport layer functionality
+	}
+
+	// Connection manager handles USP service discovery and connection pooling
 
 	// Forward USP message to USP service for processing
 	ctx := context.Background()
-	response, err := h.uspClient.ProcessUSPMessage(ctx, data, "WebSocket", "mtp-client", nil)
+
+	// Add debugging for data being forwarded
+	dataPreview := data
+	if len(dataPreview) > 64 {
+		dataPreview = dataPreview[:64]
+	}
+	log.Printf("🔍 MTP Debug - Forwarding to USP service: %d bytes, hex: %x", len(data), dataPreview)
+
+	transportType := "WebSocket"
+	if connCtx != nil {
+		transportType = connCtx.TransportType
+	}
+
+	// Get USP service client via connection manager
+	uspClient, err := h.getUSPServiceClient()
+	if err != nil {
+		log.Printf("❌ Failed to get USP service client: %v", err)
+		return h.processUSPMessageLocallyWithContext(data, connCtx)
+	}
+
+	// Create USP message request
+	request := &uspservice.USPMessageRequest{
+		UspData:       data,
+		TransportType: transportType,
+		ClientId:      "mtp-client",
+		Timestamp:     time.Now().UnixNano(),
+		Metadata:      make(map[string]string),
+	}
+
+	response, err := uspClient.ProcessUSPMessage(ctx, request)
 	if err != nil {
 		errorCount++
 		log.Printf("❌ USP service processing failed: %v", err)
-		// Fall back to local processing
-		return h.processUSPMessageLocally(data)
+
+		// Retry once with a new client (connection manager handles reconnection)
+		log.Printf("🔄 Retrying with new USP service client...")
+		uspClient2, err2 := h.getUSPServiceClient()
+		if err2 != nil {
+			log.Printf("❌ Failed to get USP service client for retry: %v", err2)
+		} else {
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel2()
+
+			response, err = uspClient2.ProcessUSPMessage(ctx2, request)
+			if err != nil {
+				log.Printf("❌ USP service processing failed after retry: %v", err)
+			} else {
+				log.Printf("✅ USP service call succeeded after retry")
+				// Continue with successful response processing below
+				goto processResponse
+			}
+		}
+
+		// USP messages must be processed by USP Service - don't fall back to local processing
+		log.Printf("❌ USP Service is required for USP message processing - cannot proceed without it")
+		return nil, fmt.Errorf("USP service required for message processing")
 	}
+
+processResponse:
 
 	if response.Status != "success" {
 		log.Printf("⚠️ USP service returned error: %s", response.ErrorMessage)
@@ -516,148 +809,430 @@ func (h *USPMessageHandler) ProcessUSPMessage(data []byte) ([]byte, error) {
 	return response.ResponseData, nil
 }
 
-// processUSPMessageLocally provides fallback local USP message processing
+// registerAgent registers a connected agent for message routing
+func (h *USPMessageHandler) registerAgent(agentID string, connCtx *ConnectionContext) {
+	if connCtx == nil {
+		log.Printf("⚠️ Cannot register agent %s: no connection context", agentID)
+		return
+	}
+
+	h.agentsMutex.Lock()
+	defer h.agentsMutex.Unlock()
+
+	connectedAgent := &ConnectedAgent{
+		AgentID:       agentID,
+		ClientID:      connCtx.ClientID,
+		TransportType: connCtx.TransportType,
+		ConnectedAt:   time.Now(),
+		WebSocketConn: connCtx.WebSocketConn,
+	}
+
+	h.connectedAgents[agentID] = connectedAgent
+	log.Printf("🔗 Registered agent %s (client: %s, transport: %s)", agentID, connCtx.ClientID, connCtx.TransportType)
+}
+
+// processUSPMessageLocally handles MTP-level messages and provides fallback for USP messages
 func (h *USPMessageHandler) processUSPMessageLocally(data []byte) ([]byte, error) {
-	// Parse complete USP record and message
+	return h.processUSPMessageLocallyWithContext(data, nil)
+}
+
+// processUSPMessageLocallyWithContext handles MTP-level messages and provides fallback for USP messages
+func (h *USPMessageHandler) processUSPMessageLocallyWithContext(data []byte, connCtx *ConnectionContext) ([]byte, error) {
+	// Parse the USP record to determine if it's MTP-level or USP-level
 	parsed, err := h.parser.ParseUSP(data)
 	if err != nil {
-		errorCount++
-		log.Printf("❌ Failed to parse USP message: %v", err)
-		return nil, fmt.Errorf("failed to parse USP message: %w", err)
+		log.Printf("❌ Failed to parse USP record: %v", err)
+		return nil, fmt.Errorf("failed to parse USP record: %w", err)
 	}
 
-	// Log detailed parsing information
-	h.logParsedUSP(parsed)
-
-	// Validate parsed record and message
+	// Handle MTP-level messages directly (per TR-369 specification)
 	if parsed.Record != nil {
-		if err := h.parser.ValidateRecord(parsed.Record); err != nil {
-			log.Printf("⚠️ Record validation warning: %v", err)
+		log.Printf("🔍 DEBUG: Received record type: %s, Version: %s, FromID: %s, ToID: %s",
+			parsed.Record.RecordType, parsed.Record.Version, parsed.Record.FromID, parsed.Record.ToID)
+
+		// Check if this record contains a USP message - if not, it's transport-level only
+		if parsed.Message == nil && (parsed.Record.RecordType == "NoSessionContext" || parsed.Record.RecordType == "SessionContext") {
+			log.Printf("⚠️ Record contains no USP message - treating as transport acknowledgment")
+			// Send a simple transport acknowledgment instead of forwarding to USP service
+			return []byte("Transport acknowledgment"), nil
 		}
-	}
 
-	if parsed.Message != nil {
-		if err := h.parser.ValidateMessage(parsed.Message); err != nil {
-			log.Printf("⚠️ Message validation warning: %v", err)
-		}
-	}
-
-	// Create appropriate response based on message type
-	response := h.createUSPResponse(parsed)
-
-	return response, nil
-}
-
-func (h *USPMessageHandler) logParsedUSP(parsed *usp.ParsedUSP) {
-	if parsed.Record != nil {
-		log.Printf("📋 USP %s Record: %s -> %s (%s)",
-			parsed.Record.Version,
-			parsed.Record.FromID,
-			parsed.Record.ToID,
-			parsed.Record.RecordType)
-	}
-
-	if parsed.Message != nil {
-		log.Printf("📋 USP %s Message: %s (%s)",
-			parsed.Message.Version,
-			parsed.Message.MsgID,
-			parsed.Message.MsgType)
-
-		// Log operation details if available
-		if body, ok := parsed.Message.Body.(map[string]interface{}); ok {
-			if operation, exists := body["operation"]; exists {
-				log.Printf("📋 Operation: %s", operation)
-
-				// Log additional operation-specific details
-				switch operation {
-				case "Get":
-					if paths, ok := body["param_paths"].([]string); ok {
-						log.Printf("📋 Parameter paths: %v", paths)
-					}
-				case "Set":
-					if updateObjs, ok := body["update_objs"].(int); ok {
-						log.Printf("📋 Update objects: %d", updateObjs)
-					}
-				case "Add":
-					if createObjs, ok := body["create_objs"].(int); ok {
-						log.Printf("📋 Create objects: %d", createObjs)
-					}
-				case "Delete":
-					if objPaths, ok := body["obj_paths"].([]string); ok {
-						log.Printf("📋 Object paths: %v", objPaths)
-					}
-				case "Operate":
-					if command, ok := body["command"].(string); ok {
-						log.Printf("📋 Command: %s", command)
-					}
-				}
+		switch parsed.Record.RecordType {
+		case "WebSocketConnect":
+			log.Printf("🔌 Handling WebSocket Connect at MTP level")
+			return h.handleWebSocketConnect(parsed)
+		case "MQTTConnect":
+			log.Printf("🔌 Handling MQTT Connect at MTP level")
+			return h.handleMQTTConnect(parsed)
+		case "STOMPConnect":
+			log.Printf("🔌 Handling STOMP Connect at MTP level")
+			return h.handleSTOMPConnect(parsed)
+		case "UDSConnect":
+			log.Printf("🔌 Handling UDS Connect at MTP level")
+			return h.handleUDSConnect(parsed)
+		case "Disconnect":
+			log.Printf("🔌 Handling Disconnect at MTP level")
+			return h.handleDisconnect(parsed)
+		case "NoSessionContext", "SessionContext":
+			// These should contain USP messages - check if they actually do
+			if parsed.Message == nil {
+				log.Printf("⚠️ USP record contains no message - may be transport-level keepalive")
+				// Don't forward empty records to USP service - send simple acknowledgment
+				return []byte("ACK"), nil
 			}
+
+			// USP messages should NOT be processed locally in MTP Service
+			// They should have been forwarded through the main flow
+			log.Printf("❌ USP message reached local processing - this should not happen!")
+			log.Printf("   Record type: %s, Message type: %s", parsed.Record.RecordType, parsed.Message.MsgType)
+			return nil, fmt.Errorf("USP messages must be processed by USP Service, not locally")
+		default:
+			log.Printf("❌ Unknown record type: %s", parsed.Record.RecordType)
+			return nil, fmt.Errorf("unknown record type: %s", parsed.Record.RecordType)
 		}
 	}
 
-	if len(parsed.Errors) > 0 {
-		log.Printf("⚠️ Parsing errors: %v", parsed.Errors)
-	}
+	return nil, fmt.Errorf("invalid USP record")
 }
 
-func (h *USPMessageHandler) createUSPResponse(parsed *usp.ParsedUSP) []byte {
-	if parsed == nil || parsed.Record == nil {
-		return []byte("Invalid USP message")
-	}
-
-	// Create response based on version
-	switch parsed.Record.Version {
-	case usp.Version14:
-		return h.createUSP14Response(parsed)
-	case usp.Version13:
-		return h.createUSP13Response(parsed)
-	default:
-		return []byte(fmt.Sprintf("Unsupported USP version: %s", parsed.Record.Version))
-	}
-}
-
-func (h *USPMessageHandler) createUSP14Response(parsed *usp.ParsedUSP) []byte {
-	// Create a simple echo response for demo
-	responseRecord := &v1_4.Record{
-		Version: "1.4",
-		ToId:    parsed.Record.FromID,
-		FromId:  parsed.Record.ToID,
-		RecordType: &v1_4.Record_NoSessionContext{
-			NoSessionContext: &v1_4.NoSessionContextRecord{
-				Payload: []byte(fmt.Sprintf("Processed USP 1.4 message: %s", parsed.Message.MsgType)),
+// createWebSocketConnectAck13 creates USP 1.3 WebSocket connect acknowledgment
+func (h *USPMessageHandler) createWebSocketConnectAck13(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's WebSocketConnect
+	// with its own WebSocketConnect record to complete session establishment
+	ackRecord := &v1_3.Record{
+		Version:         "1.3",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_3.Record_PLAINTEXT,
+		RecordType: &v1_3.Record_WebsocketConnect{
+			WebsocketConnect: &v1_3.WebSocketConnectRecord{
+				// Empty WebSocketConnect record per TR-369 - signals session ready
 			},
 		},
 	}
 
-	data, err := proto.Marshal(responseRecord)
+	data, err := proto.Marshal(ackRecord)
 	if err != nil {
-		log.Printf("❌ Failed to marshal USP 1.4 response: %v", err)
-		return []byte("Failed to create response")
+		log.Printf("❌ Failed to marshal USP 1.3 WebSocket connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create WebSocket connect ack")
 	}
 
-	return data
+	log.Printf("✅ Created USP 1.3 WebSocketConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
 }
 
-func (h *USPMessageHandler) createUSP13Response(parsed *usp.ParsedUSP) []byte {
-	// Create a simple echo response for demo
-	responseRecord := &v1_3.Record{
-		Version: "1.3",
-		ToId:    parsed.Record.FromID,
-		FromId:  parsed.Record.ToID,
-		RecordType: &v1_3.Record_NoSessionContext{
-			NoSessionContext: &v1_3.NoSessionContextRecord{
-				Payload: []byte(fmt.Sprintf("Processed USP 1.3 message: %s", parsed.Message.MsgType)),
+// createWebSocketConnectAck14 creates USP 1.4 WebSocket connect acknowledgment
+func (h *USPMessageHandler) createWebSocketConnectAck14(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's WebSocketConnect
+	// with its own WebSocketConnect record to complete session establishment
+	ackRecord := &v1_4.Record{
+		Version:         "1.4",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_4.Record_PLAINTEXT,
+		RecordType: &v1_4.Record_WebsocketConnect{
+			WebsocketConnect: &v1_4.WebSocketConnectRecord{
+				// Empty WebSocketConnect record per TR-369 - signals session ready
 			},
 		},
 	}
 
-	data, err := proto.Marshal(responseRecord)
+	data, err := proto.Marshal(ackRecord)
 	if err != nil {
-		log.Printf("❌ Failed to marshal USP 1.3 response: %v", err)
-		return []byte("Failed to create response")
+		log.Printf("❌ Failed to marshal USP 1.4 WebSocket connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create WebSocket connect ack")
 	}
 
-	return data
+	log.Printf("✅ Created USP 1.4 WebSocketConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createMQTTConnectAck13 creates USP 1.3 MQTT connect acknowledgment
+func (h *USPMessageHandler) createMQTTConnectAck13(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's MQTTConnect
+	// with its own MQTTConnect record to complete session establishment
+	ackRecord := &v1_3.Record{
+		Version:         "1.3",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_3.Record_PLAINTEXT,
+		RecordType: &v1_3.Record_MqttConnect{
+			MqttConnect: &v1_3.MQTTConnectRecord{
+				Version:         v1_3.MQTTConnectRecord_V3_1_1,
+				SubscribedTopic: "usp/controller",
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.3 MQTT connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create MQTT connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.3 MQTTConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createMQTTConnectAck14 creates USP 1.4 MQTT connect acknowledgment
+func (h *USPMessageHandler) createMQTTConnectAck14(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's MQTTConnect
+	// with its own MQTTConnect record to complete session establishment
+	ackRecord := &v1_4.Record{
+		Version:         "1.4",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_4.Record_PLAINTEXT,
+		RecordType: &v1_4.Record_MqttConnect{
+			MqttConnect: &v1_4.MQTTConnectRecord{
+				Version:         v1_4.MQTTConnectRecord_V3_1_1,
+				SubscribedTopic: "usp/controller",
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.4 MQTT connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create MQTT connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.4 MQTTConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createSTOMPConnectAck13 creates USP 1.3 STOMP connect acknowledgment
+func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
+	// with its own STOMPConnect record to complete session establishment
+	ackRecord := &v1_3.Record{
+		Version:         "1.3",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_3.Record_PLAINTEXT,
+		RecordType: &v1_3.Record_StompConnect{
+			StompConnect: &v1_3.STOMPConnectRecord{
+				Version:               v1_3.STOMPConnectRecord_V1_2,
+				SubscribedDestination: "/topic/usp.controller",
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.3 STOMP connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create STOMP connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.3 STOMPConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createSTOMPConnectAck14 creates USP 1.4 STOMP connect acknowledgment
+func (h *USPMessageHandler) createSTOMPConnectAck14(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
+	// with its own STOMPConnect record to complete session establishment
+	ackRecord := &v1_4.Record{
+		Version:         "1.4",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_4.Record_PLAINTEXT,
+		RecordType: &v1_4.Record_StompConnect{
+			StompConnect: &v1_4.STOMPConnectRecord{
+				Version:               v1_4.STOMPConnectRecord_V1_2,
+				SubscribedDestination: "/topic/usp.controller",
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.4 STOMP connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create STOMP connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.4 STOMPConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createUDSConnectAck13 creates USP 1.3 UDS connect acknowledgment
+func (h *USPMessageHandler) createUDSConnectAck13(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's UDSConnect
+	// with its own UDSConnect record to complete session establishment
+	ackRecord := &v1_3.Record{
+		Version:         "1.3",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_3.Record_PLAINTEXT,
+		RecordType: &v1_3.Record_UdsConnect{
+			UdsConnect: &v1_3.UDSConnectRecord{
+				// UDSConnectRecord is an empty message per protocol
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.3 UDS connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create UDS connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.3 UDSConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// createUDSConnectAck14 creates USP 1.4 UDS connect acknowledgment
+func (h *USPMessageHandler) createUDSConnectAck14(fromID, toID string) ([]byte, error) {
+	// Per TR-369 specification: Controller responds to Agent's UDSConnect
+	// with its own UDSConnect record to complete session establishment
+	ackRecord := &v1_4.Record{
+		Version:         "1.4",
+		ToId:            fromID, // Responding to the Agent
+		FromId:          toID,   // From the Controller
+		PayloadSecurity: v1_4.Record_PLAINTEXT,
+		RecordType: &v1_4.Record_UdsConnect{
+			UdsConnect: &v1_4.UDSConnectRecord{
+				// UDSConnectRecord is an empty message per protocol
+			},
+		},
+	}
+
+	data, err := proto.Marshal(ackRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.4 UDS connect ack: %v", err)
+		return nil, fmt.Errorf("failed to create UDS connect ack")
+	}
+
+	log.Printf("✅ Created USP 1.4 UDSConnect acknowledgment: %s → %s", toID, fromID)
+	return data, nil
+}
+
+// MTP-level connect handlers per TR-369 specification
+
+// handleWebSocketConnect processes WebSocket connect records at MTP level
+func (h *USPMessageHandler) handleWebSocketConnect(parsed *usp.ParsedUSP) ([]byte, error) {
+	log.Printf("✅ WebSocket connection establishment request received from Agent: %s", parsed.Record.FromID)
+
+	// According to TR-369 specification, when an Agent sends a WebSocketConnect record,
+	// the Controller MUST respond with a WebSocketConnect record to complete the session establishment
+	log.Printf("🔌 Sending WebSocketConnect acknowledgment per TR-369 specification")
+
+	agentID := parsed.Record.FromID
+	controllerID := parsed.Record.ToID
+
+	log.Printf("📋 WebSocket session established - Agent %s ready for USP message exchange", agentID)
+
+	// Create WebSocket connect acknowledgment
+	var ackData []byte
+	var err error
+	if parsed.Record.Version == usp.Version14 {
+		ackData, err = h.createWebSocketConnectAck14(agentID, controllerID)
+	} else {
+		ackData, err = h.createWebSocketConnectAck13(agentID, controllerID)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// WebSocket connection established - USP Service will handle discovery when agent sends USP messages
+	log.Printf("✅ WebSocket connection established with agent %s - ready for USP message flow", agentID)
+
+	return ackData, nil
+}
+
+// handleMQTTConnect processes MQTT connect records at MTP level
+func (h *USPMessageHandler) handleMQTTConnect(parsed *usp.ParsedUSP) ([]byte, error) {
+	log.Printf("✅ MQTT connection establishment request received from Agent: %s", parsed.Record.FromID)
+	log.Printf("🔌 Sending MQTTConnect acknowledgment per TR-369 specification")
+
+	agentID := parsed.Record.FromID
+	controllerID := parsed.Record.ToID
+
+	log.Printf("📋 MQTT session established - Agent %s ready for USP message exchange", agentID)
+
+	// Create MQTT connect acknowledgment
+	var ackData []byte
+	var err error
+	if parsed.Record.Version == usp.Version14 {
+		ackData, err = h.createMQTTConnectAck14(agentID, controllerID)
+	} else {
+		ackData, err = h.createMQTTConnectAck13(agentID, controllerID)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// MQTT connection established - USP Service will handle discovery when agent sends USP messages
+	log.Printf("✅ MQTT connection established with agent %s - ready for USP message flow", agentID)
+
+	return ackData, nil
+}
+
+// handleSTOMPConnect processes STOMP connect records at MTP level
+func (h *USPMessageHandler) handleSTOMPConnect(parsed *usp.ParsedUSP) ([]byte, error) {
+	log.Printf("📡 Processing STOMP Connect: %s → %s", parsed.Record.FromID, parsed.Record.ToID)
+
+	// Per TR-369: Controller responds with STOMPConnect acknowledgment
+	var ackData []byte
+	var err error
+
+	// Determine version and create appropriate acknowledgment
+	if parsed.Record.Version == usp.Version13 {
+		ackData, err = h.createSTOMPConnectAck13(parsed.Record.FromID, parsed.Record.ToID)
+	} else if parsed.Record.Version == usp.Version14 {
+		ackData, err = h.createSTOMPConnectAck14(parsed.Record.FromID, parsed.Record.ToID)
+	} else {
+		log.Printf("❌ Unsupported USP version for STOMP connect: %v", parsed.Record.Version)
+		return nil, fmt.Errorf("unsupported USP version: %v", parsed.Record.Version)
+	}
+
+	if err != nil {
+		log.Printf("❌ Failed to create STOMP connect acknowledgment: %v", err)
+		return nil, err
+	}
+
+	log.Printf("✅ STOMP Connect acknowledgment created for %s", parsed.Record.FromID)
+	log.Printf("✅ STOMP connection established - ready for USP message flow")
+
+	return ackData, nil
+}
+
+// handleUDSConnect processes Unix Domain Socket connect records at MTP level
+func (h *USPMessageHandler) handleUDSConnect(parsed *usp.ParsedUSP) ([]byte, error) {
+	log.Printf("📡 Processing UDS Connect: %s → %s", parsed.Record.FromID, parsed.Record.ToID)
+
+	// Per TR-369: Controller responds with UDSConnect acknowledgment
+	var ackData []byte
+	var err error
+
+	// Determine version and create appropriate acknowledgment
+	if parsed.Record.Version == usp.Version13 {
+		ackData, err = h.createUDSConnectAck13(parsed.Record.FromID, parsed.Record.ToID)
+	} else if parsed.Record.Version == usp.Version14 {
+		ackData, err = h.createUDSConnectAck14(parsed.Record.FromID, parsed.Record.ToID)
+	} else {
+		log.Printf("❌ Unsupported USP version for UDS connect: %v", parsed.Record.Version)
+		return nil, fmt.Errorf("unsupported USP version: %v", parsed.Record.Version)
+	}
+
+	if err != nil {
+		log.Printf("❌ Failed to create UDS connect acknowledgment: %v", err)
+		return nil, err
+	}
+
+	log.Printf("✅ UDS Connect acknowledgment created for %s", parsed.Record.FromID)
+	log.Printf("✅ Unix Domain Socket connection established - ready for USP message flow")
+
+	return ackData, nil
+}
+
+// handleDisconnect processes disconnect records at MTP level
+func (h *USPMessageHandler) handleDisconnect(parsed *usp.ParsedUSP) ([]byte, error) {
+	log.Printf("✅ Disconnect processed at MTP level")
+	// No response needed for disconnect
+	return nil, nil
 }
 
 // Global counters for demo
@@ -798,17 +1373,21 @@ func main() {
 			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
 	}
 
-	// Determine the health port to use (dynamic when Consul enabled)
-	var healthPort int
+	// Determine the health port and gRPC port to use (dynamic when Consul enabled)
+	var healthPort, grpcPort int
 	if serviceInfo != nil {
 		healthPort = serviceInfo.Port
+		grpcPort = serviceInfo.GRPCPort // Use the gRPC port allocated by Consul
+		log.Printf("🎯 Using Consul-allocated ports: health=%d, gRPC=%d", healthPort, grpcPort)
 	} else {
 		healthPort = deployConfig.ServicePort
+		grpcPort = healthPort + 1000 // Fallback calculation for non-Consul mode
+		log.Printf("🎯 Using calculated ports (no Consul): health=%d, gRPC=%d", healthPort, grpcPort)
 	}
 
 	// Load MTP configuration with dual ports
 	// WebSocket uses standard port 8081, health API uses dynamic port
-	config := DefaultConfig(healthPort)
+	config := DefaultConfigWithPorts(healthPort, grpcPort)
 
 	// Create USP message handler that forwards to USP service
 	uspServiceAddr := ""
@@ -847,7 +1426,7 @@ func main() {
 		}
 	}
 
-	handler := NewUSPMessageHandler(uspServiceAddr)
+	handler := NewUSPMessageHandler(registry)
 
 	// Create MTP service
 	mtpService, err := NewSimpleMTPService(config, handler)
@@ -900,4 +1479,174 @@ func main() {
 	cancel()
 	mtpService.Stop()
 	log.Printf("✅ MTP Service stopped successfully")
+}
+
+// createTransportErrorResponse13 creates a simple USP 1.3 error indicating transport/service issues
+func (h *USPMessageHandler) createTransportErrorResponse13() []byte {
+	// Create minimal error record indicating USP service unavailable
+	errorRecord := &v1_3.Record{
+		Version: "1.3",
+		ToId:    "proto://unknown-endpoint",
+		FromId:  "proto://openusp-mtp-service",
+		RecordType: &v1_3.Record_NoSessionContext{
+			NoSessionContext: &v1_3.NoSessionContextRecord{
+				Payload: []byte("USP service temporarily unavailable"),
+			},
+		},
+	}
+
+	data, err := proto.Marshal(errorRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.3 transport error: %v", err)
+		return []byte("Transport error - USP service unavailable")
+	}
+	return data
+}
+
+// createTransportErrorResponse14 creates a simple USP 1.4 error indicating transport/service issues
+func (h *USPMessageHandler) createTransportErrorResponse14() []byte {
+	// Create minimal error record indicating USP service unavailable
+	errorRecord := &v1_4.Record{
+		Version: "1.4",
+		ToId:    "proto://unknown-endpoint",
+		FromId:  "proto://openusp-mtp-service",
+		RecordType: &v1_4.Record_NoSessionContext{
+			NoSessionContext: &v1_4.NoSessionContextRecord{
+				Payload: []byte("USP service temporarily unavailable"),
+			},
+		},
+	}
+
+	data, err := proto.Marshal(errorRecord)
+	if err != nil {
+		log.Printf("❌ Failed to marshal USP 1.4 transport error: %v", err)
+		return []byte("Transport error - USP service unavailable")
+	}
+	return data
+}
+
+// --- MTP gRPC Service Implementation ---
+
+// SendMessageToAgent implements the gRPC method to send messages to agents
+func (h *USPMessageHandler) SendMessageToAgent(ctx context.Context, req *mtpservice.SendMessageRequest) (*mtpservice.SendMessageResponse, error) {
+	if req.AgentId == "" {
+		return &mtpservice.SendMessageResponse{
+			Success:      false,
+			ErrorMessage: "Agent ID is required",
+		}, nil
+	}
+
+	h.agentsMutex.RLock()
+	agent, exists := h.connectedAgents[req.AgentId]
+	h.agentsMutex.RUnlock()
+
+	if !exists {
+		return &mtpservice.SendMessageResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Agent %s is not connected", req.AgentId),
+		}, nil
+	}
+
+	log.Printf("🚀 Sending USP message to agent %s via %s transport (size: %d bytes)",
+		req.AgentId, agent.TransportType, len(req.UspMessage))
+
+	// Send message based on transport type
+	switch agent.TransportType {
+	case "WebSocket":
+		if agent.WebSocketConn == nil {
+			return &mtpservice.SendMessageResponse{
+				Success:      false,
+				ErrorMessage: "WebSocket connection is nil",
+			}, nil
+		}
+
+		if err := agent.WebSocketConn.WriteMessage(websocket.BinaryMessage, req.UspMessage); err != nil {
+			log.Printf("❌ Failed to send message to agent %s: %v", req.AgentId, err)
+			return &mtpservice.SendMessageResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("Failed to send message: %v", err),
+			}, nil
+		}
+
+		log.Printf("✅ Successfully sent message to agent %s", req.AgentId)
+		return &mtpservice.SendMessageResponse{
+			Success: true,
+		}, nil
+
+	default:
+		return &mtpservice.SendMessageResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Transport type %s not yet implemented", agent.TransportType),
+		}, nil
+	}
+}
+
+// GetConnectedAgents implements the gRPC method to list connected agents
+func (h *USPMessageHandler) GetConnectedAgents(ctx context.Context, req *mtpservice.GetConnectedAgentsRequest) (*mtpservice.GetConnectedAgentsResponse, error) {
+	h.agentsMutex.RLock()
+	defer h.agentsMutex.RUnlock()
+
+	var agents []*mtpservice.ConnectedAgent
+	for _, agent := range h.connectedAgents {
+		agents = append(agents, &mtpservice.ConnectedAgent{
+			AgentId:       agent.AgentID,
+			ClientId:      agent.ClientID,
+			TransportType: agent.TransportType,
+			ConnectedAt:   agent.ConnectedAt.Unix(),
+		})
+	}
+
+	return &mtpservice.GetConnectedAgentsResponse{
+		Agents: agents,
+	}, nil
+}
+
+// GetServiceHealth implements the gRPC method for health checks
+func (h *USPMessageHandler) GetServiceHealth(ctx context.Context, req *mtpservice.HealthRequest) (*mtpservice.HealthResponse, error) {
+	h.agentsMutex.RLock()
+	agentCount := len(h.connectedAgents)
+	h.agentsMutex.RUnlock()
+
+	return &mtpservice.HealthResponse{
+		Status:    "healthy",
+		Message:   fmt.Sprintf("mtp-service running with %d connected agents", agentCount),
+		Timestamp: time.Now().Unix(),
+	}, nil
+}
+
+// notifyProactiveOnboarding implements TR-369 proactive onboarding notification to USP service
+func (h *USPMessageHandler) notifyProactiveOnboarding(endpointID, uspVersion string, connectionContext map[string]interface{}) error {
+	log.Printf("📡 ProactiveOnboarding: Notifying USP service of new connection: %s (USP %s)", endpointID, uspVersion)
+
+	// Get USP service client via connection manager
+	uspClient, err := h.getUSPServiceClient()
+	if err != nil {
+		return fmt.Errorf("failed to get USP service client: %w", err)
+	}
+
+	// Create proactive onboarding request per TR-369 specification
+	request := &uspservice.ProactiveOnboardingRequest{
+		EndpointId: endpointID,
+		UspVersion: uspVersion,
+		ConnectionContext: map[string]string{
+			"transport_type": fmt.Sprintf("%v", connectionContext["transport_type"]),
+			"client_id":      fmt.Sprintf("%v", connectionContext["client_id"]),
+			"subprotocol":    fmt.Sprintf("%v", connectionContext["subprotocol"]),
+			"initiated_by":   fmt.Sprintf("%v", connectionContext["initiated_by"]),
+			"reason":         fmt.Sprintf("%v", connectionContext["reason"]),
+			"mtp_version":    fmt.Sprintf("%v", connectionContext["mtp_version"]),
+		},
+	}
+
+	// Call USP service for proactive onboarding per TR-369 Section 3.3.2
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	response, err := uspClient.HandleProactiveOnboarding(ctx, request)
+	if err != nil {
+		return fmt.Errorf("USP service proactive onboarding failed: %w", err)
+	}
+
+	log.Printf("✅ ProactiveOnboarding: USP service response: %s", response.Message)
+	return nil
 }

@@ -919,7 +919,7 @@ When reporting issues, include:
 
 - **GitHub Issues**: Report bugs and request features
 - **Documentation**: Check latest documentation for updates
-- **Examples**: Review example deployments in `examples/` directory
+- **Examples**: Review working protocol agents in `cmd/usp-agent/` and `cmd/cwmp-agent/`
 - **Stack Overflow**: Tag questions with `openusp` and `tr-369`
 
 ---

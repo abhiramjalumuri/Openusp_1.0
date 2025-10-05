@@ -121,14 +121,33 @@ func (gw *APIGateway) registerService() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	serviceInfo, err := gw.registry.RegisterService(ctx, gw.config.ServiceName, gw.config.ServiceType)
+	// API Gateway uses static configured port for external client access
+	serviceInfo := &consul.ServiceInfo{
+		Name:     gw.config.ServiceName,
+		Address:  "localhost",
+		Port:     gw.config.ServicePort, // Use static configured port (6500)
+		GRPCPort: 0,                     // API Gateway doesn't use gRPC
+		Protocol: "http",
+		Tags:     []string{"openusp", "v1.1.0", gw.config.ServiceType},
+		Meta: map[string]string{
+			"service_type": gw.config.ServiceType,
+			"protocol":     "http",
+			"version":      "1.1.0",
+			"environment":  "development",
+			"static_port":  "true", // Mark as using static port
+		},
+		Health: "starting",
+	}
+
+	err := gw.registry.RegisterServiceWithPorts(ctx, serviceInfo)
 	if err != nil {
 		return fmt.Errorf("failed to register with Consul: %w", err)
 	}
 
 	gw.serviceInfo = serviceInfo
-	log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
+	log.Printf("🎯 API Gateway registered with Consul: %s (%s) at localhost:%d (STATIC PORT)",
 		serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
+	log.Printf("   └── External clients should connect to: http://localhost:%d", serviceInfo.Port)
 
 	return nil
 }
@@ -157,9 +176,8 @@ func (gw *APIGateway) getDataServiceAddress() (string, error) {
 }
 
 func (gw *APIGateway) getHTTPPort() int {
-	if gw.serviceInfo != nil {
-		return gw.serviceInfo.Port
-	}
+	// API Gateway always uses static configured port for external client access
+	// Unlike internal services which can use dynamic ports, API Gateway needs predictable endpoint
 	return gw.config.ServicePort
 }
 

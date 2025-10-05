@@ -313,7 +313,7 @@ curl http://localhost:6500/api/v1/discovery/devices
 1. **Check Logs**: Service-specific logs in `logs/` directory
 2. **Status Check**: `make status` to verify all services
 3. **API Documentation**: Interactive Swagger UI
-4. **Examples**: Working examples in `examples/` directory
+4. **Examples**: Working protocol agents in `cmd/usp-agent/` and `cmd/cwmp-agent/`
 5. **Community**: GitHub issues and discussions
 
 ## Best Practices

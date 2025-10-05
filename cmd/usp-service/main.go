@@ -19,13 +19,14 @@ import (
 	"openusp/pkg/config"
 	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
-	"openusp/pkg/proto/dataservice"
 	"openusp/pkg/proto/uspservice"
 	v1_3 "openusp/pkg/proto/v1_3"
 	v1_4 "openusp/pkg/proto/v1_4"
+	"openusp/pkg/service/client"
 	"openusp/pkg/version"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -679,38 +680,19 @@ func main() {
 
 	log.Printf("✅ USP Core Service initialized with TR-181 data model")
 
-	// Connect to data service - use Consul discovery if available
-	var dataServiceAddr string
-	if registry != nil {
-		// Discover data service via Consul
-		dataService, err := registry.DiscoverService("openusp-data-service")
-		if err != nil {
-			log.Printf("⚠️ Failed to discover data service via Consul: %v", err)
-			dataServiceAddr = fmt.Sprintf("localhost:%s", cfg.DataServicePort)
-		} else {
-			// Use the gRPC port from Consul metadata
-			if grpcPort, exists := dataService.Meta["grpc_port"]; exists {
-				dataServiceAddr = fmt.Sprintf("localhost:%s", grpcPort)
-				log.Printf("🔍 Discovered data service gRPC port via Consul: %s", grpcPort)
-			} else {
-				// Fallback to ServicePort if no gRPC port in metadata
-				dataServiceAddr = fmt.Sprintf("localhost:%d", dataService.Port)
-				log.Printf("🔍 Using data service port from Consul: %d", dataService.Port)
-			}
-		}
-	} else {
-		// No Consul, use configuration
-		dataServiceAddr = fmt.Sprintf("localhost:%s", cfg.DataServicePort)
-	}
-
-	dataConn, err := grpc.Dial(dataServiceAddr, grpc.WithInsecure())
+	// Create connection client for dynamic service discovery
+	connectionClient, err := client.NewOpenUSPConnectionClient(registry)
 	if err != nil {
-		log.Fatalf("Failed to connect to data service: %v", err)
+		log.Fatalf("Failed to create connection client: %v", err)
 	}
-	defer dataConn.Close()
+	log.Printf("✅ Created connection client for dynamic service discovery")
 
-	dataClient := dataservice.NewDataServiceClient(dataConn)
-	log.Printf("✅ Connected to Data Service at %s", dataServiceAddr)
+	// Get Data Service client via connection manager (dynamic discovery)
+	dataClient, err := connectionClient.GetDataServiceClient()
+	if err != nil {
+		log.Fatalf("Failed to get data service client via connection manager: %v", err)
+	}
+	log.Printf("✅ Connected to Data Service via connection manager")
 
 	// Start HTTP server for health checks and metrics
 	var httpPort int
@@ -787,8 +769,18 @@ func main() {
 		log.Fatalf("Failed to listen on port %d: %v", grpcPort, err)
 	}
 
-	grpcServer := grpc.NewServer()
-	uspServiceServer := grpcImpl.NewUSPServiceServer(dataClient)
+	// Configure gRPC server with keepalive enforcement to prevent ENHANCE_YOUR_CALM errors
+	grpcServer := grpc.NewServer(
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    60 * time.Second, // Send keepalive pings every 60 seconds
+			Timeout: 10 * time.Second, // Wait 10 seconds for keepalive ping ack
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second, // Minimum allowed time between client pings
+			PermitWithoutStream: true,             // Allow pings even when no streams are active
+		}),
+	)
+	uspServiceServer := grpcImpl.NewUSPServiceServer(dataClient, connectionClient)
 	uspservice.RegisterUSPServiceServer(grpcServer, uspServiceServer)
 
 	// Start gRPC server in background

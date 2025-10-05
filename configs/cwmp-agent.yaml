@@ -7,7 +7,7 @@ device_info:
   product_class: "HomeGateway"
   manufacturer: "Plume Design"
   model_name: "CWMP-PlumeDevice-v10000"
-  serial_number: "Plume-CWMP-SER01"
+  serial_number: "Plume-CWMP-SER02"
   software_version: "1.1.0"
   hardware_version: "1.0"
   device_type: "gateway"

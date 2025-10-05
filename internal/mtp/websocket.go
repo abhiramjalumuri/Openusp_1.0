@@ -33,6 +33,7 @@ func NewWebSocketServer(port int) (*WebSocketServer, error) {
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins for demo
 			},
+			Subprotocols: []string{"v1.usp"}, // Support USP WebSocket subprotocol
 		},
 	}
 

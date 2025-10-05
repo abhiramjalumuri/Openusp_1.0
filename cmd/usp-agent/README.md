@@ -42,7 +42,7 @@ This example demonstrates how to create a TR-369 User Services Platform (USP) cl
 
 ```bash
 # From the OpenUSP root directory
-go run examples/tr369-agent/main.go
+make start-usp-agent
 ```
 
 ## Expected Output

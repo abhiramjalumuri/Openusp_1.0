@@ -169,15 +169,22 @@ networks:
 volumes:
   postgres_data:
     name: openusp-postgres-data
+    external: true
   consul_data:
     name: openusp-consul-data
+    external: true
   rabbitmq-dev-data:
     name: openusp-rabbitmq-dev-data
+    external: true
   mosquitto-dev-data:
     name: openusp-mosquitto-dev-data
+    external: true
   mosquitto-dev-logs:
     name: openusp-mosquitto-dev-logs
+    external: true
   prometheus-dev-data:
     name: openusp-prometheus-dev-data
+    external: true
   grafana-dev-data:
     name: openusp-grafana-dev-data
+    external: true

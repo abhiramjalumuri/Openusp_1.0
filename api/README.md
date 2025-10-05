@@ -6,7 +6,7 @@ This directory contains API documentation and specifications for the OpenUSP pla
 
 - `openapi/` - OpenAPI/Swagger specifications
 - `protobuf/` - Protocol Buffer API definitions (symlinked from pkg/proto)
-- `examples/` - API usage examples and sample requests/responses
+- Working protocol agents in `cmd/usp-agent/` and `cmd/cwmp-agent/` directories
 
 ## API Endpoints
 

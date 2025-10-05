@@ -664,7 +664,7 @@ Contributors are recognized in:
 ### Resources
 
 - **Documentation**: Check the `docs/` directory
-- **Examples**: Look at the `examples/` directory
+- **Examples**: Look at the working protocol agents in `cmd/usp-agent/` and `cmd/cwmp-agent/`
 - **Issues**: Search existing GitHub issues
 - **Discussions**: Join GitHub Discussions for questions
 

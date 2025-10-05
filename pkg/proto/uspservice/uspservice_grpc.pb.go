@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	USPService_ProcessUSPMessage_FullMethodName = "/uspservice.USPService/ProcessUSPMessage"
-	USPService_GetServiceHealth_FullMethodName  = "/uspservice.USPService/GetServiceHealth"
-	USPService_GetServiceStatus_FullMethodName  = "/uspservice.USPService/GetServiceStatus"
+	USPService_ProcessUSPMessage_FullMethodName         = "/uspservice.USPService/ProcessUSPMessage"
+	USPService_HandleProactiveOnboarding_FullMethodName = "/uspservice.USPService/HandleProactiveOnboarding"
+	USPService_GetServiceHealth_FullMethodName          = "/uspservice.USPService/GetServiceHealth"
+	USPService_GetServiceStatus_FullMethodName          = "/uspservice.USPService/GetServiceStatus"
 )
 
 // USPServiceClient is the client API for USPService service.
@@ -32,6 +33,8 @@ const (
 type USPServiceClient interface {
 	// ProcessUSPMessage processes incoming USP messages and returns responses
 	ProcessUSPMessage(ctx context.Context, in *USPMessageRequest, opts ...grpc.CallOption) (*USPMessageResponse, error)
+	// HandleProactiveOnboarding handles TR-369 proactive onboarding when MTP connection succeeds
+	HandleProactiveOnboarding(ctx context.Context, in *ProactiveOnboardingRequest, opts ...grpc.CallOption) (*ProactiveOnboardingResponse, error)
 	// GetServiceHealth returns the health status of the USP service
 	GetServiceHealth(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
 	// GetServiceStatus returns detailed status information
@@ -50,6 +53,16 @@ func (c *uSPServiceClient) ProcessUSPMessage(ctx context.Context, in *USPMessage
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(USPMessageResponse)
 	err := c.cc.Invoke(ctx, USPService_ProcessUSPMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *uSPServiceClient) HandleProactiveOnboarding(ctx context.Context, in *ProactiveOnboardingRequest, opts ...grpc.CallOption) (*ProactiveOnboardingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProactiveOnboardingResponse)
+	err := c.cc.Invoke(ctx, USPService_HandleProactiveOnboarding_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +97,8 @@ func (c *uSPServiceClient) GetServiceStatus(ctx context.Context, in *StatusReque
 type USPServiceServer interface {
 	// ProcessUSPMessage processes incoming USP messages and returns responses
 	ProcessUSPMessage(context.Context, *USPMessageRequest) (*USPMessageResponse, error)
+	// HandleProactiveOnboarding handles TR-369 proactive onboarding when MTP connection succeeds
+	HandleProactiveOnboarding(context.Context, *ProactiveOnboardingRequest) (*ProactiveOnboardingResponse, error)
 	// GetServiceHealth returns the health status of the USP service
 	GetServiceHealth(context.Context, *HealthRequest) (*HealthResponse, error)
 	// GetServiceStatus returns detailed status information
@@ -100,6 +115,9 @@ type UnimplementedUSPServiceServer struct{}
 
 func (UnimplementedUSPServiceServer) ProcessUSPMessage(context.Context, *USPMessageRequest) (*USPMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProcessUSPMessage not implemented")
+}
+func (UnimplementedUSPServiceServer) HandleProactiveOnboarding(context.Context, *ProactiveOnboardingRequest) (*ProactiveOnboardingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HandleProactiveOnboarding not implemented")
 }
 func (UnimplementedUSPServiceServer) GetServiceHealth(context.Context, *HealthRequest) (*HealthResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetServiceHealth not implemented")
@@ -142,6 +160,24 @@ func _USPService_ProcessUSPMessage_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(USPServiceServer).ProcessUSPMessage(ctx, req.(*USPMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _USPService_HandleProactiveOnboarding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProactiveOnboardingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(USPServiceServer).HandleProactiveOnboarding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: USPService_HandleProactiveOnboarding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(USPServiceServer).HandleProactiveOnboarding(ctx, req.(*ProactiveOnboardingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -192,6 +228,10 @@ var USPService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProcessUSPMessage",
 			Handler:    _USPService_ProcessUSPMessage_Handler,
+		},
+		{
+			MethodName: "HandleProactiveOnboarding",
+			Handler:    _USPService_HandleProactiveOnboarding_Handler,
 		},
 		{
 			MethodName: "GetServiceHealth",

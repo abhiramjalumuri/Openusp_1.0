@@ -1,59 +1,43 @@
-# OpenUSP Makefile
-# TR-369 User Service Platform - Professional Build System
+# =============================================================================
+# OpenUSP Makefile - TR-369 User Service Platform
+# Professional Build System for Microservice Architecture
+# =============================================================================
 
-# Environment Configuration
-include configs/version.env
-include configs/openusp.env
-export VERSION
-export RELEASE_NAME
-export RELEASE_DATE
+# =============================================================================
+# Configuration and Environment
+# =============================================================================
 
-# Build Configuration
-BINARY_DIR := build
-BUILD_DATE := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo 'unknown')
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')
-GIT_TAG := $(shell git describe --tags --exact-match 2>/dev/null || echo 'unknown')
-GIT_DIRTY := $(shell git diff --quiet 2>/dev/null || echo 'dirty')
-BUILD_USER := $(shell whoami 2>/dev/null || echo 'unknown')
-LDFLAGS := -ldflags "-X openusp/pkg/version.Version=$(VERSION) -X openusp/pkg/version.GitCommit=$(GIT_COMMIT) -X openusp/pkg/version.BuildDate=$(BUILD_DATE)"
+# Load configuration files
+# Note: Parse manually to avoid variable conflicts
+# include configs/version.env
+# include configs/openusp.env
+# export VERSION RELEASE_NAME RELEASE_DATE
 
-# Service Configuration
-SERVICES := api-gateway data-service usp-service mtp-service cwmp-service
+# Build configuration
+VERSION := $(shell grep "^VERSION=" configs/version.env | cut -d'=' -f2)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -X openusp/pkg/version.Version=$(VERSION) -X openusp/pkg/version.GitCommit=$(GIT_COMMIT) -X openusp/pkg/version.BuildTime=$(BUILD_TIME)
+
+# Go configuration
+GO := go
+GOBUILD := $(GO) build
+GOCLEAN := $(GO) clean
+GOTEST := $(GO) test
+GOMOD := $(GO) mod
+
+# Directory configuration
+BUILD_DIR := build
+LOG_DIR := logs
+
+# Service definitions
+SERVICES := api-gateway data-service usp-service mtp-service cwmp-service connection-manager
+AGENTS := usp-agent cwmp-agent
+
+# Docker configuration
 DOCKER_COMPOSE_INFRA := deployments/docker-compose.infra.yml
 
-# Export unified environment variables for use in targets
-export OPENUSP_DB_HOST
-export OPENUSP_DB_PORT
-export OPENUSP_DB_NAME
-export OPENUSP_DB_USER
-export OPENUSP_DB_PASSWORD
-export OPENUSP_DB_SSLMODE
-export OPENUSP_DATA_SERVICE_ADDR
-export OPENUSP_API_GATEWAY_PORT
-export OPENUSP_DATA_SERVICE_GRPC_PORT
-export OPENUSP_MTP_SERVICE_PORT
-export OPENUSP_CWMP_SERVICE_PORT
-export OPENUSP_USP_WS_URL
-export OPENUSP_CWMP_ACS_URL
-export OPENUSP_CWMP_USERNAME
-export OPENUSP_CWMP_PASSWORD
-
-# PHONY targets
-.PHONY: help version infra-up infra-down infra-status infra-clean
-.PHONY: infra-volumes setup-grafana
-.PHONY: build-ou-all build-all clean-ou-all start-ou-all stop-ou-all ou-status consul-status
-.PHONY: start-all stop-all clean-all show-static-endpoints
-.PHONY: $(addprefix build-,$(SERVICES))
-.PHONY: $(addprefix start-,$(SERVICES))
-.PHONY: $(addprefix clean-,$(SERVICES))
-.PHONY: $(addprefix logs-,$(SERVICES))
-# Legacy consul targets removed - all services now support runtime --consul flag
-# Legacy consul build targets removed
-.PHONY: build-all-consul
-
-# Logging configuration (use unified environment variable)
-LOG_DIR := $(OPENUSP_LOG_DIR)
+# Infrastructure volumes
 INFRA_VOLUMES := \
 	openusp-postgres-data \
 	openusp-rabbitmq-dev-data \
@@ -62,108 +46,493 @@ INFRA_VOLUMES := \
 	openusp-prometheus-dev-data \
 	openusp-grafana-dev-data
 
+# =============================================================================
+# PHONY Targets Declaration
+# =============================================================================
+
+.PHONY: help version clean docs
+.PHONY: $(addprefix build-,$(SERVICES) $(AGENTS))
+.PHONY: $(addprefix start-,$(SERVICES) $(AGENTS))
+.PHONY: $(addprefix stop-,$(SERVICES) $(AGENTS))
+.PHONY: $(addprefix logs-,$(SERVICES) $(AGENTS))
+.PHONY: build-all build-services build-agents
+.PHONY: start-all start-services stop-all stop-services
+.PHONY: clean-all clean-services clean-agents
+.PHONY: infra-up infra-down infra-status infra-clean infra-volumes
+.PHONY: setup-grafana verify-grafana
+.PHONY: wait-for-connection-manager wait-for-data-service wait-for-usp-service
+.PHONY: consul-status service-status consul-cleanup consul-cleanup-force dev-reset dev-restart dev-status
+.PHONY: fmt vet lint tidy test go-check
+.PHONY: endpoints quick-start
+
 .DEFAULT_GOAL := help
 
+# =============================================================================
+# Help and Information
+# =============================================================================
 
 help:
 	@echo "OpenUSP - TR-369 User Service Platform"
 	@echo "======================================"
 	@echo ""
-	@echo "Infrastructure Targets:"
-	@echo "  infra-up        Start all 3rd party services"
-	@echo "  infra-down      Stop all 3rd party services"
-	@echo "  infra-status    Show status of all 3rd party services"
-	@echo "  infra-clean     Clean/remove all 3rd party services and volumes"
-	@echo "  infra-volumes   List all named infrastructure volumes (OpenUSP)"
-	@echo "  setup-grafana   Configure Grafana with OpenUSP dashboards and data sources"
-	@echo "  verify-grafana  Verify Grafana dashboard data and connectivity"
+	@echo "🚀 Quick Start:"
+	@echo "  quick-start     Complete setup: infrastructure + build + start all services"
+	@echo "  start-all       Start all services (requires infra-up and build-all first)"
+	@echo "  endpoints       Show all service endpoints and credentials"
 	@echo ""
-	@echo "OpenUSP Service Targets:"
-	@echo "  start-ou-all    Start all OpenUSP services (requires infra-up first)"
-	@echo "  stop-ou-all     Stop all OpenUSP services"
-	@echo "  build-ou-all    Build all OpenUSP services"
-	@echo "  clean-ou-all    Clean all OpenUSP service binaries"
-	@echo "  ou-status       Show status of all OpenUSP services (Consul-aware)"
+	@echo "🏗️  Build Targets:"
+	@echo "  build-all       Build all services and agents"
+	@echo "  build-services  Build all microservices"
+	@echo "  build-agents    Build all protocol agents"
+	@echo "  build-<name>    Build specific service/agent"
 	@echo ""
-	@echo "Combined Targets:"
-	@echo "  start-all         Start all services (infrastructure + OpenUSP)"
-	@echo "  stop-all        Stop all services (infrastructure + OpenUSP)"
-	@echo "  clean-all       Clean all services (infrastructure + OpenUSP)"
-	@echo "  show-static-endpoints  List all public/local service endpoints"
+	@echo "🚦 Service Management:"
+	@echo "  start-services  Start all OpenUSP microservices with proper dependencies"
+	@echo "  stop-services   Stop all OpenUSP microservices"
+	@echo "  start-<name>    Start specific service/agent"
+	@echo "  stop-<name>     Stop specific service/agent"
+	@echo "  logs-<name>     Show logs for specific service/agent"
 	@echo ""
-	@echo "Agent Targets (Pure YAML Configuration):" 
-	@echo "  build-usp-agent     Build USP agent binary (TR-369)"
-	@echo "  build-cwmp-agent    Build CWMP agent binary (TR-069)" 
-	@echo "  start-usp-agent     Start USP agent with default YAML config"
-	@echo "  start-cwmp-agent    Start CWMP agent with default YAML config"
+	@echo "🔧 Infrastructure:"
+	@echo "  infra-up        Start all infrastructure services (PostgreSQL, Consul, etc.)"
+	@echo "  infra-down      Stop all infrastructure services"
+	@echo "  infra-status    Show infrastructure status"
+	@echo "  infra-clean     Clean all infrastructure volumes"
 	@echo ""
-	@echo "Service Management (all services support --consul flag for service discovery):"
-	@echo "  build-all           Build all components (services + agents)"
-	@echo "  build-ou-all        Build all OpenUSP services"
-	@echo "  start-all           Start all services (background)"
-	@echo "  stop-all            Stop all services"
-	@echo "  USP WebSocket URL: $(OPENUSP_USP_WS_URL)"
-	@echo "  CWMP ACS URL: $(OPENUSP_CWMP_ACS_URL) (auth: $(OPENUSP_CWMP_USERNAME)/$(OPENUSP_CWMP_PASSWORD))"
+	@echo "📊 Monitoring:"
+	@echo "  setup-grafana   Configure Grafana dashboards"
+	@echo "  consul-status   Show Consul service registry"
+	@echo "  service-status  Show all service health status"
 	@echo ""
-	@echo "Individual Service Targets:"
-	@echo "  build-<service> Build individual service"
-	@echo "  start-<service> Start individual service in foreground (logs to logs/<service>.log)"
-	@echo "  clean-<service> Clean individual service binary"
-	@echo "  logs-<service>  Stream (tail -f) logs for a service (requires service started)"
+	@echo "🧹 Maintenance:"
+	@echo "  clean-all       Clean all build artifacts"
+	@echo "  go-check        Run all Go quality checks"
+	@echo "  fmt             Format Go code"
+	@echo "  vet             Run go vet"
+	@echo "  lint            Run golangci-lint"
+	@echo "  test            Run all tests"
 	@echo ""
-	@echo "Service Name Map: api-gateway | data-service | usp-service | mtp-service | cwmp-service"
-	@echo "Examples: make start-api-gateway | make logs-api-gateway"
+	@echo "📚 Documentation:"
+	@echo "  docs            Show documentation guide"
+	@echo "  version         Show version information"
+	@echo "  endpoints       Show service endpoints"
 	@echo ""
-	@echo "Logs: Stored under ./logs (<service>.log). Use: tail -f logs/api-gateway.log"
-	@echo "Version: $(VERSION) Commit: $(GIT_COMMIT) Build Time: $(BUILD_DATE)"
+	@echo "📋 Available Services: $(SERVICES)"
+	@echo "📋 Available Agents: $(AGENTS)"
 	@echo ""
-	@echo "Quick Start: make start-all  # then open Swagger UI -> http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
+	@echo "💡 Examples:"
+	@echo "  make quick-start                 # Complete setup"
+	@echo "  make build-api-gateway          # Build API gateway"
+	@echo "  make start-connection-manager   # Start connection manager"
+	@echo "  make logs-usp-service           # View USP service logs"
 	@echo ""
-	@echo "Go Development Tools:"
-	@echo "  fmt             Format Go code (go fmt ./...)"
-	@echo "  vet             Vet Go code for common mistakes"
-	@echo "  lint            Run golangci-lint (install required)"
-	@echo "  tidy            Tidy Go modules"
-	@echo "  test-syntax     Test Go syntax without running tests"
-	@echo "  go-check        Run all Go quality checks (fmt, vet, tidy, test-syntax)"
-	@echo ""
-	@echo "Tip: Run 'make show-static-endpoints' for a full endpoint & credentials overview"
-	@echo "     Run 'make version' for version and protocol information"
+	@echo "📖 Version: $(VERSION) | Commit: $(GIT_COMMIT)"
 
-# Version Information
 version:
 	@echo "OpenUSP Version Information"
 	@echo "=========================="
 	@echo "Version: $(VERSION)"
 	@echo "Release: $(RELEASE_NAME) ($(RELEASE_DATE))"
 	@echo "Git Commit: $(GIT_COMMIT)"
-	@echo "Build Date: $(BUILD_DATE)"
-	@echo "Go Version: $(shell go version)"
+	@echo "Build Time: $(BUILD_TIME)"
+	@echo "Go Version: $(shell $(GO) version)"
 	@echo ""
 	@echo "Protocol Support:"
-	@echo "  USP Versions: $(USP_VERSION_MIN) - $(USP_VERSION_MAX)"
-	@echo "  CWMP Version: $(CWMP_VERSION)"
-	@echo "  API Version: $(API_VERSION)"
+	@echo "  USP: $(USP_VERSION_MIN) - $(USP_VERSION_MAX)"
+	@echo "  CWMP: $(CWMP_VERSION)"
+	@echo "  API: $(API_VERSION)"
+
+endpoints:
+	@echo "OpenUSP Service Endpoints"
+	@echo "========================"
+	@echo ""
+	@echo "🌐 Public Endpoints:"
+	@echo "  API Gateway:     http://localhost:$(OPENUSP_API_GATEWAY_PORT)"
+	@echo "  Swagger UI:      http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
+	@echo "  MTP Service:     http://localhost:$(OPENUSP_MTP_SERVICE_PORT)"
+	@echo "  CWMP Service:    http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"
+	@echo "  WebSocket:       $(OPENUSP_USP_WS_URL)"
+	@echo "  CWMP ACS:        $(OPENUSP_CWMP_ACS_URL)"
+	@echo ""
+	@echo "🏛️  Infrastructure:"
+	@echo "  Consul UI:       http://localhost:8500"
+	@echo "  Grafana:         http://localhost:3000 (admin/admin)"
+	@echo "  Prometheus:      http://localhost:9090"
+	@echo "  PostgreSQL:      localhost:$(OPENUSP_DB_PORT) ($(OPENUSP_DB_USER)/$(OPENUSP_DB_PASSWORD))"
+	@echo ""
+	@echo "🔐 Credentials:"
+	@echo "  CWMP Auth:       $(OPENUSP_CWMP_USERNAME)/$(OPENUSP_CWMP_PASSWORD)"
+	@echo "  Database:        $(OPENUSP_DB_USER)/$(OPENUSP_DB_PASSWORD)"
+
+docs:
+	@echo "📚 OpenUSP Documentation"
+	@echo "========================"
+	@echo ""
+	@echo "📖 Available Documentation:"
+	@echo "  docs/README.md           - Documentation index"
+	@echo "  docs/QUICKSTART.md       - 5-minute quick start"
+	@echo "  docs/MAKEFILE_GUIDE.md   - Complete Makefile reference"
+	@echo "  docs/DEVELOPMENT.md      - Development environment setup"
+	@echo "  docs/USER_GUIDE.md       - User guide for device management"
+	@echo "  docs/API_REFERENCE.md    - REST API documentation"
+	@echo "  docs/TROUBLESHOOTING.md  - Troubleshooting guide"
+	@echo "  docs/DEPLOYMENT.md       - Production deployment"
+	@echo ""
+	@echo "🚀 Quick Access:"
+	@echo "  cat docs/MAKEFILE_GUIDE.md | less"
+	@echo "  open docs/README.md"
+	@echo ""
+	@if command -v code >/dev/null 2>&1; then \
+		echo "💡 Open in VS Code: code docs/"; \
+	fi
 
 # =============================================================================
-# Go Development Tools
+# Quick Start and Combined Operations
 # =============================================================================
 
-.PHONY: fmt vet lint tidy test-syntax
+quick-start: infra-up build-all start-services
+	@echo ""
+	@echo "🎉 OpenUSP Platform is ready!"
+	@echo ""
+	@echo "📊 Service Endpoints:"
+	@echo "   Swagger UI: http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
+	@echo "   Consul UI:  http://localhost:8500"
+	@echo "   Grafana:    http://localhost:3000"
+	@echo ""
+	@echo "📝 Next steps:"
+	@echo "   make service-status    # Check all services"
+	@echo "   make logs-api-gateway  # View API gateway logs"
+	@echo "   make endpoints         # Show all endpoints"
 
-# Format Go code
+start-all: infra-up build-all start-services
+
+stop-all: stop-services infra-down
+
+clean-all: clean-services clean-agents
+	@echo "🧹 Cleaned all build artifacts"
+
+# =============================================================================
+# Build Targets
+# =============================================================================
+
+build-all: build-services build-agents
+
+build-services: $(addprefix build-,$(SERVICES))
+	@echo "✅ All services built successfully"
+
+build-agents: $(addprefix build-,$(AGENTS))
+	@echo "✅ All agents built successfully"
+
+# Individual service build targets
+define BUILD_SERVICE_TEMPLATE
+build-$(1):
+	@echo "🔨 Building $(1)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/$(1)
+	@echo "✅ $(1) built successfully"
+endef
+
+$(foreach service,$(SERVICES),$(eval $(call BUILD_SERVICE_TEMPLATE,$(service))))
+$(foreach agent,$(AGENTS),$(eval $(call BUILD_SERVICE_TEMPLATE,$(agent))))
+
+# =============================================================================
+# Service Management
+# =============================================================================
+
+start-services: build-services infra-up
+	@echo ""
+	@echo "🚀 Starting all OpenUSP services with proper dependency order..."
+	@echo "📌 Step 1: Starting Connection Manager (core dependency)..."
+	@$(MAKE) start-connection-manager-background
+	@$(MAKE) wait-for-connection-manager
+	@echo ""
+	@echo "📌 Step 2: Starting Data Service (database layer)..."
+	@$(MAKE) start-data-service-background
+	@$(MAKE) wait-for-data-service
+	@echo ""
+	@echo "📌 Step 3: Starting USP Service (protocol engine)..."
+	@$(MAKE) start-usp-service-background
+	@$(MAKE) wait-for-usp-service
+	@echo ""
+	@echo "📌 Step 4: Starting remaining services..."
+	@$(MAKE) start-api-gateway-background
+	@$(MAKE) start-mtp-service-background
+	@$(MAKE) start-cwmp-service-background
+	@echo ""
+	@sleep 3
+	@echo "✅ All OpenUSP services started successfully"
+	@echo "📋 Check status: make service-status"
+	@echo "📝 View logs: make logs-<service>"
+
+stop-services:
+	@echo "🛑 Stopping all OpenUSP services..."
+	@pkill -f "api-gateway.*--consul" 2>/dev/null || true
+	@pkill -f "data-service.*--consul" 2>/dev/null || true
+	@pkill -f "usp-service.*--consul" 2>/dev/null || true
+	@pkill -f "mtp-service.*--consul" 2>/dev/null || true
+	@pkill -f "cwmp-service.*--consul" 2>/dev/null || true
+	@pkill -f "connection-manager.*--consul" 2>/dev/null || true
+	@echo "✅ All OpenUSP services stopped"
+
+clean-services:
+	@echo "🧹 Cleaning service binaries..."
+	@rm -f $(addprefix $(BUILD_DIR)/,$(SERVICES))
+	@echo "✅ Service binaries cleaned"
+
+clean-agents:
+	@echo "🧹 Cleaning agent binaries..."
+	@rm -f $(addprefix $(BUILD_DIR)/,$(AGENTS))
+	@echo "✅ Agent binaries cleaned"
+
+# Individual service start targets (background with logging)
+define START_SERVICE_TEMPLATE
+start-$(1): build-$(1)
+	@echo "🚀 Starting $(1) in foreground..."
+	@mkdir -p $(LOG_DIR)
+	@CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul
+
+start-$(1)-background: build-$(1)
+	@echo "🚀 Starting $(1) in background..."
+	@mkdir -p $(LOG_DIR)
+	@CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul > $(LOG_DIR)/$(1).log 2>&1 &
+	@sleep 2
+
+stop-$(1):
+	@echo "🛑 Stopping $(1)..."
+	@pkill -f "$(1).*--consul" 2>/dev/null || true
+	@echo "✅ $(1) stopped"
+
+logs-$(1):
+	@echo "📝 Showing logs for $(1)..."
+	@tail -f $(LOG_DIR)/$(1).log
+endef
+
+# Generate service start/stop/logs targets (excludes agents which have custom configs)
+$(foreach service,$(SERVICES),$(eval $(call START_SERVICE_TEMPLATE,$(service))))
+
+# Agent management targets with YAML configuration
+start-usp-agent: build-usp-agent
+	@echo "🚀 Starting USP Agent with YAML configuration..."
+	@mkdir -p $(LOG_DIR)
+	@./$(BUILD_DIR)/usp-agent --config configs/usp-agent.yaml
+
+start-cwmp-agent: build-cwmp-agent
+	@echo "🚀 Starting CWMP Agent with YAML configuration..."
+	@mkdir -p $(LOG_DIR)
+	@./$(BUILD_DIR)/cwmp-agent --config configs/cwmp-agent.yaml
+
+stop-usp-agent:
+	@echo "🛑 Stopping USP Agent..."
+	@pkill -f "usp-agent" 2>/dev/null || true
+	@echo "✅ USP Agent stopped"
+
+stop-cwmp-agent:
+	@echo "🛑 Stopping CWMP Agent..."
+	@pkill -f "cwmp-agent" 2>/dev/null || true
+	@echo "✅ CWMP Agent stopped"
+
+logs-usp-agent:
+	@echo "📝 Showing logs for USP Agent..."
+	@tail -f $(LOG_DIR)/usp-agent.log
+
+logs-cwmp-agent:
+	@echo "📝 Showing logs for CWMP Agent..."
+	@tail -f $(LOG_DIR)/cwmp-agent.log
+
+# =============================================================================
+# Service Dependency Management
+# =============================================================================
+
+wait-for-connection-manager:
+	@echo "⏳ Waiting for Connection Manager to be ready..."
+	@timeout=30; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -s "http://localhost:8500/v1/catalog/service/openusp-connection-manager" | jq -e '.[0]' >/dev/null 2>&1; then \
+			echo "✅ Connection Manager is registered and ready!"; \
+			break; \
+		fi; \
+		echo -n "."; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done; \
+	if [ $$timeout -le 0 ]; then \
+		echo "❌ Connection Manager failed to become ready within 30 seconds"; \
+		exit 1; \
+	fi
+
+wait-for-data-service:
+	@echo "⏳ Waiting for Data Service to be ready..."
+	@timeout=30; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -s "http://localhost:8500/v1/catalog/service/openusp-data-service" | jq -e '.[0]' >/dev/null 2>&1; then \
+			echo "✅ Data Service is registered and ready!"; \
+			break; \
+		fi; \
+		echo -n "."; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done; \
+	if [ $$timeout -le 0 ]; then \
+		echo "❌ Data Service failed to become ready within 30 seconds"; \
+		exit 1; \
+	fi
+
+wait-for-usp-service:
+	@echo "⏳ Waiting for USP Service to be ready..."
+	@timeout=30; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -s "http://localhost:8500/v1/catalog/service/openusp-usp-service" | jq -e '.[0]' >/dev/null 2>&1; then \
+			echo "✅ USP Service is registered and ready!"; \
+			break; \
+		fi; \
+		echo -n "."; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done; \
+	if [ $$timeout -le 0 ]; then \
+		echo "❌ USP Service failed to become ready within 30 seconds"; \
+		exit 1; \
+	fi
+
+# =============================================================================
+# Infrastructure Management
+# =============================================================================
+
+infra-up:
+	@echo "🏗️  Starting infrastructure services..."
+	@docker-compose -f $(DOCKER_COMPOSE_INFRA) up -d
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 10
+	@echo "✅ Infrastructure services started"
+	@$(MAKE) infra-status
+
+infra-down:
+	@echo "🛑 Stopping infrastructure services..."
+	@docker-compose -f $(DOCKER_COMPOSE_INFRA) down
+	@echo "✅ Infrastructure services stopped"
+
+infra-status:
+	@echo "📊 Infrastructure Status:"
+	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps
+
+infra-clean:
+	@echo "🧹 Cleaning infrastructure (this will remove all data!)..."
+	@read -p "Are you sure? This will delete all volumes and data. (y/N): " confirm && \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		docker-compose -f $(DOCKER_COMPOSE_INFRA) down -v; \
+		docker volume rm $(INFRA_VOLUMES) 2>/dev/null || true; \
+		echo "✅ Infrastructure cleaned"; \
+	else \
+		echo "❌ Cancelled"; \
+	fi
+
+infra-volumes:
+	@echo "📦 Infrastructure Volumes:"
+	@docker volume ls --filter name=openusp
+
+# =============================================================================
+# Monitoring and Status
+# =============================================================================
+
+setup-grafana:
+	@echo "📊 Setting up Grafana dashboards..."
+	@./scripts/setup-grafana.sh
+	@echo "✅ Grafana setup complete"
+
+verify-grafana:
+	@echo "🔍 Verifying Grafana setup..."
+	@./scripts/verify-grafana.sh
+
+consul-status:
+	@echo "🏛️  Consul Service Registry:"
+	@curl -s http://localhost:8500/v1/catalog/services | jq 'keys[]' | grep openusp || echo "No OpenUSP services registered"
+
+service-status:
+	@echo "📊 OpenUSP Service Status:"
+	@echo "=========================="
+	@for service in connection-manager data-service usp-service api-gateway mtp-service cwmp-service; do \
+		echo -n "$$service: "; \
+		if curl -s "http://localhost:8500/v1/catalog/service/openusp-$$service" | jq -e '.[0]' >/dev/null 2>&1; then \
+			echo "✅ Running"; \
+		else \
+			echo "❌ Not registered"; \
+		fi; \
+	done
+
+# =============================================================================
+# Development Environment Management
+# =============================================================================
+
+consul-cleanup:
+	@echo "🧹 Cleaning up stale Consul registrations..."
+	@./scripts/cleanup-consul.sh
+	@echo "✅ Consul cleanup complete"
+
+consul-cleanup-force:
+	@echo "🔥 Force cleaning ALL Consul registrations..."
+	@./scripts/cleanup-consul.sh --force
+	@echo "✅ Force cleanup complete"
+
+dev-reset:
+	@echo "🔄 Resetting development environment..."
+	@echo "1. Stopping all services..."
+	@$(MAKE) stop-all || true
+	@echo "2. Cleaning Consul registrations..."
+	@./scripts/cleanup-consul.sh --force
+	@echo "3. Building all services..."
+	@$(MAKE) build-all
+	@echo "4. Starting services..."
+	@$(MAKE) start-all
+	@echo "✅ Development environment reset complete"
+
+dev-restart:
+	@echo "🔄 Restarting OpenUSP services (preserving infrastructure)..."
+	@echo "1. Cleanup Consul..."
+	@./scripts/cleanup-consul.sh --force
+	@echo "2. Stop services..."
+	@$(MAKE) stop-all || true
+	@sleep 2
+	@echo "3. Start services..."
+	@$(MAKE) start-all
+	@echo "✅ Services restarted"
+
+dev-status:
+	@echo "📊 Development Environment Status"
+	@echo "================================"
+	@echo ""
+	@echo "🏗️  Infrastructure:"
+	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Infrastructure not running"
+	@echo ""
+	@echo "🏛️  Service Discovery:"
+	@if curl -s http://localhost:8500/v1/status/leader >/dev/null 2>&1; then \
+		echo "Consul: ✅ Running"; \
+		echo "Registered services:"; \
+		curl -s http://localhost:8500/v1/catalog/services | jq -r 'keys[]' | grep openusp | sed 's/^/  - /' || echo "  No OpenUSP services"; \
+	else \
+		echo "Consul: ❌ Not running"; \
+	fi
+	@echo ""
+	@echo "🚀 OpenUSP Services:"
+	@$(MAKE) service-status
+	@echo ""
+	@echo "📊 System Resources:"
+	@echo "Process count: $$(ps aux | grep -E '(usp-service|mtp-service|api-gateway|data-service|connection-manager|cwmp-service)' | grep -v grep | wc -l)"
+	@echo "Memory usage: $$(ps aux | grep -E '(usp-service|mtp-service|api-gateway|data-service|connection-manager|cwmp-service)' | grep -v grep | awk '{sum += $$4} END {printf \"%.1f%%\", sum}')"
+
+# =============================================================================
+# Development and Quality Assurance
+# =============================================================================
+
 fmt:
 	@echo "🎨 Formatting Go code..."
-	@go fmt ./...
-	@echo "✅ Code formatting complete"
+	@$(GO) fmt ./...
+	@echo "✅ Code formatted"
 
-# Vet Go code for common mistakes
 vet:
-	@echo "🔍 Vetting Go code..."
-	@go vet ./...
-	@echo "✅ Code vetting complete"
+	@echo "🔍 Running go vet..."
+	@$(GO) vet ./...
+	@echo "✅ Code vetted"
 
-# Run golangci-lint (install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 lint:
 	@echo "🧹 Running linter..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
@@ -174,498 +543,35 @@ lint:
 		echo "   go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 	fi
 
-# Tidy Go modules
 tidy:
 	@echo "📦 Tidying Go modules..."
-	@go mod tidy
-	@echo "✅ Module tidying complete"
+	@$(GOMOD) tidy
+	@echo "✅ Modules tidied"
 
-# Test Go syntax without running tests
-test-syntax:
-	@echo "🧪 Testing Go syntax..."
-	@go build -o /dev/null ./...
-	@echo "✅ Syntax test complete"
+test:
+	@echo "🧪 Running tests..."
+	@$(GOTEST) -v ./...
+	@echo "✅ Tests completed"
 
-# Run all Go quality checks
-go-check: fmt vet tidy test-syntax
+go-check: fmt vet tidy
 	@echo "✅ All Go quality checks passed"
 
 # =============================================================================
-# Agent Build and Start Targets (Pure YAML Configuration)
+# Utility Targets
 # =============================================================================
-.PHONY: build-usp-agent build-cwmp-agent start-usp-agent start-cwmp-agent
 
+clean:
+	@echo "🧹 Cleaning build directory..."
+	@rm -rf $(BUILD_DIR)/*
+	@echo "✅ Build directory cleaned"
 
-# Build individual agents
-build-usp-agent:
-	@echo "Building USP agent..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/usp-agent cmd/usp-agent/main.go
-	@echo "USP agent built -> $(BINARY_DIR)/usp-agent"
+# Create necessary directories
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
 
-build-cwmp-agent:
-	@echo "Building CWMP agent..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/cwmp-agent cmd/cwmp-agent/main.go
-	@echo "CWMP agent built -> $(BINARY_DIR)/cwmp-agent"
+$(LOG_DIR):
+	@mkdir -p $(LOG_DIR)
 
-# Start agents with default YAML configuration
-start-usp-agent: build-usp-agent
-	@echo "Starting USP agent with default YAML configuration..."
-	@echo "Configuration: configs/usp-agent.yaml"
-	@$(BINARY_DIR)/usp-agent --config configs/usp-agent.yaml || echo "Agent exited"
-
-start-cwmp-agent: build-cwmp-agent
-	@echo "Starting CWMP agent..."
-	@echo "Configuration: configs/cwmp-agent.yaml"
-	@$(BINARY_DIR)/cwmp-agent --config configs/cwmp-agent.yaml || echo "Agent exited"
-
-
-# =================================
-# Configuration and Testing Targets  
-# =================================
-
-start-all-consul:
-	@echo "🚀 Starting All OpenUSP Services with Consul Service Discovery"
-	@echo "=============================================================="
-	@echo ""
-	@echo "⚠️  This will start all services in background."
-	@echo "   Use Ctrl+C and run individual 'make start-*-consul' for interactive mode."
-	@echo ""
-	@echo "Prerequisites: make infra-up (PostgreSQL + Consul + etc.)"
-	@echo ""
-	@echo "Starting services..."
-	@echo "1. Data Service (Database + gRPC)..."
-	@nohup make start-data-consul > logs/data-service-consul.log 2>&1 & echo "   └── Data Service started (PID: $$!)"
-	@sleep 3
-	@echo "2. API Gateway (REST + Service Discovery)..."
-	@nohup make start-api-consul > logs/api-gateway-consul.log 2>&1 & echo "   └── API Gateway started (PID: $$!)"
-	@sleep 2
-	@echo "3. MTP Service (WebSocket + USP)..."
-	@nohup make start-mtp-consul > logs/mtp-service-consul.log 2>&1 & echo "   └── MTP Service started (PID: $$!)"
-	@sleep 2
-	@echo "4. USP Core Service (gRPC)..."
-	@nohup make start-usp-consul > logs/usp-service-consul.log 2>&1 & echo "   └── USP Service started (PID: $$!)"
-	@sleep 2
-	@echo "5. CWMP Service (TR-069)..."
-	@nohup make start-cwmp-consul > logs/cwmp-service-consul.log 2>&1 & echo "   └── CWMP Service started (PID: $$!)"
-	@sleep 3
-	@echo ""
-	@echo "✅ All services started! Check status:"
-	@echo "   🔍 Consul UI: http://localhost:8500/ui/"
-	@echo "   📊 Service Status: make ou-status"
-	@echo "   📋 Individual Logs: tail -f logs/*-consul.log"
-	@echo ""
-	@echo "🧪 Test with TR-369 client: make start-tr369-consul"
-
-stop-all-consul:
-	@echo "🛑 Stopping All Consul Services"
-	@echo "==============================="
-	@pkill -f "cmd.*-consul/main.go" || echo "No Consul services running"
-	@echo "✅ All Consul services stopped"
-
-# Infrastructure Commands
-infra-up:
-	@echo "Starting all 3rd party infrastructure services..."
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) up -d --remove-orphans
-	@echo "Infrastructure services started successfully"
-
-infra-down:
-	@echo "Stopping all 3rd party infrastructure services..."
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) down 2>/dev/null || true
-	@echo "Infrastructure services stopped"
-
-infra-status:
-	@echo "Infrastructure Services Status:"
-	@echo "==============================="
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps 2>/dev/null || echo "  Infrastructure services not unning"
-
-ou-status:
-	@echo "OpenUSP Services Status:"
-	@echo "========================"
-	@echo ""
-	@# Check if Consul is available
-	@consul_available=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | grep -o 'openusp' 2>/dev/null || echo ""); \
-	if [ -n "$$consul_available" ]; then \
-		echo "🏛️  Service Discovery Mode: Consul (Dynamic Ports)"; \
-		echo "🔍 Checking Consul-registered services..."; \
-		echo ""; \
-		printf "%-20s %-10s %-15s %-10s %s\n" "SERVICE" "STATUS" "PORT" "HEALTH" "ENDPOINT"; \
-		printf "%-20s %-10s %-15s %-10s %s\n" "-------" "------" "----" "------" "--------"; \
-		services=$$(curl -s http://localhost:8500/v1/agent/services 2>/dev/null | jq -r 'to_entries[] | select(.value.Service | startswith("openusp-")) | "\(.value.Service):\(.value.Port)"' 2>/dev/null || echo ""); \
-		if [ -n "$$services" ]; then \
-			echo "$$services" | while IFS=: read -r service_name port; do \
-				display_name=$$(echo $$service_name | sed 's/openusp-//'); \
-				health=$$(curl -s "http://localhost:8500/v1/agent/checks" 2>/dev/null | jq -r ".[] | select(.ServiceName == \"$$service_name\") | .Status" 2>/dev/null | head -1); \
-				if [ "$$health" = "passing" ]; then \
-					health_icon="✅"; \
-				elif [ "$$health" = "critical" ]; then \
-					health_icon="❌"; \
-				else \
-					health_icon="⚠️"; \
-				fi; \
-				endpoint="http://localhost:$$port"; \
-				printf "%-20s %-10s %-15s %-10s %s\n" "$$display_name" "🔗 CONSUL" "$$port" "$$health_icon $$health" "$$endpoint"; \
-			done; \
-		else \
-			echo "No OpenUSP services found in Consul"; \
-		fi; \
-	else \
-		echo "🔧 Service Discovery Mode: Traditional (Fixed Ports)"; \
-		echo "🔍 Checking traditional service processes and ports..."; \
-		echo ""; \
-		printf "%-20s %-10s %-15s %-10s %s\n" "SERVICE" "STATUS" "PORT" "PID" "ENDPOINT"; \
-		printf "%-20s %-10s %-15s %-10s %s\n" "-------" "------" "----" "---" "--------"; \
-		pid=$$(ps aux | grep -v grep | grep 'api-gateway' | awk '{print $$2}' | head -1); \
-		port_check=$$(lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null); \
-		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-			printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "✅ RUNNING" "$(OPENUSP_API_GATEWAY_PORT)" "$$pid" "http://localhost:$(OPENUSP_API_GATEWAY_PORT)"; \
-		else \
-			printf "%-20s %-10s %-15s %-10s %s\n" "api-gateway" "❌ STOPPED" "$(OPENUSP_API_GATEWAY_PORT)" "-" "-"; \
-		fi; \
-		port_check=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
-		if [ -n "$$port_check" ]; then \
-			pid=$$(lsof -ti:$(OPENUSP_DATA_SERVICE_GRPC_PORT) 2>/dev/null | head -1); \
-			printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "✅ RUNNING" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "$$pid" "gRPC://localhost:$(OPENUSP_DATA_SERVICE_GRPC_PORT)"; \
-		else \
-			printf "%-20s %-10s %-15s %-10s %s\n" "data-service" "❌ STOPPED" "$(OPENUSP_DATA_SERVICE_GRPC_PORT)" "-" "-"; \
-		fi; \
-		pid=$$(ps aux | grep -v grep | grep 'mtp-service' | awk '{print $$2}' | head -1); \
-		port_check=$$(lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null); \
-		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-			printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "✅ RUNNING" "$(OPENUSP_MTP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_MTP_SERVICE_PORT)"; \
-		else \
-			printf "%-20s %-10s %-15s %-10s %s\n" "mtp-service" "❌ STOPPED" "$(OPENUSP_MTP_SERVICE_PORT)" "-" "-"; \
-		fi; \
-		pid=$$(ps aux | grep -v grep | grep 'cwmp-service' | awk '{print $$2}' | head -1); \
-		port_check=$$(lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null); \
-		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-			printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "✅ RUNNING" "$(OPENUSP_CWMP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"; \
-		else \
-			printf "%-20s %-10s %-15s %-10s %s\n" "cwmp-service" "❌ STOPPED" "$(OPENUSP_CWMP_SERVICE_PORT)" "-" "-"; \
-		fi; \
-		pid=$$(ps aux | grep -v grep | grep 'usp-service' | awk '{print $$2}' | head -1); \
-		port_check=$$(lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null); \
-		if [ -n "$$pid" ] && [ -n "$$port_check" ]; then \
-			printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "✅ RUNNING" "$(OPENUSP_USP_SERVICE_PORT)" "$$pid" "http://localhost:$(OPENUSP_USP_SERVICE_PORT)"; \
-		else \
-			printf "%-20s %-10s %-15s %-10s %s\n" "usp-service" "❌ STOPPED" "$(OPENUSP_USP_SERVICE_PORT)" "-" "-"; \
-		fi; \
-	fi
-	@echo ""
-	@echo "� Quick Health Check:"
-	@# Try to find actual running services and test their health endpoints
-	@data_services=$$(ps aux | grep -v grep | grep 'data-service' | awk '{print $$2}' || echo ""); \
-	cwmp_services=$$(ps aux | grep -v grep | grep 'cwmp-service' | awk '{print $$2}' || echo ""); \
-	if [ -n "$$data_services" ]; then \
-		data_port=$$(lsof -Pan -p $$(echo $$data_services | head -1) 2>/dev/null | grep LISTEN | grep -v '127.0.0.1:.*->127.0.0.1' | head -1 | sed 's/.*:\([0-9]*\).*/\1/' || echo ""); \
-		if [ -n "$$data_port" ]; then \
-			response=$$(curl -s http://127.0.0.1:$$data_port/health 2>/dev/null | grep -o '"status"' 2>/dev/null || echo ""); \
-			if [ -n "$$response" ]; then \
-				echo "  ✅ Data Service is responding on port $$data_port"; \
-			else \
-				echo "  ⚠️  Data Service running on port $$data_port but not responding to /health"; \
-			fi; \
-		else \
-			echo "  ⚠️  Data Service process found but port detection failed"; \
-		fi; \
-	else \
-		echo "  ❌ Data Service not running"; \
-	fi; \
-	if [ -n "$$cwmp_services" ]; then \
-		cwmp_port=$$(lsof -Pan -p $$(echo $$cwmp_services | head -1) 2>/dev/null | grep LISTEN | grep -v '127.0.0.1:.*->127.0.0.1' | head -1 | sed 's/.*:\([0-9]*\).*/\1/' || echo ""); \
-		if [ -n "$$cwmp_port" ]; then \
-			response=$$(curl -s http://127.0.0.1:$$cwmp_port/health 2>/dev/null | grep -o '"status"' 2>/dev/null || echo ""); \
-			if [ -n "$$response" ]; then \
-				echo "  ✅ CWMP Service is responding on port $$cwmp_port"; \
-			else \
-				echo "  ⚠️  CWMP Service running on port $$cwmp_port but not responding to /health"; \
-			fi; \
-		else \
-			echo "  ⚠️  CWMP Service process found but port detection failed"; \
-		fi; \
-	else \
-		echo "  ❌ CWMP Service not running"; \
-	fi
-
-infra-clean:
-	@echo "Cleaning all 3rd party infrastructure services and named volumes..."
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) down --remove-orphans 2>/dev/null || true
-	@echo "Removing named volumes (ignore 'No such volume' warnings if already gone)..."
-	@for v in $(INFRA_VOLUMES); do \
-		if docker volume inspect $$v >/dev/null 2>&1; then \
-			echo "  - removing $$v"; docker volume rm -f $$v >/dev/null 2>&1 || true; \
-		else \
-			echo "  - $$v (already removed)"; \
-		fi; \
-	done
-	@echo "Removing network openusp-dev (if exists)..."
-	@docker network rm openusp-dev 2>/dev/null || true
-	@echo "Pruning dangling volumes & builder cache (safe)..."
-	@docker system prune -f --volumes >/dev/null 2>&1 || true
-	@echo "Remaining OpenUSP-related volumes (if any):"
-	@docker volume ls | awk '{print $$2}' | grep -E '^openusp-' || echo "  (none)"
-	@echo "Infrastructure cleaned"
-
-infra-volumes:
-	@echo "Named Infrastructure Volumes:"
-	@for v in $(INFRA_VOLUMES); do echo "  - $$v"; done
-	@echo "Use: make infra-clean to remove them"
-
-setup-grafana:
-	@echo "Setting up Grafana with OpenUSP dashboards..."
-	@./scripts/setup-grafana-dashboards.sh
-
-verify-grafana:
-	@echo "Verifying Grafana dashboard data and connectivity..."
-	@./scripts/verify-grafana.sh
-
-# OpenUSP Service Commands
-build-ou-all: $(addprefix build-,$(SERVICES))
-	@echo "All OpenUSP services built successfully"
-
-clean-ou-all: $(addprefix clean-,$(SERVICES))
-	@echo "All OpenUSP service binaries cleaned"
-
-start-ou-all:
-	@echo "Starting all OpenUSP services..."
-	@echo "Checking for port conflicts..."
-	@if lsof -i :$(OPENUSP_API_GATEWAY_PORT) >/dev/null 2>&1; then \
-		echo "ERROR: Port $(OPENUSP_API_GATEWAY_PORT) is in use. Run 'make stop-ou-all' or 'make infra-down' first."; \
-		exit 1; \
-	fi
-	@if ! docker ps --format "table {{.Names}}" | grep -q openusp-postgres; then \
-		echo "ERROR: PostgreSQL not running. Run 'make infra-up' first."; \
-		exit 1; \
-	fi
-	@echo "Starting Data Service with Consul (PostgreSQL dependency)..."
-	@$(MAKE) start-data-service-consul &
-	@sleep 8
-	@echo "Starting remaining services with Consul..."
-	@$(MAKE) start-api-gateway-consul &
-	@$(MAKE) start-mtp-service-consul &
-	@$(MAKE) start-cwmp-service-consul &
-	@$(MAKE) start-usp-service-consul &
-	@sleep 2
-	@echo "All OpenUSP services started (check individual logs via: make logs-<service>)"
-
-stop-ou-all:
-	@echo "Stopping all OpenUSP services..."
-	@pkill -f "api-gateway" 2>/dev/null || true
-	@pkill -f "data-service" 2>/dev/null || true
-	@pkill -f "usp-service" 2>/dev/null || true
-	@pkill -f "mtp-service" 2>/dev/null || true
-	@pkill -f "cwmp-service" 2>/dev/null || true
-	@# Kill any processes on OpenUSP ports as fallback
-	@lsof -ti:$(OPENUSP_API_GATEWAY_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:$(OPENUSP_DATA_SERVICE_HTTP_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:$(OPENUSP_MTP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:$(OPENUSP_CWMP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:$(OPENUSP_USP_SERVICE_PORT) 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@sleep 1
-	@echo "All OpenUSP services stopped"
-
-# Combined Commands
-start-all: infra-up build-ou-all start-ou-all
-	@echo "All services (infrastructure + OpenUSP) are running!"
-
-stop-all: stop-ou-all infra-down
-	@echo "All services stopped"
-
-clean-all: clean-ou-all infra-clean
-	@echo "All services cleaned"
-
-# Endpoint Overview
-show-static-endpoints:
-	@echo "Service Endpoints (unified configuration)"
-	@echo "========================================"
-	@echo "API Gateway:      http://localhost:$(OPENUSP_API_GATEWAY_PORT)"
-	@echo "  Health:         http://localhost:$(OPENUSP_API_GATEWAY_PORT)/health"
-	@echo "  Status:         http://localhost:$(OPENUSP_API_GATEWAY_PORT)/status"
-	@echo "  Swagger UI:     http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
-	@echo "Data Service:     localhost:$(OPENUSP_DATA_SERVICE_GRPC_PORT) (gRPC)"
-	@echo "MTP Demo UI:      http://localhost:$(OPENUSP_MTP_SERVICE_PORT)/usp"
-	@echo "MTP WebSocket:    ws://localhost:$(OPENUSP_MTP_SERVICE_PORT)/ws"
-	@echo "MTP Health:       http://localhost:$(OPENUSP_MTP_SERVICE_PORT)/health"
-	@echo "CWMP Service:     http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"
-	@echo "CWMP Health:      http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)/health"
-	@echo "  Auth:           $(OPENUSP_CWMP_USERNAME) / $(OPENUSP_CWMP_PASSWORD)"
-	@echo "Prometheus:       http://localhost:$(OPENUSP_PROMETHEUS_PORT)"
-	@echo "Grafana:          http://localhost:$(OPENUSP_GRAFANA_PORT)"
-	@echo "  Login:          $(OPENUSP_GRAFANA_USER) / $(OPENUSP_GRAFANA_PASSWORD)"
-	@echo "RabbitMQ:         http://localhost:$(OPENUSP_RABBITMQ_MGMT_PORT)"
-	@echo "  Credentials:    $(OPENUSP_RABBITMQ_USER) / $(OPENUSP_RABBITMQ_PASSWORD)"
-	@echo "MQTT Broker:      mqtt://localhost:$(OPENUSP_MOSQUITTO_PORT)"
-	@echo "MQTT WebSocket:   ws://localhost:$(OPENUSP_MOSQUITTO_WS_PORT)"
-	@echo "PostgreSQL:       localhost:$(OPENUSP_POSTGRES_PORT)"
-	@echo "Adminer:          http://localhost:$(OPENUSP_ADMINER_PORT)"
-	@echo "  DB Credentials: $(OPENUSP_DB_USER) / $(OPENUSP_DB_PASSWORD) ($(OPENUSP_DB_NAME))"
-	@echo "------------------------------------------------"
-	@echo "Use: make start-all (start everything) | make stop-all | make show-static-endpoints"
-
-# Swagger Documentation Generation
-.PHONY: swagger-gen
-swagger-gen: ## Generate Swagger documentation
-	@echo "📚 Generating Swagger documentation..."
-	@which swag > /dev/null || (echo "Installing swag..." && go install github.com/swaggo/swag/cmd/swag@latest)
-	@swag init -g cmd/api-gateway/main.go -o api/ --parseInternal
-	@echo "✅ Swagger documentation generated in api/"
-
-# Individual Service Build Targets
-build-api-gateway: swagger-gen
-	@echo "Building API Gateway..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/api-gateway cmd/api-gateway/main.go
-	@echo "API Gateway built -> $(BINARY_DIR)/api-gateway"
-
-build-data-service:
-	@echo "Building Data Service..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/data-service cmd/data-service/main.go
-	@echo "Data Service built -> $(BINARY_DIR)/data-service"
-
-build-usp-service:
-	@echo "Building USP Service..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/usp-service cmd/usp-service/main.go
-	@echo "USP Service built -> $(BINARY_DIR)/usp-service"
-
-build-mtp-service:
-	@echo "Building MTP Service..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/mtp-service cmd/mtp-service/main.go
-	@echo "MTP Service built -> $(BINARY_DIR)/mtp-service"
-
-build-cwmp-service:
-	@echo "Building CWMP Service..."
-	@mkdir -p $(BINARY_DIR)
-	@go build $(LDFLAGS) -o $(BINARY_DIR)/cwmp-service cmd/cwmp-service/main.go
-	@echo "CWMP Service built -> $(BINARY_DIR)/cwmp-service"
-
-# Consul Service Build Targets
-# Legacy consul build targets removed - all services now use single binary with --consul flag
-
-# build-all-consul: Updated to use single binaries with --consul flag
-build-all-consul:
-	@echo "Building all services (with --consul flag support)..."
-	@make build-data-service
-	@make build-api-gateway
-	@make build-mtp-service
-	@make build-usp-service
-	@make build-cwmp-service
-	@echo "✅ All Consul services built"
-
-# Individual Service Start Targets
-start-api-gateway:
-	@echo "Starting API Gateway on port $(OPENUSP_API_GATEWAY_PORT) (traditional mode)..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] API Gateway starting (port=$(OPENUSP_API_GATEWAY_PORT))" > $(OPENUSP_LOG_DIR)/api-gateway.log
-	@SERVICE_PORT=$(OPENUSP_API_GATEWAY_PORT) DATA_SERVICE_ADDR=$(OPENUSP_DATA_SERVICE_ADDR) go run cmd/api-gateway/main.go --port $(OPENUSP_API_GATEWAY_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/api-gateway.log
-
-start-api-gateway-consul:
-	@echo "Starting API Gateway with Consul service discovery..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] API Gateway starting (Consul mode)" > $(OPENUSP_LOG_DIR)/api-gateway-consul.log
-	@CONSUL_ENABLED=true DATA_SERVICE_ADDR=$(OPENUSP_DATA_SERVICE_ADDR) go run cmd/api-gateway/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/api-gateway-consul.log
-
-start-data-service:
-	@echo "Starting Data Service on port $(OPENUSP_DATA_SERVICE_HTTP_PORT) (traditional mode)..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] Data Service starting (port=$(OPENUSP_DATA_SERVICE_HTTP_PORT))" > $(OPENUSP_LOG_DIR)/data-service.log
-	@echo "Database config: $(OPENUSP_DB_HOST):$(OPENUSP_DB_PORT)/$(OPENUSP_DB_NAME) (user: $(OPENUSP_DB_USER))" >> $(OPENUSP_LOG_DIR)/data-service.log
-	@DB_HOST=$(OPENUSP_DB_HOST) DB_PORT=$(OPENUSP_DB_PORT) DB_NAME=$(OPENUSP_DB_NAME) DB_USER=$(OPENUSP_DB_USER) DB_PASSWORD=$(OPENUSP_DB_PASSWORD) DB_SSLMODE=$(OPENUSP_DB_SSLMODE) go run cmd/data-service/main.go --port $(OPENUSP_DATA_SERVICE_HTTP_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/data-service.log
-
-start-data-service-consul:
-	@echo "Starting Data Service with Consul service discovery..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] Data Service starting (Consul mode)" > $(OPENUSP_LOG_DIR)/data-service-consul.log
-	@echo "Database config: $(OPENUSP_DB_HOST):$(OPENUSP_DB_PORT)/$(OPENUSP_DB_NAME) (user: $(OPENUSP_DB_USER))" >> $(OPENUSP_LOG_DIR)/data-service-consul.log
-	@DB_HOST=$(OPENUSP_DB_HOST) DB_PORT=$(OPENUSP_DB_PORT) DB_NAME=$(OPENUSP_DB_NAME) DB_USER=$(OPENUSP_DB_USER) DB_PASSWORD=$(OPENUSP_DB_PASSWORD) DB_SSLMODE=$(OPENUSP_DB_SSLMODE) CONSUL_ENABLED=true go run cmd/data-service/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/data-service-consul.log
-
-start-usp-service:
-	@echo "Starting USP Service on port $(OPENUSP_USP_SERVICE_GRPC_PORT) (traditional mode)..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] USP Service starting (port=$(OPENUSP_USP_SERVICE_GRPC_PORT))" > $(OPENUSP_LOG_DIR)/usp-service.log
-	@go run cmd/usp-service/main.go --port $(OPENUSP_USP_SERVICE_GRPC_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/usp-service.log
-
-start-usp-service-consul:
-	@echo "Starting USP Service with Consul service discovery..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] USP Service starting (Consul mode)" > $(OPENUSP_LOG_DIR)/usp-service-consul.log
-	@CONSUL_ENABLED=true go run cmd/usp-service/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/usp-service-consul.log
-
-start-mtp-service:
-	@echo "Starting MTP Service on port $(OPENUSP_MTP_SERVICE_PORT) (traditional mode)..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] MTP Service starting (port=$(OPENUSP_MTP_SERVICE_PORT))" > $(OPENUSP_LOG_DIR)/mtp-service.log
-	@go run cmd/mtp-service/main.go --port $(OPENUSP_MTP_SERVICE_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/mtp-service.log
-
-start-mtp-service-consul:
-	@echo "Starting MTP Service with Consul service discovery..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] MTP Service starting (Consul mode)" > $(OPENUSP_LOG_DIR)/mtp-service-consul.log
-	@CONSUL_ENABLED=true go run cmd/mtp-service/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/mtp-service-consul.log
-
-start-cwmp-service:
-	@echo "Starting CWMP Service on port $(OPENUSP_CWMP_SERVICE_PORT) (traditional mode)..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] CWMP Service starting (port=$(OPENUSP_CWMP_SERVICE_PORT))" > $(OPENUSP_LOG_DIR)/cwmp-service.log
-	@go run cmd/cwmp-service/main.go --port $(OPENUSP_CWMP_SERVICE_PORT) 2>&1 | tee -a $(OPENUSP_LOG_DIR)/cwmp-service.log
-
-start-cwmp-service-consul:
-	@echo "Starting CWMP Service with Consul service discovery..."
-	@mkdir -p $(OPENUSP_LOG_DIR)
-	@echo "[start $(BUILD_DATE)] CWMP Service starting (Consul mode)" > $(OPENUSP_LOG_DIR)/cwmp-service-consul.log
-	@CONSUL_ENABLED=true go run cmd/cwmp-service/main.go --consul 2>&1 | tee -a $(OPENUSP_LOG_DIR)/cwmp-service-consul.log
-
-# Individual Service Clean Targets
-clean-api-gateway:
-	@echo "Cleaning API Gateway binary..."
-	@rm -f $(BINARY_DIR)/api-gateway
-	@echo "API Gateway binary cleaned"
-
-clean-data-service:
-	@echo "Cleaning Data Service binary..."
-	@rm -f $(BINARY_DIR)/data-service
-	@echo "Data Service binary cleaned"
-
-clean-usp-service:
-	@echo "Cleaning USP Service binary..."
-	@rm -f $(BINARY_DIR)/usp-service
-	@echo "USP Service binary cleaned"
-
-clean-mtp-service:
-	@echo "Cleaning MTP Service binary..."
-	@rm -f $(BINARY_DIR)/mtp-service
-	@echo "MTP Service binary cleaned"
-
-clean-cwmp-service:
-	@echo "Cleaning CWMP Service binary..."
-	@rm -f $(BINARY_DIR)/cwmp-service
-	@echo "CWMP Service binary cleaned"
-
-# Log Targets (file-based tail)
-logs-api-gateway:
-	@test -f $(LOG_DIR)/api-gateway.log || { echo "No API Gateway log file. Start service first: make start-api-gateway"; exit 1; }
-	@echo "Streaming API Gateway logs (Ctrl+C to exit)..."
-	@tail -F $(LOG_DIR)/api-gateway.log
-
-logs-data-service:
-	@test -f $(LOG_DIR)/data-service.log || { echo "No Data Service log file. Start service first: make start-data-service"; exit 1; }
-	@echo "Streaming Data Service logs (Ctrl+C to exit)..."
-	@tail -F $(LOG_DIR)/data-service.log
-
-logs-usp-service:
-	@test -f $(LOG_DIR)/usp-service.log || { echo "No USP Service log file. Start service first: make start-usp-service"; exit 1; }
-	@echo "Streaming USP Service logs (Ctrl+C to exit)..."
-	@tail -F $(LOG_DIR)/usp-service.log
-
-logs-mtp-service:
-	@test -f $(LOG_DIR)/mtp-service.log || { echo "No MTP Service log file. Start service first: make start-mtp-service"; exit 1; }
-	@echo "Streaming MTP Service logs (Ctrl+C to exit)..."
-	@tail -F $(LOG_DIR)/mtp-service.log
-
-logs-cwmp-service:
-	@test -f $(LOG_DIR)/cwmp-service.log || { echo "No CWMP Service log file. Start service first: make start-cwmp-service"; exit 1; }
-	@echo "Streaming CWMP Service logs (Ctrl+C to exit)..."
-	@tail -F $(LOG_DIR)/cwmp-service.log
+# =============================================================================
+# End of Makefile
+# =============================================================================

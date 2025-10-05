@@ -67,7 +67,7 @@ openusp/
 │   ├── metrics/          # Monitoring
 │   ├── proto/            # Protocol buffers
 │   └── version/          # Version management
-├── examples/             # Example implementations
+
 ├── configs/              # Configuration files
 ├── deployments/          # Deployment configs
 └── docs/                # Documentation
@@ -519,7 +519,7 @@ refactor: improve error handling in USP parser
 ## Getting Help
 
 - **Documentation**: Check relevant guides in `docs/`
-- **Code Examples**: Look at `examples/` directory
+- **Code Examples**: Look at the working protocol agents in `cmd/usp-agent/` and `cmd/cwmp-agent/`
 - **GitHub Issues**: Ask questions or report bugs
 - **Code Review**: Submit PRs for feedback
 - **Discord/Slack**: Community channels (if available)

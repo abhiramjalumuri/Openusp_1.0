@@ -190,7 +190,7 @@ make test
 make run-examples
 
 # Test with real devices (advanced)
-go run examples/tr369-agent/main.go
+make start-usp-agent
 ```
 
 ## Troubleshooting Installation
