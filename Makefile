@@ -40,6 +40,7 @@ DOCKER_COMPOSE_INFRA := deployments/docker-compose.infra.yml
 # Infrastructure volumes
 INFRA_VOLUMES := \
 	openusp-postgres-data \
+	openusp-consul-data \
 	openusp-rabbitmq-dev-data \
 	openusp-mosquitto-dev-data \
 	openusp-mosquitto-dev-logs \
@@ -97,6 +98,7 @@ help:
 	@echo "  infra-up        Start all infrastructure services (PostgreSQL, Consul, etc.)"
 	@echo "  infra-down      Stop all infrastructure services"
 	@echo "  infra-status    Show infrastructure status"
+	@echo "  infra-volumes   Create/list infrastructure volumes"
 	@echo "  infra-clean     Clean all infrastructure volumes"
 	@echo ""
 	@echo "📊 Monitoring:"
@@ -398,9 +400,9 @@ wait-for-usp-service:
 # Infrastructure Management
 # =============================================================================
 
-infra-up:
+infra-up: infra-volumes
 	@echo "🏗️  Starting infrastructure services..."
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) up -d
+	@docker compose -f $(DOCKER_COMPOSE_INFRA) up -d
 	@echo "⏳ Waiting for services to be ready..."
 	@sleep 10
 	@echo "✅ Infrastructure services started"
@@ -408,18 +410,19 @@ infra-up:
 
 infra-down:
 	@echo "🛑 Stopping infrastructure services..."
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) down
+	@docker compose -f $(DOCKER_COMPOSE_INFRA) down
 	@echo "✅ Infrastructure services stopped"
 
 infra-status:
-	@echo "📊 Infrastructure Status:"
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps
+	@echo "📊 Infrastructure Services Status:"
+	@echo "=================================="
+	@docker compose -f $(DOCKER_COMPOSE_INFRA) ps
 
 infra-clean:
 	@echo "🧹 Cleaning infrastructure (this will remove all data!)..."
 	@read -p "Are you sure? This will delete all volumes and data. (y/N): " confirm && \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		docker-compose -f $(DOCKER_COMPOSE_INFRA) down -v; \
+		docker compose -f $(DOCKER_COMPOSE_INFRA) down -v; \
 		docker volume rm $(INFRA_VOLUMES) 2>/dev/null || true; \
 		echo "✅ Infrastructure cleaned"; \
 	else \
@@ -427,6 +430,9 @@ infra-clean:
 	fi
 
 infra-volumes:
+	@echo "📦 Creating infrastructure volumes..."
+	@$(foreach vol,$(INFRA_VOLUMES),docker volume create $(vol) >/dev/null 2>&1 || true;)
+	@echo "✅ Infrastructure volumes ready"
 	@echo "📦 Infrastructure Volumes:"
 	@docker volume ls --filter name=openusp
 
@@ -501,7 +507,7 @@ dev-status:
 	@echo "================================"
 	@echo ""
 	@echo "🏗️  Infrastructure:"
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Infrastructure not running"
+	@docker compose -f $(DOCKER_COMPOSE_INFRA) ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Infrastructure not running"
 	@echo ""
 	@echo "🏛️  Service Discovery:"
 	@if curl -s http://localhost:8500/v1/status/leader >/dev/null 2>&1; then \

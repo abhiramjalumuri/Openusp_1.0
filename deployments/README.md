@@ -306,7 +306,7 @@ grpc_health_probe -addr=localhost:9093
    ./deploy-compose.sh status
    
    # Restart specific service
-   docker-compose restart api-gateway
+   docker compose restart api-gateway
    ```
 
 ### Log Analysis

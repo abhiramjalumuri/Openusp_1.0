@@ -174,13 +174,13 @@ CMD ["./api-gateway"]
 #### Production
 ```bash
 # Use production configuration
-docker-compose -f deployments/environments/docker-compose.prod.yml up -d
+docker compose -f deployments/environments/docker-compose.prod.yml up -d
 ```
 
 #### Testing
 ```bash
 # Use test configuration
-docker-compose -f deployments/environments/docker-compose.test.yml up -d
+docker compose -f deployments/environments/docker-compose.test.yml up -d
 ```
 
 ### Docker Deployment Commands
@@ -199,7 +199,7 @@ make docker-up
 make docker-logs
 
 # Scale services
-docker-compose up -d --scale api-gateway=3
+docker compose up -d --scale api-gateway=3
 
 # Stop and cleanup
 make docker-down

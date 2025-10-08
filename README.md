@@ -142,7 +142,7 @@ go run cmd/api-gateway/main.go
 #### 4. Data Service (Database Operations)
 ```bash
 # Start PostgreSQL (first time)
-docker-compose -f deployments/docker-compose.postgres.yml up -d
+docker compose -f deployments/docker-compose.postgres.yml up -d
 
 # Start Data Service
 DB_PORT=5433 go run cmd/data-service/main.go

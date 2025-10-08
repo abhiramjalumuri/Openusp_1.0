@@ -40,8 +40,9 @@ check_docker() {
         exit 1
     fi
     
-    if ! command -v docker-compose &> /dev/null; then
-        print_error "Docker Compose is not installed or not in PATH"
+    if ! docker compose version &> /dev/null; then
+        echo "❌ docker compose is not available"
+        echo "Please install or update Docker to support 'docker compose' command"
         exit 1
     fi
     
@@ -60,7 +61,7 @@ build_images() {
     cd "$DEPLOY_DIR/.."
     
     # Build all services
-    docker-compose -f docker-compose.yml build --parallel
+    docker compose -f docker-compose.yml build --parallel
     
     print_success "Docker images built successfully"
 }
@@ -79,7 +80,7 @@ start_test() {
     cd "$ENV_DIR"
     
     # Start services
-    docker-compose -f docker-compose.test.yml --env-file .env.test up -d
+    docker compose -f docker-compose.test.yml --env-file .env.test up -d
     
     print_status "Waiting for services to be ready..."
     sleep 10
@@ -105,7 +106,7 @@ start_prod() {
     cd "$ENV_DIR"
     
     # Start services
-    docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d
+    docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
     
     print_status "Waiting for services to be ready..."
     sleep 15
@@ -221,7 +222,7 @@ show_status() {
     if [[ -f "${ENV_DIR}/docker-compose.test.yml" ]]; then
         echo "Testing Environment:"
         cd "$ENV_DIR"
-        docker-compose -f docker-compose.test.yml ps 2>/dev/null || echo "  Not running"
+        docker compose -f docker-compose.test.yml ps 2>/dev/null || echo "  Not running"
         echo
     fi
     
@@ -229,7 +230,7 @@ show_status() {
     if [[ -f "${ENV_DIR}/docker-compose.prod.yml" ]]; then
         echo "Production Environment:"
         cd "$ENV_DIR"
-        docker-compose -f docker-compose.prod.yml ps 2>/dev/null || echo "  Not running"
+        docker compose -f docker-compose.prod.yml ps 2>/dev/null || echo "  Not running"
         echo
     fi
 }
@@ -242,16 +243,16 @@ stop_services() {
     
     if [[ "$env_type" == "test" ]]; then
         print_status "Stopping testing environment..."
-        docker-compose -f docker-compose.test.yml down
+        docker compose -f docker-compose.test.yml down
         print_success "Testing environment stopped"
     elif [[ "$env_type" == "prod" ]]; then
         print_status "Stopping production environment..."
-        docker-compose -f docker-compose.prod.yml down
+        docker compose -f docker-compose.prod.yml down
         print_success "Production environment stopped"
     else
         print_status "Stopping all environments..."
-        docker-compose -f docker-compose.test.yml down 2>/dev/null || true
-        docker-compose -f docker-compose.prod.yml down 2>/dev/null || true
+        docker compose -f docker-compose.test.yml down 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml down 2>/dev/null || true
         print_success "All environments stopped"
     fi
 }
@@ -264,16 +265,16 @@ cleanup() {
     
     if [[ "$env_type" == "test" ]]; then
         print_warning "Cleaning up testing environment (including volumes)..."
-        docker-compose -f docker-compose.test.yml down -v
+        docker compose -f docker-compose.test.yml down -v
         print_success "Testing environment cleaned up"
     elif [[ "$env_type" == "prod" ]]; then
         print_warning "Cleaning up production environment (including volumes)..."
-        docker-compose -f docker-compose.prod.yml down -v
+        docker compose -f docker-compose.prod.yml down -v
         print_success "Production environment cleaned up"
     else
         print_warning "Cleaning up all environments (including volumes)..."
-        docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
-        docker-compose -f docker-compose.prod.yml down -v 2>/dev/null || true
+        docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
         print_success "All environments cleaned up"
     fi
 }
