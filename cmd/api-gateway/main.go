@@ -125,13 +125,13 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
-	// Configure Swagger host dynamically for current port
-	api.SwaggerInfo.Host = fmt.Sprintf("localhost:%d", gw.getHTTPPort())
+	// Configure Swagger host dynamically - use relative URLs for cross-platform compatibility
+	api.SwaggerInfo.Host = ""  // Empty host allows relative URLs
+	api.SwaggerInfo.BasePath = "/api/v1"
 
-	// Swagger UI endpoint - Dynamic URL based on current port
-	swaggerURL := fmt.Sprintf("http://localhost:%d/swagger/doc.json", gw.getHTTPPort())
+	// Swagger UI endpoint - Use relative URL for cross-platform compatibility
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
-		ginSwagger.URL(swaggerURL),
+		ginSwagger.URL("./doc.json"),  // Relative URL - works from any host
 		ginSwagger.DeepLinking(true),
 		ginSwagger.DocExpansion("none"),
 	))
@@ -894,9 +894,9 @@ func main() {
 	log.Printf("🚀 API Gateway started successfully")
 	log.Printf("   └── HTTP Port: %d (static configuration)", httpPort)
 	log.Printf("   └── Service Discovery: Static port configuration")
-	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
-	log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", httpPort)
+	log.Printf("   └── Health Check: :%d/health", httpPort)
+	log.Printf("   └── Status: :%d/status", httpPort)
+	log.Printf("   └── Swagger UI: :%d/swagger/index.html", httpPort)
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)

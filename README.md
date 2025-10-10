@@ -171,6 +171,15 @@ make service-status   # Quick accessibility check
 - **Prometheus**: http://localhost:9090
 - **Database**: localhost:5433 (openusp/openusp123)
 
+#### 5. Test Cross-Platform Access
+```bash
+# Test Swagger UI accessibility
+./scripts/test-swagger.sh
+
+# For Linux/remote access, use the host IP instead of localhost
+./scripts/test-swagger.sh 6500 192.168.1.100
+```
+
 #### 2. CWMP Service (TR-069 Protocol)
 ```bash
 go run cmd/cwmp-service/main.go
