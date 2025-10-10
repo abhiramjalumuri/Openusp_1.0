@@ -3,7 +3,7 @@
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![TR-369](https://img.shields.io/badge/TR--369-Compliant-green)](https://www.broadband-forum.org/technical/download/TR-369.pdf)
 [![TR-181](https://img.shields.io/badge/TR--181-Device%3A2%20v2.19.1-blue)](https://usp.technology/specification/index.htm#sec:data-model-definition)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A cloud-native microservice implementation of the Broadband Forum's **TR-369 based User Service Platform (USP)** with comprehensive **TR-069 CWMP backward compatibility**. Built for modern device management at scale.
 
@@ -300,7 +300,7 @@ export DB_NAME=openusp
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 

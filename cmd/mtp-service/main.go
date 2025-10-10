@@ -1298,6 +1298,39 @@ func marshalMapToJSON(m map[string]interface{}) string {
 	return result
 }
 
+// registerMTPServiceWithConsul registers MTP service with custom health check port
+func registerMTPServiceWithConsul(ctx context.Context, registry *consul.ServiceRegistry, serviceInfo *consul.ServiceInfo, healthPort int) error {
+	serviceID := fmt.Sprintf("%s-%d", serviceInfo.Name, time.Now().Unix())
+	
+	// Create a custom ServiceInfo that uses health port for Consul registration and health checks
+	customServiceInfo := &consul.ServiceInfo{
+		ID:       serviceID,
+		Name:     serviceInfo.Name,
+		Address:  serviceInfo.Address,
+		Port:     healthPort, // Use health port for Consul registration (this is where health checks will go)
+		GRPCPort: serviceInfo.GRPCPort,
+		Protocol: "http", // Health checks are HTTP
+		Meta:     make(map[string]string),
+	}
+	
+	// Copy all metadata from original service info
+	for k, v := range serviceInfo.Meta {
+		customServiceInfo.Meta[k] = v
+	}
+	
+	// Ensure the health port is correctly set in metadata
+	customServiceInfo.Meta["websocket_port"] = "8081"
+	customServiceInfo.Meta["health_port"] = strconv.Itoa(healthPort)
+	customServiceInfo.Meta["main_port"] = "8081" // The actual service port for WebSocket
+	
+	log.Printf("🏛️ Registering MTP service with Consul:")
+	log.Printf("   Service Name: %s", customServiceInfo.Name)
+	log.Printf("   Health Check Port: %d (for /health endpoint)", healthPort)
+	log.Printf("   WebSocket Port: 8081 (for USP protocol)")
+	
+	return registry.RegisterServiceWithPorts(ctx, customServiceInfo)
+}
+
 func main() {
 	log.Printf("🚀 Starting OpenUSP MTP Service...")
 
@@ -1363,22 +1396,61 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		serviceInfo, err = registry.RegisterService(ctx, deployConfig.ServiceName, deployConfig.ServiceType)
+		// MTP service uses static WebSocket port 8081 as entry point
+		// Get a dynamic port for health/admin API
+		healthPort, err := consul.GetAvailablePort()
+		if err != nil {
+			log.Fatalf("Failed to get available health port: %v", err)
+		}
+		
+		grpcPort, err := consul.GetAvailablePort()
+		if err != nil {
+			log.Fatalf("Failed to get available gRPC port: %v", err)
+		}
+
+		// Create service info with static WebSocket port and dynamic health port
+		serviceInfo = &consul.ServiceInfo{
+			Name:     deployConfig.ServiceName,
+			Address:  "localhost",
+			Port:     8081, // Static WebSocket port for USP protocol entry point
+			GRPCPort: grpcPort,
+			Protocol: "websocket",
+			Meta: map[string]string{
+				"service_type":   deployConfig.ServiceType,
+				"protocol":       "websocket",
+				"version":        "1.1.0",
+				"environment":    "development",
+				"websocket_port": "8081",
+				"health_port":    strconv.Itoa(healthPort),
+				"static_port":    "true",
+			},
+		}
+
+		// Custom registration for MTP service with health check on health port
+		err = registerMTPServiceWithConsul(ctx, registry, serviceInfo, healthPort)
 		if err != nil {
 			log.Fatalf("Failed to register with Consul: %v", err)
 		}
+		
+		// Store the health port for later use
+		serviceInfo.Meta["allocated_health_port"] = strconv.Itoa(healthPort)
 
 		log.Printf("🏛️ Connected to Consul at %s", consulAddr)
 		log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
-			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
+			serviceInfo.Name, serviceInfo.Meta["service_type"], healthPort)
 	}
 
-	// Determine the health port and gRPC port to use (dynamic when Consul enabled)
+	// Determine the health port and gRPC port to use
 	var healthPort, grpcPort int
 	if serviceInfo != nil {
-		healthPort = serviceInfo.Port
-		grpcPort = serviceInfo.GRPCPort // Use the gRPC port allocated by Consul
-		log.Printf("🎯 Using Consul-allocated ports: health=%d, gRPC=%d", healthPort, grpcPort)
+		// Use the allocated health port, not the main service port (which is WebSocket port 8081)
+		if healthPortStr, exists := serviceInfo.Meta["allocated_health_port"]; exists {
+			healthPort, _ = strconv.Atoi(healthPortStr)
+		} else {
+			healthPort = serviceInfo.Port // Fallback
+		}
+		grpcPort = serviceInfo.GRPCPort
+		log.Printf("🎯 Using Consul-allocated ports: WebSocket=8081 (static), health=%d, gRPC=%d", healthPort, grpcPort)
 	} else {
 		healthPort = deployConfig.ServicePort
 		grpcPort = healthPort + 1000 // Fallback calculation for non-Consul mode
@@ -1445,10 +1517,10 @@ func main() {
 	log.Printf("🚀 MTP Service started successfully")
 	if deployConfig.IsConsulEnabled() && serviceInfo != nil {
 		log.Printf("   └── WebSocket Port: %d (USP Protocol)", config.WebSocketPort)
-		log.Printf("   └── Health API Port: %d (Dynamic)", serviceInfo.Port)
+		log.Printf("   └── Health API Port: %d (Dynamic)", healthPort)
 		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
 		log.Printf("   └── Demo UI: http://localhost:%d/usp", config.WebSocketPort)
-		log.Printf("   └── Health Check: http://localhost:%d/health", serviceInfo.Port)
+		log.Printf("   └── Health Check: http://localhost:%d/health", healthPort)
 		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
 	} else {
 		log.Printf("   └── WebSocket Port: %d (USP Protocol)", config.WebSocketPort)

@@ -128,6 +128,9 @@ services:
       - prometheus-dev-data:/prometheus
     networks:
       - openusp-dev
+    # Cross-platform host access - works on macOS, Windows, and Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]

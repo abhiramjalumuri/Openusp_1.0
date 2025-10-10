@@ -1,0 +1,70 @@
+# OpenUSP Network-Aware Prometheus Configuration
+# Uses Docker service names for container-to-container communication
+# Platform independent - works on Linux, macOS, Windows
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # OpenUSP Services via Consul Service Discovery
+  - job_name: 'openusp-services'
+    consul_sd_configs:
+    - server: 'openusp-consul:8500'  # Use service name instead of localhost
+      services: ['openusp-api-gateway', 'openusp-data-service', 'openusp-mtp-service', 'openusp-cwmp-service', 'openusp-usp-service']
+    relabel_configs:
+    # Use the service name as the job label
+    - source_labels: [__meta_consul_service]
+      target_label: job
+    # For services running in containers, use service names
+    - source_labels: [__meta_consul_service_address]
+      regex: 'localhost'
+      target_label: __address__
+      replacement: '${__meta_consul_service}:${__meta_consul_service_port}'
+    # Add service metadata as labels
+    - source_labels: [__meta_consul_service_metadata_service_type]
+      target_label: service_type
+    - source_labels: [__meta_consul_service_metadata_version]
+      target_label: version
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Container-based OpenUSP services (when running in the same network)
+  - job_name: 'openusp-containerized'
+    static_configs:
+    - targets: [
+        'openusp-api-gateway:6500',
+        'openusp-data-service:6100', 
+        'openusp-mtp-service:6250',
+        'openusp-cwmp-service:6300',
+        'openusp-usp-service:6400'
+      ]
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Host-based services fallback (for services running on host)
+  - job_name: 'openusp-host-services'
+    static_configs:
+    - targets: ['host.docker.internal:6500', 'host.docker.internal:6100', 'host.docker.internal:6250', 'host.docker.internal:6300', 'host.docker.internal:6400']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Infrastructure Services (container-to-container)
+  - job_name: 'infrastructure-services'
+    static_configs:
+    - targets: [
+        'openusp-postgres:5432',      # Internal PostgreSQL port
+        'openusp-consul:8500',        # Consul HTTP API
+        'openusp-rabbitmq-dev:15692', # RabbitMQ Prometheus metrics (if enabled)
+      ]
+    metrics_path: '/metrics'
+    scrape_interval: 60s

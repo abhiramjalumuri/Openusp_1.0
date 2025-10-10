@@ -12,6 +12,10 @@ Welcome to the OpenUSP (Open User Service Platform) documentation. This project 
 - [**Proactive Onboarding**](PROACTIVE_ONBOARDING.md) - Factory default device onboarding solution
 - [**Examples**](../README.md#-testing-and-validation) - Working examples and tutorials
 
+### Platform-Specific Guides
+- [**Cross-Platform Development**](CROSS_PLATFORM.md) - Professional cross-platform system (Linux, macOS, Windows)
+- [**Linux Deployment**](LINUX_DEPLOYMENT.md) - Linux-specific setup and troubleshooting
+
 ### For Developers
 - [**Development Guide**](DEVELOPMENT.md) - Setting up development environment
 - [**Makefile Guide**](MAKEFILE_GUIDE.md) - Complete Makefile reference and workflows
@@ -80,4 +84,4 @@ OpenUSP is actively developed and maintained. Current version: **1.0.0 Genesis**
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](../LICENSE) file for details.

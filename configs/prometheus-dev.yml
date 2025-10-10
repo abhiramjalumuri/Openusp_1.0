@@ -1,4 +1,5 @@
-# Prometheus Configuration for Development
+# OpenUSP Cross-Platform Prometheus Configuration
+# Uses host.docker.internal for container-to-host communication
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -17,16 +18,12 @@ scrape_configs:
   - job_name: 'openusp-services'
     consul_sd_configs:
     - server: 'openusp-consul:8500'
-      services: ['openusp-api-gateway', 'openusp-data-service', 'openusp-mtp-service', 'openusp-cwmp-service', 'openusp-usp-service']
+      services: ['openusp-api-gateway', 'openusp-data-service', 'openusp-mtp-service', 'openusp-cwmp-service', 'openusp-usp-service', 'openusp-connection-manager']
     relabel_configs:
     # Use the service name as the job label
     - source_labels: [__meta_consul_service]
       target_label: job
     # Use host.docker.internal for container-to-host communication
-    - source_labels: [__meta_consul_service_address]
-      regex: 'localhost'
-      target_label: __address__
-      replacement: 'host.docker.internal:${1}'
     - source_labels: [__meta_consul_service_port]
       target_label: __address__
       replacement: 'host.docker.internal:${1}'
@@ -35,26 +32,8 @@ scrape_configs:
       target_label: service_type
     - source_labels: [__meta_consul_service_metadata_version]
       target_label: version
+    - source_labels: [__meta_consul_service_metadata_environment]
+      target_label: environment
     metrics_path: '/metrics'
     scrape_interval: 30s
 
-  # Fallback static config for services not using Consul (backward compatibility)
-  - job_name: 'openusp-static-fallback'
-    static_configs:
-    - targets: ['host.docker.internal:6500', 'host.docker.internal:6100', 'host.docker.internal:6250', 'host.docker.internal:6300', 'host.docker.internal:6400']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # Infrastructure Services
-  # PostgreSQL doesn't expose Prometheus metrics by default
-  # - job_name: 'postgresql'
-  #   static_configs:
-  #   - targets: ['host.docker.internal:5433']
-  #   scrape_interval: 60s
-
-  # RabbitMQ metrics require prometheus plugin to be enabled
-  # - job_name: 'rabbitmq'
-  #   static_configs:
-  #   - targets: ['host.docker.internal:15692']
-  #   metrics_path: '/metrics'
-  #   scrape_interval: 60s
