@@ -23,59 +23,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/parameters/endpoint/{endpoint_id}": {
-            "get": {
-                "description": "Get device parameters filtered by endpoint ID with optional path pattern",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "parameters"
-                ],
-                "summary": "Get parameters by endpoint ID",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Endpoint ID",
-                        "name": "endpoint_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Path pattern for filtering parameters",
-                        "name": "path_pattern",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Parameters retrieved successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid endpoint ID",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/devices": {
             "get": {
                 "description": "Get a paginated list of all registered devices",
@@ -248,6 +195,59 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/parameters/endpoint/{endpoint_id}": {
+            "get": {
+                "description": "Get device parameters filtered by endpoint ID with optional path pattern",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "parameters"
+                ],
+                "summary": "Get parameters by endpoint ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Endpoint ID",
+                        "name": "endpoint_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Path pattern for filtering parameters",
+                        "name": "path_pattern",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Parameters retrieved successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid endpoint ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "externalDocs": {
@@ -260,7 +260,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
 	Host:             "localhost:6500",
-	BasePath:         "/",
+	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "OpenUSP API Gateway",
 	Description:      "REST API Gateway for OpenUSP TR-369 User Service Platform\nProvides unified REST API access to all OpenUSP microservices\nincluding device management, parameters, alerts, and sessions",

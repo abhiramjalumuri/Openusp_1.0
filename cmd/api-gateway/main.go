@@ -14,7 +14,7 @@
 //	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 //
 //	@host		localhost:6500
-//	@BasePath	/
+//	@BasePath	/api/v1
 //
 //	@externalDocs.description	OpenUSP Documentation
 //	@externalDocs.url			https://github.com/plume-design-inc/openusp/docs
@@ -672,7 +672,7 @@ func (gw *APIGateway) deleteParameter(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Parameters retrieved successfully"
 // @Failure 400 {object} map[string]interface{} "Invalid endpoint ID"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /api/v1/parameters/endpoint/{endpoint_id} [get]
+// @Router /parameters/endpoint/{endpoint_id} [get]
 func (gw *APIGateway) getParametersByEndpoint(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
