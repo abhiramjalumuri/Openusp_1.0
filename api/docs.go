@@ -206,7 +206,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "parameters"
+                    "Parameters"
                 ],
                 "summary": "Get parameters by endpoint ID",
                 "parameters": [

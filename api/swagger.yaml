@@ -172,5 +172,5 @@ paths:
             type: object
       summary: Get parameters by endpoint ID
       tags:
-      - parameters
+      - Parameters
 swagger: "2.0"

@@ -32,7 +32,6 @@ import (
 	"syscall"
 	"time"
 
-	"openusp/api" // Import generated docs
 	grpcclient "openusp/internal/grpc"
 	"openusp/pkg/config"
 	"openusp/pkg/metrics"
@@ -124,10 +123,6 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/health", gw.healthCheck)
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
-
-	// Configure Swagger host dynamically - use relative URLs for cross-platform compatibility
-	api.SwaggerInfo.Host = ""  // Empty host allows relative URLs
-	api.SwaggerInfo.BasePath = "/api/v1"
 
 	// Swagger UI endpoint - Use relative URL for cross-platform compatibility
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
@@ -664,7 +659,7 @@ func (gw *APIGateway) deleteParameter(c *gin.Context) {
 
 // @Summary Get parameters by endpoint ID
 // @Description Get device parameters filtered by endpoint ID with optional path pattern
-// @Tags parameters
+// @Tags Parameters
 // @Accept json
 // @Produce json
 // @Param endpoint_id path string true "Endpoint ID"
