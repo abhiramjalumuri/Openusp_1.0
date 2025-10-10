@@ -124,9 +124,8 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
-	// Swagger UI endpoint - Use relative URL for cross-platform compatibility
+	// Swagger UI endpoint - Default configuration for maximum cross-platform compatibility
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
-		ginSwagger.URL("./doc.json"),  // Relative URL - works from any host
 		ginSwagger.DeepLinking(true),
 		ginSwagger.DocExpansion("none"),
 	))
