@@ -390,12 +390,12 @@ $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call BUILD_TEMPLATE,$(agent))))
 define SERVICE_RUN_TEMPLATE
 run-$(1):
 	@echo "🚀 Starting $(1)..."
-	@./$(BUILD_DIR)/$(1)
+	@env CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul
 
 run-$(1)-background:
 	@echo "🚀 Starting $(1) in background..."
 	@mkdir -p logs
-	@nohup ./$(BUILD_DIR)/$(1) > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
+	@nohup env CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
 	@sleep 2
 	@echo "✅ $(1) started (PID: $$(cat logs/$(1).pid))"
 
