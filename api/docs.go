@@ -259,8 +259,8 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
-	Host:             "localhost:8080",
-	BasePath:         "/api/v1",
+	Host:             "localhost:6500",
+	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "OpenUSP API Gateway",
 	Description:      "REST API Gateway for OpenUSP TR-369 User Service Platform\nProvides unified REST API access to all OpenUSP microservices\nincluding device management, parameters, alerts, and sessions",

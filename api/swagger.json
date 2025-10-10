@@ -14,8 +14,8 @@
         },
         "version": "1.0.0"
     },
-    "host": "localhost:8080",
-    "basePath": "/api/v1",
+    "host": "localhost:6500",
+    "basePath": "/",
     "paths": {
         "/api/v1/parameters/endpoint/{endpoint_id}": {
             "get": {

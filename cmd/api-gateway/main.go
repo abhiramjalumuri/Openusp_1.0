@@ -13,8 +13,8 @@
 //	@license.name	Apache 2.0
 //	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 //
-//	@host		localhost:8080
-//	@BasePath	/api/v1
+//	@host		localhost:6500
+//	@BasePath	/
 //
 //	@externalDocs.description	OpenUSP Documentation
 //	@externalDocs.url			https://github.com/plume-design-inc/openusp/docs
