@@ -143,6 +143,16 @@ message GetParametersByPathResponse {
     repeated Parameter parameters = 1;
 }
 
+message GetParametersByEndpointRequest {
+    string endpoint_id = 1;
+    string path_pattern = 2; // optional: filter by path pattern (e.g., "Device.WiFi.*")
+}
+
+message GetParametersByEndpointResponse {
+    repeated Parameter parameters = 1;
+    Device device = 2; // include device info for context
+}
+
 message DeleteParameterRequest {
     uint32 device_id = 1;
     string path = 2;
@@ -264,6 +274,7 @@ service DataService {
     rpc CreateParameter(CreateParameterRequest) returns (CreateParameterResponse);
     rpc GetDeviceParameters(GetDeviceParametersRequest) returns (GetDeviceParametersResponse);
     rpc GetParametersByPath(GetParametersByPathRequest) returns (GetParametersByPathResponse);
+    rpc GetParametersByEndpoint(GetParametersByEndpointRequest) returns (GetParametersByEndpointResponse);
     rpc DeleteParameter(DeleteParameterRequest) returns (DeleteParameterResponse);
     
     // Alert operations

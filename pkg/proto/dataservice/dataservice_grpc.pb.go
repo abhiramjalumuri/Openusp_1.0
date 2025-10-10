@@ -19,27 +19,28 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DataService_HealthCheck_FullMethodName           = "/dataservice.DataService/HealthCheck"
-	DataService_GetStatus_FullMethodName             = "/dataservice.DataService/GetStatus"
-	DataService_CreateDevice_FullMethodName          = "/dataservice.DataService/CreateDevice"
-	DataService_GetDevice_FullMethodName             = "/dataservice.DataService/GetDevice"
-	DataService_GetDeviceByEndpoint_FullMethodName   = "/dataservice.DataService/GetDeviceByEndpoint"
-	DataService_ListDevices_FullMethodName           = "/dataservice.DataService/ListDevices"
-	DataService_UpdateDevice_FullMethodName          = "/dataservice.DataService/UpdateDevice"
-	DataService_DeleteDevice_FullMethodName          = "/dataservice.DataService/DeleteDevice"
-	DataService_CreateParameter_FullMethodName       = "/dataservice.DataService/CreateParameter"
-	DataService_GetDeviceParameters_FullMethodName   = "/dataservice.DataService/GetDeviceParameters"
-	DataService_GetParametersByPath_FullMethodName   = "/dataservice.DataService/GetParametersByPath"
-	DataService_DeleteParameter_FullMethodName       = "/dataservice.DataService/DeleteParameter"
-	DataService_CreateAlert_FullMethodName           = "/dataservice.DataService/CreateAlert"
-	DataService_GetDeviceAlerts_FullMethodName       = "/dataservice.DataService/GetDeviceAlerts"
-	DataService_ListAlerts_FullMethodName            = "/dataservice.DataService/ListAlerts"
-	DataService_ResolveAlert_FullMethodName          = "/dataservice.DataService/ResolveAlert"
-	DataService_CreateSession_FullMethodName         = "/dataservice.DataService/CreateSession"
-	DataService_GetSession_FullMethodName            = "/dataservice.DataService/GetSession"
-	DataService_UpdateSessionActivity_FullMethodName = "/dataservice.DataService/UpdateSessionActivity"
-	DataService_CloseSession_FullMethodName          = "/dataservice.DataService/CloseSession"
-	DataService_GetDeviceSessions_FullMethodName     = "/dataservice.DataService/GetDeviceSessions"
+	DataService_HealthCheck_FullMethodName             = "/dataservice.DataService/HealthCheck"
+	DataService_GetStatus_FullMethodName               = "/dataservice.DataService/GetStatus"
+	DataService_CreateDevice_FullMethodName            = "/dataservice.DataService/CreateDevice"
+	DataService_GetDevice_FullMethodName               = "/dataservice.DataService/GetDevice"
+	DataService_GetDeviceByEndpoint_FullMethodName     = "/dataservice.DataService/GetDeviceByEndpoint"
+	DataService_ListDevices_FullMethodName             = "/dataservice.DataService/ListDevices"
+	DataService_UpdateDevice_FullMethodName            = "/dataservice.DataService/UpdateDevice"
+	DataService_DeleteDevice_FullMethodName            = "/dataservice.DataService/DeleteDevice"
+	DataService_CreateParameter_FullMethodName         = "/dataservice.DataService/CreateParameter"
+	DataService_GetDeviceParameters_FullMethodName     = "/dataservice.DataService/GetDeviceParameters"
+	DataService_GetParametersByPath_FullMethodName     = "/dataservice.DataService/GetParametersByPath"
+	DataService_GetParametersByEndpoint_FullMethodName = "/dataservice.DataService/GetParametersByEndpoint"
+	DataService_DeleteParameter_FullMethodName         = "/dataservice.DataService/DeleteParameter"
+	DataService_CreateAlert_FullMethodName             = "/dataservice.DataService/CreateAlert"
+	DataService_GetDeviceAlerts_FullMethodName         = "/dataservice.DataService/GetDeviceAlerts"
+	DataService_ListAlerts_FullMethodName              = "/dataservice.DataService/ListAlerts"
+	DataService_ResolveAlert_FullMethodName            = "/dataservice.DataService/ResolveAlert"
+	DataService_CreateSession_FullMethodName           = "/dataservice.DataService/CreateSession"
+	DataService_GetSession_FullMethodName              = "/dataservice.DataService/GetSession"
+	DataService_UpdateSessionActivity_FullMethodName   = "/dataservice.DataService/UpdateSessionActivity"
+	DataService_CloseSession_FullMethodName            = "/dataservice.DataService/CloseSession"
+	DataService_GetDeviceSessions_FullMethodName       = "/dataservice.DataService/GetDeviceSessions"
 )
 
 // DataServiceClient is the client API for DataService service.
@@ -62,6 +63,7 @@ type DataServiceClient interface {
 	CreateParameter(ctx context.Context, in *CreateParameterRequest, opts ...grpc.CallOption) (*CreateParameterResponse, error)
 	GetDeviceParameters(ctx context.Context, in *GetDeviceParametersRequest, opts ...grpc.CallOption) (*GetDeviceParametersResponse, error)
 	GetParametersByPath(ctx context.Context, in *GetParametersByPathRequest, opts ...grpc.CallOption) (*GetParametersByPathResponse, error)
+	GetParametersByEndpoint(ctx context.Context, in *GetParametersByEndpointRequest, opts ...grpc.CallOption) (*GetParametersByEndpointResponse, error)
 	DeleteParameter(ctx context.Context, in *DeleteParameterRequest, opts ...grpc.CallOption) (*DeleteParameterResponse, error)
 	// Alert operations
 	CreateAlert(ctx context.Context, in *CreateAlertRequest, opts ...grpc.CallOption) (*CreateAlertResponse, error)
@@ -194,6 +196,16 @@ func (c *dataServiceClient) GetParametersByPath(ctx context.Context, in *GetPara
 	return out, nil
 }
 
+func (c *dataServiceClient) GetParametersByEndpoint(ctx context.Context, in *GetParametersByEndpointRequest, opts ...grpc.CallOption) (*GetParametersByEndpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetParametersByEndpointResponse)
+	err := c.cc.Invoke(ctx, DataService_GetParametersByEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dataServiceClient) DeleteParameter(ctx context.Context, in *DeleteParameterRequest, opts ...grpc.CallOption) (*DeleteParameterResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteParameterResponse)
@@ -314,6 +326,7 @@ type DataServiceServer interface {
 	CreateParameter(context.Context, *CreateParameterRequest) (*CreateParameterResponse, error)
 	GetDeviceParameters(context.Context, *GetDeviceParametersRequest) (*GetDeviceParametersResponse, error)
 	GetParametersByPath(context.Context, *GetParametersByPathRequest) (*GetParametersByPathResponse, error)
+	GetParametersByEndpoint(context.Context, *GetParametersByEndpointRequest) (*GetParametersByEndpointResponse, error)
 	DeleteParameter(context.Context, *DeleteParameterRequest) (*DeleteParameterResponse, error)
 	// Alert operations
 	CreateAlert(context.Context, *CreateAlertRequest) (*CreateAlertResponse, error)
@@ -368,6 +381,9 @@ func (UnimplementedDataServiceServer) GetDeviceParameters(context.Context, *GetD
 }
 func (UnimplementedDataServiceServer) GetParametersByPath(context.Context, *GetParametersByPathRequest) (*GetParametersByPathResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetParametersByPath not implemented")
+}
+func (UnimplementedDataServiceServer) GetParametersByEndpoint(context.Context, *GetParametersByEndpointRequest) (*GetParametersByEndpointResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetParametersByEndpoint not implemented")
 }
 func (UnimplementedDataServiceServer) DeleteParameter(context.Context, *DeleteParameterRequest) (*DeleteParameterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteParameter not implemented")
@@ -618,6 +634,24 @@ func _DataService_GetParametersByPath_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataService_GetParametersByEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetParametersByEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataServiceServer).GetParametersByEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataService_GetParametersByEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataServiceServer).GetParametersByEndpoint(ctx, req.(*GetParametersByEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DataService_DeleteParameter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteParameterRequest)
 	if err := dec(in); err != nil {
@@ -848,6 +882,10 @@ var DataService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetParametersByPath",
 			Handler:    _DataService_GetParametersByPath_Handler,
+		},
+		{
+			MethodName: "GetParametersByEndpoint",
+			Handler:    _DataService_GetParametersByEndpoint_Handler,
 		},
 		{
 			MethodName: "DeleteParameter",

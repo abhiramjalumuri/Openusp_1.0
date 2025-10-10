@@ -18,6 +18,43 @@ info:
   title: OpenUSP API Gateway
   version: 1.0.0
 paths:
+  /api/v1/parameters/endpoint/{endpoint_id}:
+    get:
+      consumes:
+      - application/json
+      description: Get device parameters filtered by endpoint ID with optional path
+        pattern
+      parameters:
+      - description: Endpoint ID
+        in: path
+        name: endpoint_id
+        required: true
+        type: string
+      - description: Path pattern for filtering parameters
+        in: query
+        name: path_pattern
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameters retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid endpoint ID
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get parameters by endpoint ID
+      tags:
+      - parameters
   /devices:
     get:
       consumes:

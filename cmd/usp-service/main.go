@@ -665,7 +665,7 @@ func main() {
 				"grpc_port": %d,
 				"http_port": %d,
 				"timestamp": "%s"
-			}`, grpcPort, httpPort, deployConfig.IsConsulEnabled(), time.Now().Format(time.RFC3339))
+			}`, grpcPort, httpPort, time.Now().Format(time.RFC3339))
 			w.Write([]byte(response))
 		})
 
@@ -682,7 +682,7 @@ func main() {
 				"tr181_objects": 822,
 				"usp_versions": ["1.3", "1.4"],
 				"timestamp": "%s"
-			}`, grpcPort, httpPort, deployConfig.IsConsulEnabled(), time.Now().Format(time.RFC3339))
+			}`, grpcPort, httpPort, time.Now().Format(time.RFC3339))
 			w.Write([]byte(response))
 		})
 

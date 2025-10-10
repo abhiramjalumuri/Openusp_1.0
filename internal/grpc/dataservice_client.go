@@ -97,6 +97,13 @@ func (c *DataServiceClient) GetParametersByPath(ctx context.Context, deviceID ui
 	})
 }
 
+func (c *DataServiceClient) GetParametersByEndpoint(ctx context.Context, endpointID string, pathPattern string) (*pb.GetParametersByEndpointResponse, error) {
+	return c.client.GetParametersByEndpoint(ctx, &pb.GetParametersByEndpointRequest{
+		EndpointId:  endpointID,
+		PathPattern: pathPattern,
+	})
+}
+
 func (c *DataServiceClient) DeleteParameter(ctx context.Context, deviceID uint32, path string) (*pb.DeleteParameterResponse, error) {
 	return c.client.DeleteParameter(ctx, &pb.DeleteParameterRequest{
 		DeviceId: deviceID,

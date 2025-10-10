@@ -222,6 +222,37 @@ func (s *DataServiceServer) DeleteParameter(ctx context.Context, req *pb.DeleteP
 	}, nil
 }
 
+func (s *DataServiceServer) GetParametersByEndpoint(ctx context.Context, req *pb.GetParametersByEndpointRequest) (*pb.GetParametersByEndpointResponse, error) {
+	if req.EndpointId == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "endpoint ID is required")
+	}
+
+	// First, find the device by endpoint ID
+	device, err := s.repos.Device.GetByEndpointID(req.EndpointId)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "device not found with endpoint ID: %s", req.EndpointId)
+	}
+
+	// Get parameters for the device
+	var parameters []database.Parameter
+	if req.PathPattern != "" {
+		// Filter by path pattern if provided
+		parameters, err = s.repos.Parameter.GetByPath(device.ID, req.PathPattern)
+	} else {
+		// Get all parameters for the device
+		parameters, err = s.repos.Parameter.GetByDeviceID(device.ID)
+	}
+
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get parameters: %v", err)
+	}
+
+	return &pb.GetParametersByEndpointResponse{
+		Parameters: database.ConvertParametersToProto(parameters),
+		Device:     database.ConvertDeviceToProto(device),
+	}, nil
+}
+
 // Alert operations
 func (s *DataServiceServer) CreateAlert(ctx context.Context, req *pb.CreateAlertRequest) (*pb.CreateAlertResponse, error) {
 	if req.Alert == nil {

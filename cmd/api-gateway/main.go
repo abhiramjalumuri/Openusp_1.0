@@ -159,6 +159,7 @@ func (gw *APIGateway) setupRoutes() {
 		// Parameter management endpoints
 		parameters := v1.Group("/parameters")
 		{
+			parameters.GET("/endpoint/:endpoint_id", gw.getParametersByEndpoint)
 			parameters.POST("", gw.createParameter)
 			parameters.DELETE("/:device_id/:path", gw.deleteParameter)
 		}
@@ -658,6 +659,48 @@ func (gw *APIGateway) deleteParameter(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Parameter deleted successfully",
+	})
+}
+
+// @Summary Get parameters by endpoint ID
+// @Description Get device parameters filtered by endpoint ID with optional path pattern
+// @Tags parameters
+// @Accept json
+// @Produce json
+// @Param endpoint_id path string true "Endpoint ID"
+// @Param path_pattern query string false "Path pattern for filtering parameters"
+// @Success 200 {object} map[string]interface{} "Parameters retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid endpoint ID"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/parameters/endpoint/{endpoint_id} [get]
+func (gw *APIGateway) getParametersByEndpoint(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	endpointID := c.Param("endpoint_id")
+	if endpointID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Endpoint ID is required",
+		})
+		return
+	}
+
+	// Get optional path pattern from query parameter
+	pathPattern := c.Query("path_pattern")
+
+	// Call data service
+	resp, err := gw.dataClient.GetParametersByEndpoint(ctx, endpointID, pathPattern)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch parameters by endpoint",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device":     resp.Device,
+		"parameters": resp.Parameters,
 	})
 }
 
