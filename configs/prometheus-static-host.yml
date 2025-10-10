@@ -1,0 +1,48 @@
+# OpenUSP Static Prometheus Configuration for Host Network Mode
+# Works on both macOS and Linux without host.docker.internal
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # OpenUSP Services - Direct localhost access via host network
+  - job_name: 'openusp-api-gateway'
+    static_configs:
+    - targets: ['localhost:6500']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-data-service'
+    static_configs:
+    - targets: ['localhost:6100']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-connection-manager'
+    static_configs:
+    - targets: ['localhost:6200']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-usp-service'
+    static_configs:
+    - targets: ['localhost:6400']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-cwmp-service'
+    static_configs:
+    - targets: ['localhost:7548']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-mtp-service'
+    static_configs:
+    - targets: ['localhost:8082']
+    metrics_path: '/metrics'
+    scrape_interval: 30s

@@ -29,9 +29,7 @@ echo "   Starting PostgreSQL..."
 docker compose -f deployments/docker-compose.infra.network.yml up -d postgres
 sleep 5
 
-echo "   Starting Consul..."
-docker compose -f deployments/docker-compose.infra.network.yml up -d consul
-sleep 5
+# Consul removed - using static port configuration
 
 echo "   Starting Prometheus..."
 docker compose -f deployments/docker-compose.infra.network.yml up -d prometheus-dev
@@ -51,13 +49,7 @@ sleep 10
 echo ""
 echo "🔍 Step 4: Verifying service health..."
 
-# Check Consul
-echo -n "   Consul: "
-if curl -s http://localhost:8500/v1/status/leader > /dev/null 2>&1; then
-    echo "✅ Running"
-else
-    echo "❌ Failed"
-fi
+# Consul check removed - using static port configuration
 
 # Check Prometheus
 echo -n "   Prometheus: "
@@ -83,7 +75,6 @@ echo ""
 echo "🎉 Setup Complete!"
 echo ""
 echo "📊 Access Points:"
-echo "   • Consul UI:   http://localhost:8500"
 echo "   • Prometheus:  http://localhost:9090"
 echo "   • Grafana:     http://localhost:3000 (admin/openusp123)"
 echo "   • Adminer:     http://localhost:8080"

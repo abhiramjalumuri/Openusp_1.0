@@ -17,34 +17,36 @@ services:
       - openusp-dev
     restart: unless-stopped
 
-  # Prometheus Monitoring (Static targets) - Host network mode for cross-platform compatibility
+  # Prometheus Monitoring (Static targets)
   prometheus-dev:
     image: prom/prometheus:v2.45.0
     container_name: openusp-prometheus-dev
-    network_mode: "host"
+    ports:
+      - "9090:9090"
     volumes:
-      - ../configs/prometheus-static-host.yml:/etc/prometheus/prometheus.yml:ro
+      - ../configs/prometheus-static.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_dev_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
-      - '--web.listen-address=0.0.0.0:9090'
+    networks:
+      - openusp-dev
     restart: unless-stopped
 
-  # Grafana Dashboards - Host network mode for easy Prometheus access
+  # Grafana Dashboards
   grafana-dev:
     image: grafana/grafana:10.0.0
     container_name: openusp-grafana-dev
-    network_mode: "host"
+    ports:
+      - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=openusp123
-      - GF_SERVER_HTTP_PORT=3000
     volumes:
       - grafana_dev_data:/var/lib/grafana
       - ../configs/grafana-dashboards:/var/lib/grafana/dashboards:ro
-      - ../configs/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
-      - ../configs/grafana-datasources-host.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    networks:
+      - openusp-dev
     restart: unless-stopped
 
   # RabbitMQ Message Broker

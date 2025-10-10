@@ -5,6 +5,95 @@ All notable changes to the OpenUSP project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-10-10
+
+### 🎯 Major Architecture Changes
+
+#### Complete Consul Removal & Static Port Configuration
+- **Service Discovery Removal**: Eliminated Consul service discovery dependency entirely
+- **Static Port Configuration**: Implemented predictable static port assignments for all services:
+  - API Gateway: 6500 (Health: 6501, gRPC: 6502)
+  - Data Service: 6100 (Health: 6101, gRPC: 6102)
+  - Connection Manager: 6200 (Health: 6201, gRPC: 6202)
+  - USP Service: 6400 (Health: 6401, gRPC: 6402)
+  - CWMP Service: 7547 (Health: 7548, gRPC: 7549)
+  - MTP Service: 8081 WebSocket (Health: 8082, gRPC: 8083)
+- **Configuration Management**: Created `configs/services.yaml` for centralized static service configuration
+- **Cross-Platform Compatibility**: Implemented host network mode for monitoring infrastructure
+
+#### Infrastructure Simplification
+- **Docker Compose Restructure**: Updated to `docker-compose.infra.yml` without Consul dependency
+- **Prometheus Configuration**: Migrated to static target configuration (`prometheus-static-host.yml`)
+- **Grafana Integration**: Enhanced dashboard provisioning with 4 comprehensive dashboards
+- **Host Network Mode**: Implemented for cross-platform compatibility (macOS/Linux/Windows)
+
+#### Service Architecture Improvements
+- **gRPC Communication**: Maintained inter-service gRPC communication with static endpoints
+- **Health Monitoring**: Separate health endpoints for all services
+- **Metrics Collection**: Prometheus scraping all services via static configuration
+- **Error Resolution**: Fixed CWMP service HTTP 405 errors by correcting metrics port configuration
+
+### 🔧 Technical Improvements
+
+#### Code Quality & Cleanup
+- **Package Removal**: Completely removed `pkg/consul/` package and all dependencies
+- **Service Refactoring**: Updated all service main.go files to use static configuration
+- **Import Cleanup**: Removed all Consul-related imports across the codebase
+- **Configuration Updates**: Updated `pkg/config/` packages to support static configuration
+
+#### Build & Deployment
+- **Makefile Enhancement**: Updated all build and run targets for static port configuration
+- **Docker Configuration**: Simplified infrastructure setup without service discovery
+- **Cross-Platform Scripts**: Added platform-specific deployment scripts
+
+#### Documentation & Guides
+- **Migration Guide**: Created comprehensive static port migration documentation
+- **Cross-Platform Setup**: Detailed host network mode configuration guide
+- **gRPC Services Guide**: Documentation for static inter-service communication
+- **Configuration Reference**: Complete service port reference documentation
+
+### 🌐 Cross-Platform Support
+
+#### Host Network Implementation
+- **Universal Compatibility**: Works seamlessly on macOS, Linux, and Windows
+- **Direct Access**: Eliminated host.docker.internal issues with localhost access
+- **Performance Improvement**: Reduced network overhead with host networking
+- **Simplified Configuration**: No complex bridge network setup required
+
+#### Monitoring Stack Enhancement
+- **Grafana Dashboards**: 4 comprehensive dashboards for platform monitoring
+- **Prometheus Metrics**: All 6 services exposing metrics on dedicated ports
+- **Real-time Monitoring**: Live service health and performance monitoring
+- **Alert Integration**: Ready for alerting and notification setup
+
+### 🐛 Bug Fixes & Stability
+
+#### Service Communication
+- **Port Conflicts**: Resolved all service port conflicts with static assignments
+- **HTTP 405 Errors**: Fixed CWMP service metrics endpoint configuration
+- **Service Discovery**: Eliminated service discovery failures and timeouts
+- **Build Issues**: Resolved all compilation errors from Consul removal
+
+#### Infrastructure
+- **Dashboard Loading**: Fixed Grafana dashboard provisioning issues
+- **Metrics Scraping**: Corrected Prometheus target configuration for all services
+- **Database Connectivity**: Maintained stable PostgreSQL connections
+- **Message Queuing**: Preserved RabbitMQ and Mosquitto functionality
+
+### 📋 Development Experience
+
+#### Simplified Workflow
+- **Predictable Ports**: No more dynamic port allocation complexity
+- **Quick Testing**: Easy to test individual services on known ports
+- **Debug-Friendly**: Simple localhost connections for debugging
+- **Fast Startup**: No service discovery registration delays
+
+#### Enhanced Tooling
+- **Status Commands**: Improved service status checking with static targets
+- **Health Checks**: Direct HTTP health endpoint access
+- **Log Analysis**: Streamlined logging without service discovery noise
+- **Build Process**: Faster builds without Consul dependency compilation
+
 ## [1.0.2] - 2025-10-03
 
 ### Fixed

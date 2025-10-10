@@ -4,24 +4,21 @@ This directory contains essential utility scripts for development and maintenanc
 
 ## Available Scripts
 
-### `cleanup-consul.sh`
+### `setup-infrastructure.sh`
 
-**Purpose**: Remove stale service registrations from Consul for clean development environment
+**Purpose**: Set up and repair infrastructure services for OpenUSP
 
 **Usage**:
 ```bash
-# Interactive cleanup
-./scripts/cleanup-consul.sh
-
-# Force cleanup without prompts
-./scripts/cleanup-consul.sh --force
+# Setup complete infrastructure
+./scripts/setup-infrastructure.sh
 ```
 
-**When to use**:
-- Before starting development (`./scripts/cleanup-consul.sh --force`)
-- When services can't find each other
-- "circuit breaker open", "connection refused" errors
-- Before major service restarts
+**What it does**:
+- Starts all infrastructure services (PostgreSQL, Prometheus, Grafana, etc.)
+- Configures Grafana dashboards
+- Validates service health
+- Works with static port configuration (no service discovery needed)
 
 ### `docker-health.sh`
 
@@ -81,7 +78,6 @@ These scripts are integrated with the Makefile targets:
 
 ```bash
 # Use via Makefile (recommended)
-make consul-cleanup      # cleanup-consul.sh
 make docker-health       # docker-health.sh check
 make docker-fix          # docker-health.sh fix
 make setup-grafana       # setup-grafana.sh

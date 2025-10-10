@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"openusp/pkg/consul"
 	"openusp/pkg/proto/dataservice"
 	"openusp/pkg/proto/mtpservice"
 
@@ -43,7 +42,6 @@ type ServiceConnection struct {
 
 // ConnectionManager manages all inter-service gRPC connections with industry-standard patterns
 type ConnectionManager struct {
-	registry    *consul.ServiceRegistry
 	connections map[string]*ServiceConnection
 	mu          sync.RWMutex
 
@@ -63,7 +61,6 @@ type ConnectionManager struct {
 }
 
 // NewConnectionManager creates a new connection manager with industry-standard settings
-func NewConnectionManager(registry *consul.ServiceRegistry) *ConnectionManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	cm := &ConnectionManager{
@@ -262,9 +259,7 @@ func (cm *ConnectionManager) createConnectionWithRetry(serviceConn *ServiceConne
 }
 
 // discoverService discovers a service via Consul with proper error handling
-func (cm *ConnectionManager) discoverService(ctx context.Context, serviceName string) (*consul.ServiceInfo, error) {
 	if cm.registry == nil {
-		return nil, fmt.Errorf("consul registry not available")
 	}
 
 	serviceInfo, err := cm.registry.DiscoverService(serviceName)
@@ -273,7 +268,6 @@ func (cm *ConnectionManager) discoverService(ctx context.Context, serviceName st
 	}
 
 	if serviceInfo == nil {
-		return nil, fmt.Errorf("service %s not found in consul", serviceName)
 	}
 
 	return serviceInfo, nil

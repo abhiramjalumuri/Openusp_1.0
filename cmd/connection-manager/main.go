@@ -10,13 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"openusp/pkg/config"
-	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
 	"openusp/pkg/proto/connectionservice"
 	"openusp/pkg/version"
@@ -34,7 +32,6 @@ type ConnectionManagerService struct {
 	connectionservice.UnimplementedConnectionServiceServer
 
 	// Service registry and discovery
-	registry *consul.ServiceRegistry
 
 	// Connection pools per service type
 	connections map[string]*ServiceConnectionPool
@@ -82,7 +79,6 @@ type ServiceConnectionPool struct {
 type ManagedConnection struct {
 	conn        *grpc.ClientConn
 	target      string
-	serviceInfo *consul.ServiceInfo
 	state       connectivity.State
 	lastUsed    time.Time
 	errorCount  int
@@ -138,7 +134,7 @@ func DefaultConnectionManagerConfig() *ConnectionManagerConfig {
 }
 
 // NewConnectionManagerService creates a new connection manager service
-func NewConnectionManagerService(registry *consul.ServiceRegistry, config *ConnectionManagerConfig) *ConnectionManagerService {
+func NewConnectionManagerService(config *ConnectionManagerConfig) *ConnectionManagerService {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if config == nil {
@@ -146,7 +142,6 @@ func NewConnectionManagerService(registry *consul.ServiceRegistry, config *Conne
 	}
 
 	cms := &ConnectionManagerService{
-		registry:    registry,
 		connections: make(map[string]*ServiceConnectionPool),
 		config:      config,
 		metrics:     metrics.NewOpenUSPMetrics("connection-manager"),
@@ -159,6 +154,23 @@ func NewConnectionManagerService(registry *consul.ServiceRegistry, config *Conne
 	cms.startBackgroundServices()
 
 	return cms
+}
+
+// getStaticServiceTarget returns the static target address for a service
+func (cms *ConnectionManagerService) getStaticServiceTarget(serviceName string) string {
+	// Static port mappings based on services.yaml
+	switch serviceName {
+	case "openusp-data-service":
+		return "localhost:6101" // gRPC port
+	case "openusp-usp-service":
+		return "localhost:6401" // gRPC port
+	case "openusp-cwmp-service":
+		return "localhost:7548" // gRPC port
+	case "openusp-mtp-service":
+		return "localhost:8082" // gRPC port
+	default:
+		return "" // Unknown service
+	}
 }
 
 // SetPorts updates the connection manager with actual port numbers for status reporting
@@ -383,16 +395,10 @@ func (cms *ConnectionManagerService) initializePool(pool *ServiceConnectionPool)
 
 // addConnectionToPool adds a new connection to the pool
 func (cms *ConnectionManagerService) addConnectionToPool(pool *ServiceConnectionPool) error {
-	// Discover service
-	serviceInfo, err := cms.registry.DiscoverService(pool.serviceName)
-	if err != nil {
-		return fmt.Errorf("service discovery failed: %w", err)
-	}
-
-	// Build target address
-	target := fmt.Sprintf("localhost:%d", serviceInfo.Port)
-	if grpcPort, exists := serviceInfo.Meta["grpc_port"]; exists {
-		target = fmt.Sprintf("localhost:%s", grpcPort)
+	// Static service discovery - get target from service name
+	target := cms.getStaticServiceTarget(pool.serviceName)
+	if target == "" {
+		return fmt.Errorf("unknown service: %s", pool.serviceName)
 	}
 
 	// Create gRPC connection with keepalive and timeout settings
@@ -412,19 +418,17 @@ func (cms *ConnectionManagerService) addConnectionToPool(pool *ServiceConnection
 
 	// Create managed connection
 	managedConn := &ManagedConnection{
-		conn:        conn,
-		target:      target,
-		serviceInfo: serviceInfo,
-		state:       conn.GetState(),
-		lastUsed:    time.Now(),
-		createdAt:   time.Now(),
-		metadata:    make(map[string]string),
+		conn:      conn,
+		target:    target,
+		state:     conn.GetState(),
+		lastUsed:  time.Now(),
+		createdAt: time.Now(),
+		metadata:  make(map[string]string),
 	}
 
-	// Add service metadata
-	for key, value := range serviceInfo.Meta {
-		managedConn.metadata[key] = value
-	}
+	// Add basic metadata for static configuration
+	managedConn.metadata["service_name"] = pool.serviceName
+	managedConn.metadata["target"] = target
 
 	pool.mu.Lock()
 	pool.connections = append(pool.connections, managedConn)
@@ -633,13 +637,11 @@ func (cms *ConnectionManagerService) refreshServiceDiscovery() {
 
 // refreshServiceInfo refreshes service information for a specific service
 func (cms *ConnectionManagerService) refreshServiceInfo(serviceName string) {
-	serviceInfo, err := cms.registry.DiscoverService(serviceName)
-	if err != nil {
-		log.Printf("⚠️ Failed to refresh service info for %s: %v", serviceName, err)
-		return
+	// Static configuration - no refresh needed
+	target := cms.getStaticServiceTarget(serviceName)
+	if target != "" {
+		log.Printf("🔄 Service info for %s: %s (static)", serviceName, target)
 	}
-
-	log.Printf("🔄 Refreshed service info for %s: %s:%d", serviceName, serviceInfo.Address, serviceInfo.Port)
 }
 
 // countHealthyConnections counts healthy connections in a pool
@@ -684,9 +686,8 @@ func main() {
 	log.Printf("🚀 Starting OpenUSP Connection Manager Service...")
 
 	// Command line flags
-	var enableConsul = flag.Bool("consul", false, "Enable Consul service discovery")
-	var port = flag.Int("port", 56300, "gRPC port")
-	var httpPort = flag.Int("http-port", 0, "HTTP port for health/status (0 = auto)")
+	var port = flag.Int("port", 6201, "gRPC port")
+	var httpPort = flag.Int("http-port", 6200, "HTTP port for health/status")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -713,36 +714,13 @@ func main() {
 		return
 	}
 
-	// Override environment from flags
-	if *enableConsul {
-		os.Setenv("CONSUL_ENABLED", "true")
-	}
+	// Static port configuration - no environment overrides needed
 
 	// Load configuration
 	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-connection-manager", "connection-manager", *port, "OPENUSP_CONNECTION_MANAGER_PORT")
 
-	// Initialize Consul registry if enabled (but don't register yet)
-	var registry *consul.ServiceRegistry
-	var serviceInfo *consul.ServiceInfo
-	if deployConfig.IsConsulEnabled() {
-		consulAddr, interval, timeout := deployConfig.GetConsulConfig()
-		consulConfig := &consul.Config{
-			Address:       consulAddr,
-			Datacenter:    "openusp-dev",
-			CheckInterval: interval,
-			CheckTimeout:  timeout,
-		}
-
-		var err error
-		registry, err = consul.NewServiceRegistry(consulConfig)
-		if err != nil {
-			log.Fatalf("Failed to connect to Consul: %v", err)
-		}
-		log.Printf("🏛️ Connected to Consul at %s (datacenter: %s)", consulAddr, "openusp-dev")
-	}
-
 	// Create connection manager service
-	connectionManager := NewConnectionManagerService(registry, DefaultConnectionManagerConfig())
+	connectionManager := NewConnectionManagerService(DefaultConnectionManagerConfig())
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer(
@@ -761,15 +739,8 @@ func main() {
 	grpc_health_v1.RegisterHealthServer(grpcServer, health.NewServer())
 	reflection.Register(grpcServer)
 
-	// Determine HTTP port
+	// Determine HTTP port - static configuration
 	httpPortToUse := *httpPort
-	if httpPortToUse == 0 {
-		if serviceInfo != nil {
-			httpPortToUse = serviceInfo.Port
-		} else {
-			httpPortToUse = *port + 100 // Default offset
-		}
-	}
 
 	// Start HTTP server for health checks and status
 	httpMux := http.NewServeMux()
@@ -797,7 +768,6 @@ func main() {
 			"uptime":      time.Since(connectionManager.startTime).String(),
 			"grpc_port":   connectionManager.actualGRPCPort,
 			"http_port":   connectionManager.httpPort,
-			"consul":      deployConfig.IsConsulEnabled(),
 			"connections": statusResp.Services,
 		}
 		json.NewEncoder(w).Encode(response)
@@ -823,16 +793,8 @@ func main() {
 		}
 	}()
 
-	// Start gRPC server
-	var listener net.Listener
-	var err error
-	if *enableConsul {
-		// Dynamic port for Consul - bind to IPv4 specifically
-		listener, err = net.Listen("tcp4", "127.0.0.1:0")
-	} else {
-		// Fixed port for traditional deployment
-		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", *port))
-	}
+	// Start gRPC server - static port configuration
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		log.Fatalf("Failed to listen on gRPC port: %v", err)
 	}
@@ -843,41 +805,7 @@ func main() {
 	// Update connection manager with actual ports for status reporting
 	connectionManager.SetPorts(actualGRPCPort, httpPortToUse)
 
-	// Register with Consul now that we have actual ports
-	if deployConfig.IsConsulEnabled() && registry != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// Create service info with actual ports
-		serviceInfo = &consul.ServiceInfo{
-			Name:     deployConfig.ServiceName,
-			Address:  "localhost",
-			Port:     httpPortToUse,
-			GRPCPort: actualGRPCPort,
-			Protocol: "http",
-			Tags:     []string{"openusp", "v1.1.0", deployConfig.ServiceType},
-			Meta: map[string]string{
-				"service_type": deployConfig.ServiceType,
-				"protocol":     "http",
-				"version":      "1.1.0",
-				"environment":  "development",
-				"grpc_port":    strconv.Itoa(actualGRPCPort),
-			},
-			Health: "starting",
-		}
-
-		// Register with actual ports
-		err = registry.RegisterServiceWithPorts(ctx, serviceInfo)
-		if err != nil {
-			log.Fatalf("Failed to register with Consul: %v", err)
-		}
-
-		log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d", serviceInfo.Name, deployConfig.ServiceType, serviceInfo.Port)
-		log.Printf("   └── gRPC port: %d", actualGRPCPort)
-		log.Printf("✅ Registered with Consul: %s (ID: %s)", serviceInfo.Name, serviceInfo.ID)
-		log.Printf("   📍 Address: %s:%d", serviceInfo.Address, serviceInfo.Port)
-		log.Printf("   🏥 Health Status: %s", serviceInfo.Health)
-	}
+	// Static port configuration - no service registration needed
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

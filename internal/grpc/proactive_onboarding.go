@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"openusp/pkg/proto/uspservice"
+	"openusp/pkg/service/client"
 	v1_3 "openusp/pkg/proto/v1_3"
 	v1_4 "openusp/pkg/proto/v1_4"
-	"openusp/pkg/service/client"
 
 	"google.golang.org/protobuf/proto"
 )

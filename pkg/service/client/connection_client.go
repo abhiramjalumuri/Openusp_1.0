@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"openusp/pkg/consul"
 	"openusp/pkg/proto/connectionservice"
 	"openusp/pkg/proto/dataservice"
 	"openusp/pkg/proto/mtpservice"
@@ -20,7 +19,6 @@ import (
 type OpenUSPConnectionClient struct {
 	connectionManager connectionservice.ConnectionServiceClient
 	managerConn       *grpc.ClientConn
-	registry          *consul.ServiceRegistry
 
 	// Cache for frequently used clients
 	clientCache map[string]interface{}
@@ -29,39 +27,27 @@ type OpenUSPConnectionClient struct {
 }
 
 // NewOpenUSPConnectionClient creates a new connection client
-func NewOpenUSPConnectionClient(registry *consul.ServiceRegistry) (*OpenUSPConnectionClient, error) {
+func NewOpenUSPConnectionClient(cacheExpiry time.Duration) *OpenUSPConnectionClient {
 	var connectionManager connectionservice.ConnectionServiceClient
 	var managerConn *grpc.ClientConn
 
-	// Try to connect to connection manager service
-	if registry != nil {
-		serviceInfo, err := registry.DiscoverService("openusp-connection-manager")
-		if err == nil {
-			target := fmt.Sprintf("localhost:%d", serviceInfo.Port)
-			if grpcPort, exists := serviceInfo.Meta["grpc_port"]; exists {
-				target = fmt.Sprintf("localhost:%s", grpcPort)
-			}
-
-			conn, err := grpc.Dial(target, grpc.WithInsecure(), grpc.WithTimeout(5*time.Second))
-			if err == nil {
-				connectionManager = connectionservice.NewConnectionServiceClient(conn)
-				managerConn = conn
-				log.Printf("✅ Connected to Connection Manager at %s", target)
-			} else {
-				log.Printf("⚠️ Failed to connect to Connection Manager: %v", err)
-			}
-		} else {
-			log.Printf("⚠️ Connection Manager service not found: %v", err)
-		}
+	// Static port configuration - connect to connection manager on port 6201
+	target := "localhost:6201"
+	conn, err := grpc.Dial(target, grpc.WithInsecure(), grpc.WithTimeout(5*time.Second))
+	if err == nil {
+		connectionManager = connectionservice.NewConnectionServiceClient(conn)
+		managerConn = conn
+		log.Printf("✅ Connected to Connection Manager at %s", target)
+	} else {
+		log.Printf("⚠️ Failed to connect to Connection Manager: %v", err)
 	}
 
 	return &OpenUSPConnectionClient{
 		connectionManager: connectionManager,
 		managerConn:       managerConn,
-		registry:          registry,
 		clientCache:       make(map[string]interface{}),
-		cacheExpiry:       30 * time.Second,
-	}, nil
+		cacheExpiry:       cacheExpiry,
+	}
 }
 
 // GetDataServiceClient returns a data service client via connection manager only

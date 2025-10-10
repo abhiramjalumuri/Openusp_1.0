@@ -107,7 +107,7 @@
           },
           "editorMode": "code",
           "expr": "up{job=~\"openusp-(api-gateway|data-service|mtp-service|cwmp-service|usp-service|connection-manager)\"}",
-          "legendFormat": "{{job}}",
+          "legendFormat": "{{job}} ({{instance}})",
           "range": true,
           "refId": "A"
         }

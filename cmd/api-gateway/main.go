@@ -29,14 +29,12 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	"openusp/api" // Import generated docs
 	grpcclient "openusp/internal/grpc"
 	"openusp/pkg/config"
-	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
 	pb "openusp/pkg/proto/dataservice"
 	"openusp/pkg/version"
@@ -50,8 +48,6 @@ import (
 // APIGateway represents the REST API Gateway service
 type APIGateway struct {
 	config      *config.DeploymentConfig
-	registry    *consul.ServiceRegistry
-	serviceInfo *consul.ServiceInfo
 	router      *gin.Engine
 	server      *http.Server
 	dataClient  *grpcclient.DataServiceClient
@@ -68,24 +64,7 @@ func NewAPIGateway() (*APIGateway, error) {
 		metrics: metrics.NewOpenUSPMetrics("api-gateway"),
 	}
 
-	// Initialize Consul if enabled
-	if config.IsConsulEnabled() {
-		consulAddr, interval, timeout := config.GetConsulConfig()
-		consulConfig := &consul.Config{
-			Address:       consulAddr,
-			Datacenter:    "openusp-dev",
-			CheckInterval: interval,
-			CheckTimeout:  timeout,
-		}
-
-		registry, err := consul.NewServiceRegistry(consulConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Consul: %w", err)
-		}
-		gateway.registry = registry
-
-		log.Printf("🏛️ Connected to Consul at %s", consulAddr)
-	}
+	// Static port configuration - no service discovery needed
 
 	// Register with service discovery
 	if err := gateway.registerService(); err != nil {
@@ -112,67 +91,15 @@ func NewAPIGateway() (*APIGateway, error) {
 }
 
 func (gw *APIGateway) registerService() error {
-	if gw.registry == nil {
-		log.Printf("🎯 Service starting: %s at localhost:%d (no service discovery)",
-			gw.config.ServiceName, gw.config.ServicePort)
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// API Gateway uses static configured port for external client access
-	serviceInfo := &consul.ServiceInfo{
-		Name:     gw.config.ServiceName,
-		Address:  "localhost",
-		Port:     gw.config.ServicePort, // Use static configured port (6500)
-		GRPCPort: 0,                     // API Gateway doesn't use gRPC
-		Protocol: "http",
-		Tags:     []string{"openusp", "v1.1.0", gw.config.ServiceType},
-		Meta: map[string]string{
-			"service_type": gw.config.ServiceType,
-			"protocol":     "http",
-			"version":      "1.1.0",
-			"environment":  "development",
-			"static_port":  "true", // Mark as using static port
-		},
-		Health: "starting",
-	}
-
-	err := gw.registry.RegisterServiceWithPorts(ctx, serviceInfo)
-	if err != nil {
-		return fmt.Errorf("failed to register with Consul: %w", err)
-	}
-
-	gw.serviceInfo = serviceInfo
-	log.Printf("🎯 API Gateway registered with Consul: %s (%s) at localhost:%d (STATIC PORT)",
-		serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
-	log.Printf("   └── External clients should connect to: http://localhost:%d", serviceInfo.Port)
-
+	// Static port configuration - just log service startup
+	log.Printf("🎯 Service starting: %s at localhost:%d (static port configuration)",
+		gw.config.ServiceName, gw.config.ServicePort)
 	return nil
 }
 
 func (gw *APIGateway) getDataServiceAddress() (string, error) {
-	if gw.registry != nil {
-		// Try to discover data service from Consul
-		service, err := gw.registry.DiscoverService("openusp-data-service")
-		if err == nil && service != nil {
-			if grpcPort, exists := service.Meta["grpc_port"]; exists {
-				return fmt.Sprintf("%s:%s", service.Address, grpcPort), nil
-			}
-		}
-		log.Printf("⚠️  Data service not found in Consul, using default address")
-	}
-
-	// Fallback to environment variables or defaults
-	dataServiceAddr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_ADDR"))
-	if dataServiceAddr == "" {
-		dataServiceAddr = strings.TrimSpace(os.Getenv("DATA_SERVICE_ADDR"))
-		if dataServiceAddr == "" {
-			dataServiceAddr = "localhost:56400" // Default gRPC port
-		}
-	}
-	return dataServiceAddr, nil
+	// Static port configuration for data service
+	return "localhost:6101", nil // Data service gRPC port from configs/services.yaml
 }
 
 func (gw *APIGateway) getHTTPPort() int {
@@ -305,14 +232,7 @@ func (gw *APIGateway) Start() error {
 func (gw *APIGateway) Stop() error {
 	log.Printf("🛑 Shutting down API Gateway...")
 
-	// Deregister from Consul
-	if gw.registry != nil && gw.serviceInfo != nil {
-		if err := gw.registry.DeregisterService(gw.serviceInfo.ID); err != nil {
-			log.Printf("⚠️  Failed to deregister from Consul: %v", err)
-		} else {
-			log.Printf("✅ Deregistered from Consul successfully")
-		}
-	}
+	// Static port configuration - no service deregistration needed
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -925,7 +845,6 @@ func main() {
 	log.Printf("🚀 Starting OpenUSP API Gateway...")
 
 	// Command line flags
-	var enableConsul = flag.Bool("consul", false, "Enable Consul service discovery")
 	var port = flag.Int("port", 6500, "HTTP port")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
@@ -949,14 +868,11 @@ func main() {
 		fmt.Println("Environment Variables:")
 		fmt.Println("  CONSUL_ENABLED           - Enable Consul service discovery (default: true)")
 		fmt.Println("  OPENUSP_API_GATEWAY_PORT - Server port (default: 6500)")
-		fmt.Println("  DATA_SERVICE_ADDR        - Data service gRPC address (default: localhost:56400)")
+		fmt.Println("  DATA_SERVICE_ADDR        - Data service gRPC address (default: localhost:6101)")
 		return
 	}
 
-	// Override environment from flags
-	if *enableConsul {
-		os.Setenv("CONSUL_ENABLED", "true")
-	}
+	// Static port configuration - no environment overrides needed
 	if *port != 6500 {
 		os.Setenv("OPENUSP_API_GATEWAY_PORT", fmt.Sprintf("%d", *port))
 	}
@@ -976,20 +892,11 @@ func main() {
 
 	httpPort := gateway.getHTTPPort()
 	log.Printf("🚀 API Gateway started successfully")
-	if gateway.config.IsConsulEnabled() && gateway.serviceInfo != nil {
-		log.Printf("   └── HTTP Port: %d", gateway.serviceInfo.Port)
-		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", gateway.serviceInfo.Port)
-		log.Printf("   └── Status: http://localhost:%d/status", gateway.serviceInfo.Port)
-		log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", gateway.serviceInfo.Port)
-		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
-	} else {
-		log.Printf("   └── HTTP Port: %d", httpPort)
-		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-		log.Printf("   └── Status: http://localhost:%d/status", httpPort)
-		log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", httpPort)
-	}
+	log.Printf("   └── HTTP Port: %d (static configuration)", httpPort)
+	log.Printf("   └── Service Discovery: Static port configuration")
+	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
+	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
+	log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", httpPort)
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)

@@ -10,8 +10,6 @@ import (
 // DeploymentConfig holds unified configuration for all OpenUSP services
 type DeploymentConfig struct {
 	// Service Discovery Configuration
-	ConsulEnabled bool   `json:"consul_enabled"`
-	ConsulAddr    string `json:"consul_addr"`
 
 	// Service Configuration
 	ServicePort int    `json:"service_port"`
@@ -46,11 +44,7 @@ func LoadDeploymentConfig(serviceName, serviceType string, defaultPort int) *Dep
 // LoadDeploymentConfigWithPortEnv loads configuration with custom port environment variable
 func LoadDeploymentConfigWithPortEnv(serviceName, serviceType string, defaultPort int, portEnvVar string) *DeploymentConfig {
 	config := &DeploymentConfig{
-		// Service Discovery defaults (enabled by default for development)
-		ConsulEnabled: getEnvBool("CONSUL_ENABLED", true),
-		ConsulAddr:    getEnvString("CONSUL_ADDR", "localhost:8500"),
-
-		// Service defaults
+		// Service defaults (static port configuration)
 		ServicePort: getEnvInt(portEnvVar, defaultPort),
 		ServiceName: serviceName,
 		ServiceType: serviceType,
@@ -81,14 +75,14 @@ func (c *DeploymentConfig) GetDatabaseDSN() string {
 		c.DatabaseHost, c.DatabasePort, c.DatabaseUser, c.DatabasePassword, c.DatabaseName, c.DatabaseSSLMode)
 }
 
-// IsConsulEnabled returns whether Consul service discovery is enabled
+// IsConsulEnabled returns whether Consul service discovery is enabled (always false now)
 func (c *DeploymentConfig) IsConsulEnabled() bool {
-	return c.ConsulEnabled
+	return false // Static port configuration - no service discovery
 }
 
-// GetConsulConfig returns Consul-specific configuration
+// GetConsulConfig returns Consul-specific configuration (deprecated)
 func (c *DeploymentConfig) GetConsulConfig() (string, time.Duration, time.Duration) {
-	return c.ConsulAddr, c.HealthCheckInterval, c.HealthCheckTimeout
+	return "", 0, 0 // Consul removed - use static ports
 }
 
 // Helper functions for environment variable parsing

@@ -1,0 +1,85 @@
+# OpenUSP Static Service Configuration
+# Replaces Consul service discovery with predictable static ports
+
+services:
+  api-gateway:
+    port: 6500
+    health_port: 6501
+    grpc_port: 6502
+    protocol: http
+    endpoints:
+      - /health
+      - /metrics
+      - /swagger/index.html
+
+  data-service:
+    port: 6100
+    health_port: 6101
+    grpc_port: 6102
+    protocol: http
+    endpoints:
+      - /health
+      - /metrics
+      - /status
+
+  connection-manager:
+    port: 6200
+    health_port: 6201
+    grpc_port: 6202
+    protocol: http
+    endpoints:
+      - /health
+      - /metrics
+
+  usp-service:
+    port: 6400
+    health_port: 6401
+    grpc_port: 6402
+    protocol: http
+    endpoints:
+      - /health
+      - /metrics
+
+  cwmp-service:
+    port: 7547
+    health_port: 7548
+    grpc_port: 7549
+    protocol: http
+    endpoints:
+      - /health
+      - /metrics
+
+  mtp-service:
+    port: 8081        # WebSocket port
+    health_port: 8082 # Health/admin API
+    grpc_port: 8083   # gRPC communication
+    protocol: websocket
+    endpoints:
+      - /health
+      - /metrics
+      - /usp           # Demo UI
+      - /ws            # WebSocket endpoint
+
+# Infrastructure services (unchanged)
+infrastructure:
+  postgres:
+    port: 5433
+    internal_port: 5432
+    
+  prometheus:
+    port: 9090
+    
+  grafana:
+    port: 3000
+    
+  adminer:
+    port: 8080
+    
+  rabbitmq:
+    port: 5672
+    management_port: 15672
+    stomp_port: 61613
+    
+  mosquitto:
+    port: 1883
+    websocket_port: 9001

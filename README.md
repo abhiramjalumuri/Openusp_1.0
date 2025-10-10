@@ -36,18 +36,33 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
 
 ## 🏗️ Architecture Overview
 
+### Static Port Configuration (v1.1.0+)
+OpenUSP now uses **static port configuration** for predictable, reliable service deployment:
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   API Gateway   │    │   MTP Service   │    │  CWMP Service   │
-│   (Port 8080)   │    │   (Port 8081)   │    │   (Port 7547)   │
+│   (Port 6500)   │    │   (Port 8081)   │    │   (Port 7547)   │
 │                 │    │                 │    │                 │
 │ • REST API      │    │ • USP 1.3/1.4   │    │ • TR-069        │
 │ • External      │    │ • Multi-MTP     │    │ • SOAP/XML      │
 │   Interface     │    │ • WebSocket UI  │    │ • Session Mgmt  │
+│ • Health: 6501  │    │ • Health: 8082  │    │ • Health: 7548  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
                                  │
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  Data Service   │    │ Connection Mgr  │    │  USP Service    │
+│   (Port 6100)   │    │   (Port 6200)   │    │   (Port 6400)   │
+│                 │    │                 │    │                 │
+│ • Database      │    │ • Service       │    │ • USP Protocol  │
+│ • TR-181 Data   │    │   Discovery     │    │ • Message       │
+│ • gRPC: 6102    │    │ • Connection    │    │   Processing    │
+│ • Health: 6101  │    │   Pooling       │    │ • Health: 6401  │
+└─────────────────┘    │ • gRPC: 6202    │    └─────────────────┘
+                       │ • Health: 6201  │
+                       └─────────────────┘
                   ┌─────────────────────────────┐
                   │      USP Core Service       │
                   │                             │
@@ -64,6 +79,15 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
                   │ • PostgreSQL Storage        │
                   └─────────────────────────────┘
 ```
+
+### 🎯 Static Port Benefits (v1.1.0+)
+
+- **✅ Predictable**: Same ports every time, no dynamic allocation
+- **✅ Simple**: No service discovery complexity or dependencies  
+- **✅ Fast**: Instant service startup without registration delays
+- **✅ Reliable**: No service discovery failures or timeouts
+- **✅ Debug-Friendly**: Easy to test individual services on known ports
+- **✅ Cross-Platform**: Works seamlessly on macOS, Linux, and Windows
 
 ## 🛠️ Technology Stack
 
@@ -114,15 +138,38 @@ make version
 ./build/usp-service --version
 ```
 
-### Start Services
+### Start Infrastructure & Services
 
-#### 1. MTP Service (USP Protocol)
+#### 1. Start Infrastructure (PostgreSQL, Prometheus, Grafana)
 ```bash
-go run cmd/mtp-service/main.go
+make infra-up
 ```
-- **Demo UI**: http://localhost:8081/usp
-- **Health Check**: http://localhost:8081/health
-- **WebSocket**: ws://localhost:8081/ws
+
+#### 2. Start All Services
+```bash
+make run-services
+```
+
+#### 3. Verify Service Status
+```bash
+make status           # Comprehensive status check
+make service-status   # Quick accessibility check
+```
+
+#### 4. Access Service Endpoints
+
+**OpenUSP Services:**
+- **API Gateway**: http://localhost:6500 (Swagger: /swagger/index.html)
+- **MTP Service**: http://localhost:8081 (Demo UI: /usp, WebSocket: /ws)
+- **CWMP Service**: http://localhost:7547 (TR-069 CWMP endpoint)
+- **Data Service**: http://localhost:6100 (Health: /health, Status: /status)
+- **USP Service**: http://localhost:6400 (Health: /health)
+- **Connection Manager**: http://localhost:6200 (Health: /health)
+
+**Infrastructure:**
+- **Grafana**: http://localhost:3000 (admin/openusp123)
+- **Prometheus**: http://localhost:9090
+- **Database**: localhost:5433 (openusp/openusp123)
 
 #### 2. CWMP Service (TR-069 Protocol)
 ```bash

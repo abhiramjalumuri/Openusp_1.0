@@ -254,19 +254,15 @@ make consul-cleanup
 make start-{service-name}
 ```
 
-### Consul Cleanup Script
+### Static Port Configuration
 
-Advanced cleanup using the dedicated script:
+With the new static port architecture, service cleanup is no longer needed:
 
 ```bash
-# Clean only unhealthy services
-./scripts/cleanup-consul.sh
-
-# Force clean ALL services (before restart)
-./scripts/cleanup-consul.sh --force
-
-# Get help
-./scripts/cleanup-consul.sh --help
+# Services use predictable static ports
+make status          # Check all service accessibility
+make service-status  # Quick health check for all services
+make infra-status    # Check infrastructure components
 ```
 
 ---
@@ -543,20 +539,21 @@ cat cmd/{service-name}/README.md
 
 | Tool | Command | Purpose |
 |------|---------|---------|
-| **Consul Cleanup** | `./scripts/cleanup-consul.sh` | Remove stale service registrations |
-| **Force Cleanup** | `./scripts/cleanup-consul.sh --force` | Remove ALL registrations (before restart) |
+| **Service Status** | `make service-status` | Check all service accessibility |
+| **Quick Status** | `make status-quick` | Brief service overview |
 | **Dev Status** | `make dev-status` | Complete environment health check |
 | **Dev Reset** | `make dev-reset` | Full environment reset |
 | **Dev Restart** | `make dev-restart` | Clean service restart |
-| **Consul Status** | `make consul-status` | Service registry overview |
+| **Infrastructure** | `make infra-status` | Infrastructure component status |
 
 ---
 
 **💡 Pro Tips:**
 - Always run `make dev-status` first to understand current state
-- Use `make consul-cleanup-force` before major restarts
+- Use `make service-status` for quick accessibility checks
 - Keep infrastructure running between service restarts for faster development
 - Use service-specific restart commands for iterative development
+- Static ports make testing individual services much easier
 - Monitor logs during development: `tail -f logs/usp-service.log`
 
 For more detailed documentation, see:

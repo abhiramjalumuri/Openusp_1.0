@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"openusp/internal/cwmp"
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
-	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
 	"openusp/pkg/version"
 )
@@ -25,8 +23,6 @@ import (
 // CWMPService provides TR-069 protocol support for backward compatibility
 type CWMPService struct {
 	deployConfig      *config.DeploymentConfig
-	registry          *consul.ServiceRegistry
-	serviceInfo       *consul.ServiceInfo
 	config            *Config
 	cwmpServer        *http.Server // TR-069 protocol server (port 7547)
 	healthServer      *http.Server // Health/status/metrics server (dynamic port)
@@ -60,7 +56,7 @@ type TLSConfig struct {
 }
 
 // NewCWMPService creates a new CWMP service instance
-func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, registry *consul.ServiceRegistry, serviceInfo *consul.ServiceInfo) (*CWMPService, error) {
+func NewCWMPService(config *Config) (*CWMPService, error) {
 	if config == nil {
 		config = DefaultConfig(0) // Use port 0 for testing (will be assigned dynamically)
 	}
@@ -78,9 +74,7 @@ func NewCWMPService(config *Config, deployConfig *config.DeploymentConfig, regis
 	metricsInstance := metrics.NewOpenUSPMetrics("cwmp-service")
 
 	service := &CWMPService{
-		deployConfig: deployConfig,
-		registry:     registry,
-		serviceInfo:  serviceInfo,
+		deployConfig: nil, // Static configuration - no deployment config needed
 		config:       config,
 		processor:    processor,
 		metrics:      metricsInstance,
@@ -203,27 +197,10 @@ func (s *CWMPService) Start(ctx context.Context) error {
 	return s.Stop()
 }
 
-// getDataServiceAddress resolves the data service address using Consul service discovery or environment variables
+// getDataServiceAddress returns the static data service address
 func (s *CWMPService) getDataServiceAddress() (string, error) {
-	if s.registry != nil {
-		// Try to discover data service from Consul
-		service, err := s.registry.DiscoverService("openusp-data-service")
-		if err == nil && service != nil {
-			if grpcPort, exists := service.Meta["grpc_port"]; exists {
-				return fmt.Sprintf("%s:%s", service.Address, grpcPort), nil
-			}
-		}
-		log.Printf("⚠️  Data service not found in Consul, using fallback address")
-	}
-
-	// Fallback to environment variables or defaults
-	dataServiceAddr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_ADDR"))
-	if dataServiceAddr == "" {
-		dataServiceAddr = strings.TrimSpace(os.Getenv("DATA_SERVICE_ADDR"))
-		if dataServiceAddr == "" {
-			dataServiceAddr = "localhost:56400" // Default gRPC port
-		}
-	}
+	// Static port configuration - data service gRPC port is 6101
+	dataServiceAddr := "localhost:6101"
 	return dataServiceAddr, nil
 }
 
@@ -418,8 +395,6 @@ func main() {
 	log.Printf("🚀 Starting OpenUSP CWMP Service...")
 
 	// Command line flags
-	var enableConsul = flag.Bool("consul", false, "Enable Consul service discovery")
-	var port = flag.Int("port", 7547, "HTTP port")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -445,63 +420,23 @@ func main() {
 		return
 	}
 
-	// Override environment from flags
-	if *enableConsul {
-		os.Setenv("CONSUL_ENABLED", "true")
-	}
-	if *port != 7547 {
-		os.Setenv("SERVICE_PORT", fmt.Sprintf("%d", *port))
-	}
+	// Static port configuration - no environment overrides needed
 
 	// Load configuration
 	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-cwmp-service", "cwmp-service", 7547, "OPENUSP_CWMP_SERVICE_PORT")
 
-	// Initialize Consul if enabled
-	var registry *consul.ServiceRegistry
-	var serviceInfo *consul.ServiceInfo
-	if deployConfig.IsConsulEnabled() {
-		consulAddr, interval, timeout := deployConfig.GetConsulConfig()
-		consulConfig := &consul.Config{
-			Address:       consulAddr,
-			Datacenter:    "openusp-dev",
-			CheckInterval: interval,
-			CheckTimeout:  timeout,
-		}
+	// Static port configuration - use configured port directly
+	httpPort := deployConfig.ServicePort
 
-		var err error
-		registry, err = consul.NewServiceRegistry(consulConfig)
-		if err != nil {
-			log.Fatalf("Failed to connect to Consul: %v", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		serviceInfo, err = registry.RegisterService(ctx, deployConfig.ServiceName, deployConfig.ServiceType)
-		if err != nil {
-			log.Fatalf("Failed to register with Consul: %v", err)
-		}
-
-		log.Printf("🏛️ Connected to Consul at %s", consulAddr)
-		log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
-			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
-	}
-
-	// Determine the HTTP port to use
-	var httpPort int
-	if serviceInfo != nil {
-		httpPort = serviceInfo.Port
-	} else {
-		httpPort = deployConfig.ServicePort
-	}
 	fmt.Println()
 
-	// Load configuration with dual ports
-	// CWMP protocol uses standard port 7547, health API uses dynamic port
-	config := DefaultConfig(httpPort) // httpPort is the dynamic port for health API
+	// Load configuration with static ports
+	// CWMP protocol uses standard port 7547, health API uses port 7548
+	healthPort := deployConfig.ServicePort + 1  // Health port is CWMP port + 1
+	config := DefaultConfig(healthPort)
 
 	// Create CWMP service
-	cwmpService, err := NewCWMPService(config, deployConfig, registry, serviceInfo)
+	cwmpService, err := NewCWMPService(config)
 	if err != nil {
 		log.Fatalf("Failed to create CWMP service: %v", err)
 	}
@@ -517,32 +452,17 @@ func main() {
 		<-sigChan
 		log.Printf("� Received shutdown signal")
 
-		// Deregister from Consul
-		if registry != nil && serviceInfo != nil {
-			if err := registry.DeregisterService(serviceInfo.ID); err != nil {
-				log.Printf("⚠️  Failed to deregister from Consul: %v", err)
-			} else {
-				log.Printf("✅ Deregistered from Consul successfully")
-			}
-		}
+		// Static port configuration - no service deregistration needed
 
 		cancel()
 	}()
 
 	// Start CWMP service and show status
 	log.Printf("🚀 CWMP Service started successfully")
-	if deployConfig.IsConsulEnabled() && serviceInfo != nil {
-		log.Printf("   └── HTTP Port: %d", serviceInfo.Port)
-		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", serviceInfo.Port)
-		log.Printf("   └── Status: http://localhost:%d/status", serviceInfo.Port)
-		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
-	} else {
-		log.Printf("   └── HTTP Port: %d", httpPort)
-		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-		log.Printf("   └── Status: http://localhost:%d/status", httpPort)
-	}
+	log.Printf("   └── HTTP Port: %d", httpPort)
+	log.Printf("   └── Static Port Configuration: ✅ Enabled") 
+	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
+	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 
 	if err := cwmpService.Start(ctx); err != nil {
 		log.Fatalf("CWMP service error: %v", err)

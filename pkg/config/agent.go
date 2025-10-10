@@ -7,9 +7,6 @@ import (
 // AgentConfig represents the base configuration for protocol agents
 type AgentConfig struct {
 	// Service Discovery
-	ConsulEnabled    bool   `json:"consul_enabled"`
-	ConsulAddr       string `json:"consul_addr"`
-	ConsulDatacenter string `json:"consul_datacenter"`
 
 	// Device Information
 	EndpointID      string `json:"endpoint_id"`
@@ -116,8 +113,6 @@ type TR369Config struct {
 	DiagnosticMode              bool          `json:"diagnostic_mode"`
 
 	// Consul Service Names
-	ConsulMTPServiceName        string `json:"consul_mtp_service_name"`
-	ConsulAPIGatewayServiceName string `json:"consul_api_gateway_service_name"`
 }
 
 // TR069Config represents TR-069 CWMP agent specific configuration
@@ -222,8 +217,6 @@ type TR069Config struct {
 	FaultDetailedReporting bool          `json:"fault_detailed_reporting"`
 
 	// Consul Service Names
-	ConsulCWMPServiceName       string `json:"consul_cwmp_service_name"`
-	ConsulAPIGatewayServiceName string `json:"consul_api_gateway_service_name"`
 
 	// CWMP Service
 	CWMPServiceEndpoint string `json:"cwmp_service_endpoint"`

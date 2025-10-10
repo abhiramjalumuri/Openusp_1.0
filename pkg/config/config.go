@@ -125,7 +125,7 @@ func Load() *Config {
 	cfg := &Config{
 		// Service Ports
 		APIGatewayPort:  getEnv("OPENUSP_API_GATEWAY_PORT", "6500"),
-		DataServicePort: getEnv("OPENUSP_DATA_SERVICE_GRPC_PORT", "56400"),
+		DataServicePort: getEnv("OPENUSP_DATA_SERVICE_GRPC_PORT", "6101"),
 		MTPServicePort:  getEnv("OPENUSP_MTP_SERVICE_PORT", "6100"),
 		CWMPServicePort: getEnv("OPENUSP_CWMP_SERVICE_PORT", "6300"),
 		USPServicePort:  getEnv("OPENUSP_USP_SERVICE_GRPC_PORT", "56250"),
@@ -141,7 +141,7 @@ func Load() *Config {
 		},
 
 		// Service Inter-communication
-		DataServiceAddr: getEnv("OPENUSP_DATA_SERVICE_ADDR", "localhost:56400"),
+		DataServiceAddr: getEnv("OPENUSP_DATA_SERVICE_ADDR", "localhost:6101"),
 		APIGatewayURL:   getEnv("OPENUSP_API_GATEWAY_URL", "http://localhost:6500"),
 		MTPServiceURL:   getEnv("OPENUSP_MTP_SERVICE_URL", "http://localhost:6100"),
 		CWMPServiceURL:  getEnv("OPENUSP_CWMP_SERVICE_URL", "http://localhost:6300"),

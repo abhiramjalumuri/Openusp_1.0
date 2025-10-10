@@ -7,8 +7,8 @@
 # Configuration
 # =============================================================================
 
-# Docker configuration
-DOCKER_COMPOSE_INFRA := deployments/docker-compose.infra.network.yml
+# Docker configuration - Static Port Infrastructure (No Consul)
+DOCKER_COMPOSE_INFRA := deployments/docker-compose.infra.yml
 
 # =============================================================================
 # Configuration and Environment
@@ -44,7 +44,6 @@ OPENUSP_AGENTS := usp-agent cwmp-agent
 # Infrastructure volumes
 INFRA_VOLUMES := \
 	openusp-postgres-data \
-	openusp-consul-data \
 	openusp-rabbitmq-dev-data \
 	openusp-mosquitto-dev-data \
 	openusp-mosquitto-dev-logs \
@@ -67,7 +66,7 @@ INFRA_VOLUMES := \
 .PHONY: $(addprefix run-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix stop-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: swagger swagger-generate swagger-validate
-.PHONY: consul-cleanup docker-health docker-fix
+.PHONY: docker-health docker-fix
 .PHONY: clean fmt vet test
 
 .DEFAULT_GOAL := help
@@ -94,25 +93,28 @@ version:
 	@echo "  API: $(API_VERSION)"
 
 endpoints:
-	@echo "OpenUSP Service Endpoints"
-	@echo "========================"
+	@echo "OpenUSP Service Endpoints (Static Port Configuration)"
+	@echo "==================================================="
 	@echo ""
-	@echo "🌐 Public Endpoints:"
-	@echo "  API Gateway:     http://localhost:$(OPENUSP_API_GATEWAY_PORT)"
-	@echo "  Swagger UI:      http://localhost:$(OPENUSP_API_GATEWAY_PORT)/swagger/index.html"
-	@echo "  MTP Service:     http://localhost:$(OPENUSP_MTP_SERVICE_PORT)"
-	@echo "  CWMP Service:    http://localhost:$(OPENUSP_CWMP_SERVICE_PORT)"
-	@echo "  WebSocket:       $(OPENUSP_USP_WS_URL)"
-	@echo "  CWMP ACS:        $(OPENUSP_CWMP_ACS_URL)"
+	@echo "🌐 OpenUSP Services:"
+	@echo "  API Gateway:     http://localhost:6500 (Health: 6501)"
+	@echo "  Swagger UI:      http://localhost:6500/swagger/index.html"
+	@echo "  Data Service:    http://localhost:6100 (Health: 6101)"
+	@echo "  Connection Mgr:  http://localhost:6200 (Health: 6201)"
+	@echo "  USP Service:     http://localhost:6400 (Health: 6401)"
+	@echo "  CWMP Service:    http://localhost:7547 (Health: 7548)"
+	@echo "  MTP Service:     http://localhost:8081 (WebSocket), 8082 (Health)"
 	@echo ""
 	@echo "🏛️  Infrastructure:"
-	@echo "  Consul UI:       http://localhost:8500"
-	@echo "  Grafana:         http://localhost:3000 (admin/admin)"
+	@echo "  Grafana:         http://localhost:3000 (admin/openusp123)"
 	@echo "  Prometheus:      http://localhost:9090"
-	@echo "  PostgreSQL:      localhost:$(OPENUSP_DB_PORT) ($(OPENUSP_DB_USER)/$(OPENUSP_DB_PASSWORD))"
+	@echo "  PostgreSQL:      localhost:5433 (openusp/openusp123)"
+	@echo "  RabbitMQ:        http://localhost:15672 (openusp/openusp123)"
 	@echo ""
-	@echo "🔐 Credentials:"
-	@echo "  CWMP Auth:       $(OPENUSP_CWMP_USERNAME)/$(OPENUSP_CWMP_PASSWORD)"
+	@echo "🎯 All ports are static - no service discovery needed"
+	@echo ""
+	@echo "🔗 gRPC Service Communication:"
+	@echo "  Service-to-service gRPC uses static ports (see docs/GRPC_SERVICES.md)"
 	@echo "  Database:        $(OPENUSP_DB_USER)/$(OPENUSP_DB_PASSWORD)"
 
 docs:
@@ -147,13 +149,13 @@ all: build-agents run
 # =============================================================================
 # Cross-Platform Infrastructure Management
 # =============================================================================
-# Infrastructure Management (Prometheus, Consul, Adminer, Grafana, Mosquitto, RabbitMQ, PostgreSQL)
+# Infrastructure Management (Prometheus, Grafana, Mosquitto, RabbitMQ, PostgreSQL)
 # =============================================================================
 
 infra-up: infra-volumes
 	@echo "🏗️  Starting infrastructure services..."
-	@echo "   📊 Prometheus, 🏛️  Consul, 🗄️  Adminer, 📈 Grafana"
-	@echo "   🦟 Mosquitto, 🐰 RabbitMQ, 🐘 PostgreSQL"
+	@echo "   📊 Prometheus,  Grafana, 🦟 Mosquitto, 🐰 RabbitMQ, 🐘 PostgreSQL"
+	@echo "   🎯 Static port configuration - no service discovery needed"
 	@docker compose -f $(DOCKER_COMPOSE_INFRA) up -d
 	@echo "⏳ Waiting for services to be ready..."
 	@sleep 10
@@ -371,8 +373,7 @@ status-debug:
 	@echo "🔍 All processes in build directory:"
 	@ps aux | grep -E "$(BUILD_DIR)/" | grep -v grep || echo "No build processes found"
 	@echo ""
-	@echo "🏛️  All OpenUSP services in Consul:"
-	@curl -s http://localhost:8500/v1/catalog/services 2>/dev/null | jq -r 'keys[]' | grep openusp || echo "Consul not accessible or no services"
+	@echo "📊 OpenUSP Services Status: Using static port configuration"
 
 # Individual service build targets
 define BUILD_TEMPLATE
@@ -390,12 +391,12 @@ $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call BUILD_TEMPLATE,$(agent))))
 define SERVICE_RUN_TEMPLATE
 run-$(1):
 	@echo "🚀 Starting $(1)..."
-	@env CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul
+	@./$(BUILD_DIR)/$(1)
 
 run-$(1)-background:
 	@echo "🚀 Starting $(1) in background..."
 	@mkdir -p logs
-	@nohup env CONSUL_ENABLED=true ./$(BUILD_DIR)/$(1) --consul > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
+	@nohup ./$(BUILD_DIR)/$(1) > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
 	@sleep 2
 	@echo "✅ $(1) started (PID: $$(cat logs/$(1).pid))"
 
@@ -481,91 +482,102 @@ verify-grafana:
 		exit 1; \
 	fi
 
-consul-status:
-	@echo "🏛️  Consul Service Registry:"
-	@echo "=============================="
-	@if curl -s http://localhost:8500/v1/status/leader >/dev/null 2>&1; then \
-		echo "✅ Consul Leader: $$(curl -s http://localhost:8500/v1/status/leader)"; \
-		echo ""; \
-		echo "📋 All Services:"; \
-		curl -s http://localhost:8500/v1/catalog/services | jq -r 'keys[]' | sed 's/^/  /' || echo "  Query failed"; \
-		echo ""; \
-		echo "🚀 OpenUSP Services:"; \
-		curl -s http://localhost:8500/v1/catalog/services | jq -r 'keys[]' | grep openusp | sed 's/^/  /' || echo "  No OpenUSP services registered"; \
-	else \
-		echo "❌ Consul is not accessible at localhost:8500"; \
-		echo "   Status: Infrastructure may not be running"; \
-		echo "   Fix: run 'make infra-up'"; \
-	fi
-
 service-status:
-	@echo "🏛️  OpenUSP Service Status (Consul Registry):"
-	@echo "=============================================="
-	@if ! curl -s http://localhost:8500/v1/status/leader >/dev/null 2>&1; then \
-		echo "❌ Consul is not accessible at localhost:8500"; \
-		echo "   Run: make infra-up"; \
+	@echo "� OpenUSP Service Status (Static Port Configuration):"
+	@echo "===================================================="
+	@printf "%-20s: " "api-gateway"; \
+	if curl -s http://localhost:6500/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:6500)"; \
 	else \
-		echo "✅ Consul is accessible at localhost:8500"; \
-		echo ""; \
-		for service in $(OPENUSP_SERVICES); do \
-			printf "%-20s: " "$$service"; \
-			if service_info=$$(curl -s "http://localhost:8500/v1/catalog/service/openusp-$$service" 2>/dev/null); then \
-				if echo "$$service_info" | jq -e '.[0]' >/dev/null 2>&1; then \
-					address=$$(echo "$$service_info" | jq -r '.[0].ServiceAddress // .[0].Address'); \
-					port=$$(echo "$$service_info" | jq -r '.[0].ServicePort'); \
-					health=$$(curl -s "http://localhost:8500/v1/health/service/openusp-$$service" | jq -r '.[0].Checks[].Status' 2>/dev/null | grep -v passing | head -1); \
-					if [ -z "$$health" ]; then \
-						printf "✅ Registered ($$address:$$port) [Healthy]"; \
-					else \
-						printf "⚠️  Registered ($$address:$$port) [$$health]"; \
-					fi; \
-					echo ""; \
-				else \
-					echo "❌ Not registered (empty response from Consul)"; \
-				fi; \
-			else \
-				echo "❌ Not registered (Consul query failed)"; \
-			fi; \
-		done; \
-		echo ""; \
-		echo "🔍 All registered OpenUSP services:"; \
-		curl -s http://localhost:8500/v1/catalog/services 2>/dev/null | jq -r 'keys[]' | grep openusp | sed 's/^/  /' || echo "  None found"; \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "data-service"; \
+	if curl -s http://localhost:6100/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:6100)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "connection-manager"; \
+	if curl -s http://localhost:6200/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:6200)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "usp-service"; \
+	if curl -s http://localhost:6400/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:6400)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "cwmp-service"; \
+	if curl -s http://localhost:7547/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:7547)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "mtp-service"; \
+	if curl -s http://localhost:8082/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:8082)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@echo ""
+	@echo "🔗 gRPC Port Connectivity:"
+	@printf "%-20s: " "api-gateway-grpc"; \
+	echo "ℹ️  HTTP only (no gRPC)"
+	@printf "%-20s: " "data-service-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/6101" 2>/dev/null; then \
+		echo "✅ Port 6101 open"; \
+	else \
+		echo "❌ Port 6101 closed"; \
+	fi
+	@printf "%-20s: " "connection-mgr-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/6201" 2>/dev/null; then \
+		echo "✅ Port 6201 open"; \
+	else \
+		echo "❌ Port 6201 closed"; \
+	fi
+	@printf "%-20s: " "usp-service-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/6401" 2>/dev/null; then \
+		echo "✅ Port 6401 open"; \
+	else \
+		echo "❌ Port 6401 closed"; \
+	fi
+	@printf "%-20s: " "cwmp-service-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/7548" 2>/dev/null; then \
+		echo "✅ Port 7548 open"; \
+	else \
+		echo "❌ Port 7548 closed"; \
+	fi
+	@printf "%-20s: " "mtp-service-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/8083" 2>/dev/null; then \
+		echo "✅ Port 8083 open"; \
+	else \
+		echo "❌ Port 8083 closed"; \
 	fi
 
 # =============================================================================
 # Development Environment Management
 # =============================================================================
 
-consul-cleanup:
-	@echo "🧹 Cleaning up stale Consul registrations..."
-	@./scripts/cleanup-consul.sh
-	@echo "✅ Consul cleanup complete"
-
-consul-cleanup-force:
-	@echo "🔥 Force cleaning ALL Consul registrations..."
-	@./scripts/cleanup-consul.sh --force
-	@echo "✅ Force cleanup complete"
+# Static port configuration - no service discovery dependencies
 
 dev-reset:
 	@echo "🔄 Resetting development environment..."
 	@echo "1. Stopping all services..."
 	@$(MAKE) stop-all || true
-	@echo "2. Cleaning Consul registrations..."
-	@./scripts/cleanup-consul.sh --force
-	@echo "3. Building all services..."
+	@echo "2. Building all services..."
 	@$(MAKE) build-all
-	@echo "4. Starting services..."
+	@echo "3. Starting services..."
 	@$(MAKE) run-services
 	@echo "✅ Development environment reset complete"
 
 dev-restart:
 	@echo "🔄 Restarting OpenUSP services (preserving infrastructure)..."
-	@echo "1. Cleanup Consul..."
-	@./scripts/cleanup-consul.sh --force
-	@echo "2. Stop services..."
+	@echo "1. Stop services..."
 	@$(MAKE) stop-all || true
 	@sleep 2
-	@echo "3. Start services..."
+	@echo "2. Start services..."
 	@$(MAKE) run-services
 	@echo "✅ Services restarted"
 
@@ -702,9 +714,9 @@ status:
 		echo "❌ Not accessible"; \
 	fi
 	@echo ""
-	@echo "� Status Validation:"
+	@echo "📊 Status Validation:"
 	@echo "===================="
-	@process_count=0; consul_count=0; \
+	@process_count=0; accessible_count=0; \
 	for service in $(OPENUSP_SERVICES); do \
 		if [ -f logs/$$service.pid ] && ps -p $$(cat logs/$$service.pid) >/dev/null 2>&1; then \
 			process_count=$$((process_count + 1)); \
@@ -714,15 +726,25 @@ status:
 			if [ -z "$$pid" ]; then pid=$$(pgrep -f "/$$service$$" | head -1); fi; \
 			if [ -n "$$pid" ]; then process_count=$$((process_count + 1)); fi; \
 		fi; \
-		if curl -s "http://localhost:8500/v1/catalog/service/openusp-$$service" 2>/dev/null | jq -e '.[0]' >/dev/null 2>&1; then \
-			consul_count=$$((consul_count + 1)); \
+		if [ "$$service" = "api-gateway" ] && curl -s http://localhost:6500/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "data-service" ] && curl -s http://localhost:6100/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "connection-manager" ] && curl -s http://localhost:6200/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "usp-service" ] && curl -s http://localhost:6400/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "cwmp-service" ] && curl -s http://localhost:7547/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "mtp-service" ] && curl -s http://localhost:8081/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
 		fi; \
 	done; \
-	if [ $$process_count -ne $$consul_count ]; then \
-		echo "⚠️  Status Mismatch: $$process_count processes running, $$consul_count in Consul"; \
+	if [ $$process_count -ne $$accessible_count ]; then \
+		echo "⚠️  Status Mismatch: $$process_count processes running, $$accessible_count accessible"; \
 		echo "   Run: make status-debug"; \
 	else \
-		echo "✅ Status Consistent: $$process_count services running and registered"; \
+		echo "✅ Status Consistent: $$process_count services running and accessible"; \
 	fi
 	@echo ""
 	@echo "�📋 Quick Commands:"
@@ -730,7 +752,7 @@ status:
 	@echo "  make stop-services     - Stop all services"
 	@echo "  make status-quick      - Brief status overview"
 	@echo "  make status-services   - Check service processes"
-	@echo "  make service-status    - Check Consul registration"
+	@echo "  make service-status    - Check service accessibility"
 	@echo "  make status-debug      - Debug status mismatches"
 
 status-quick:
@@ -790,7 +812,7 @@ help:
 	@echo "🚀 OpenUSP - TR-369 User Service Platform"
 	@echo "=========================================="
 	@echo ""
-	@echo "📦 Infrastructure Services (Prometheus, Consul, Grafana, etc.):"
+	@echo "📦 Infrastructure Services (Prometheus, Grafana, etc.):"
 	@echo "  infra-up               - Start all infrastructure services"
 	@echo "  infra-down             - Stop all infrastructure services"
 	@echo "  infra-status           - Show infrastructure status"
@@ -826,12 +848,12 @@ help:
 	@echo "🛠️  Development Tools:"
 	@echo "  status-quick           - Show brief status overview"
 	@echo "  status-debug           - Debug status detection issues"
-	@echo "  consul-status          - Check Consul service registry"
+	@echo "  service-status         - Check service accessibility"
 	@echo "  clean                  - Clean build artifacts"
 	@echo "  fmt                    - Format Go code"
 	@echo "  vet                    - Run Go vet"
 	@echo "  test                   - Run tests"
-	@echo "  consul-cleanup         - Clean Consul registrations"
+
 	@echo "  docker-health          - Check Docker health"
 	@echo ""
 	@echo "📖 Documentation:"

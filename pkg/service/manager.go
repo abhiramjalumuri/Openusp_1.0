@@ -8,15 +8,12 @@ import (
 	"time"
 
 	"openusp/pkg/config"
-	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
 )
 
 // ServiceManager handles unified service lifecycle management
 type ServiceManager struct {
 	config      *config.DeploymentConfig
-	registry    *consul.ServiceRegistry
-	serviceInfo *consul.ServiceInfo
 	metrics     *metrics.OpenUSPMetrics
 	listener    net.Listener
 }
@@ -45,45 +42,14 @@ func NewServiceManager(serviceName, serviceType string, opts ServiceOptions) (*S
 		metrics: metrics.NewOpenUSPMetrics(serviceType),
 	}
 
-	// Initialize Consul if enabled
-	if config.IsConsulEnabled() {
-		consulAddr, interval, timeout := config.GetConsulConfig()
-		consulConfig := &consul.Config{
-			Address:       consulAddr,
-			Datacenter:    "openusp-dev",
-			CheckInterval: interval,
-			CheckTimeout:  timeout,
-		}
-
-		registry, err := consul.NewServiceRegistry(consulConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Consul: %w", err)
-		}
-		manager.registry = registry
-
-		log.Printf("🏛️ Connected to Consul at %s (datacenter: %s)", consulAddr, consulConfig.Datacenter)
-	}
+	// Static port configuration - no service discovery needed
 
 	return manager, nil
 }
 
-// RegisterService registers the service with appropriate discovery mechanism
+// RegisterService logs service startup with static port configuration
 func (sm *ServiceManager) RegisterService(ctx context.Context) error {
-	if sm.registry != nil {
-		// Register with Consul
-		serviceInfo, err := sm.registry.RegisterService(ctx, sm.config.ServiceName, sm.config.ServiceType)
-		if err != nil {
-			return fmt.Errorf("failed to register with Consul: %w", err)
-		}
-
-		sm.serviceInfo = serviceInfo
-		log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
-			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.Port)
-
-		return nil
-	}
-
-	// Traditional deployment - just log the configuration
+	// Static port deployment - log the configuration
 	log.Printf("🎯 Service starting: %s (%s) at localhost:%d",
 		sm.config.ServiceName, sm.config.ServiceType, sm.config.ServicePort)
 
@@ -92,32 +58,19 @@ func (sm *ServiceManager) RegisterService(ctx context.Context) error {
 
 // GetServicePort returns the port this service should use
 func (sm *ServiceManager) GetServicePort() int {
-	if sm.serviceInfo != nil {
-		return sm.serviceInfo.Port
-	}
 	return sm.config.ServicePort
 }
 
 // GetgRPCPort returns the gRPC port this service should use
 func (sm *ServiceManager) GetgRPCPort() int {
-	if sm.serviceInfo != nil && sm.serviceInfo.GRPCPort > 0 {
-		return sm.serviceInfo.GRPCPort
-	}
-	// Return service port + 1 as gRPC port for non-Consul deployments
+	// Static port configuration: service port + 1
 	return sm.config.ServicePort + 1
 }
 
 // CreateListener creates a network listener for the service
 func (sm *ServiceManager) CreateListener() (net.Listener, error) {
-	var addr string
-
-	if sm.registry != nil {
-		// Dynamic port allocation for Consul
-		addr = ":0"
-	} else {
-		// Fixed port for traditional deployment
-		addr = fmt.Sprintf(":%d", sm.config.ServicePort)
-	}
+	// Fixed port for static configuration
+	addr := fmt.Sprintf(":%d", sm.config.ServicePort)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -128,26 +81,30 @@ func (sm *ServiceManager) CreateListener() (net.Listener, error) {
 	return listener, nil
 }
 
-// DiscoverService discovers another service (used by clients)
-func (sm *ServiceManager) DiscoverService(ctx context.Context, serviceName string, timeout time.Duration) (*consul.ServiceInfo, error) {
-	if sm.registry != nil {
-		// Use Consul service discovery
-		return sm.registry.WaitForService(ctx, serviceName, timeout)
-	}
-
-	// Return hardcoded service info for traditional deployment
-	return sm.getHardcodedServiceInfo(serviceName), nil
+// DiscoverService discovers another service using static configuration
+func (sm *ServiceManager) DiscoverService(ctx context.Context, serviceName string, timeout time.Duration) (*ServiceInfo, error) {
+	// Use static service configuration from configs/services.yaml
+	return sm.getStaticServiceInfo(serviceName), nil
 }
 
-// getHardcodedServiceInfo returns service info for traditional deployments
-func (sm *ServiceManager) getHardcodedServiceInfo(serviceName string) *consul.ServiceInfo {
-	// Map service names to their default ports
-	serviceMap := map[string]*consul.ServiceInfo{
+// Simple ServiceInfo struct for static configuration
+type ServiceInfo struct {
+	Name     string
+	Address  string
+	Port     int
+	GRPCPort int
+	Health   string
+}
+
+// getStaticServiceInfo returns service info using static configuration
+func (sm *ServiceManager) getStaticServiceInfo(serviceName string) *ServiceInfo {
+	// Map service names to their static ports from configs/services.yaml
+	serviceMap := map[string]*ServiceInfo{
 		"openusp-data-service": {
 			Name:     "openusp-data-service",
 			Address:  "localhost",
-			Port:     6400,  // HTTP port
-			GRPCPort: 56400, // gRPC port
+			Port:     6100,  // HTTP port
+			GRPCPort: 6101,  // gRPC port
 			Health:   "passing",
 		},
 		"openusp-api-gateway": {
@@ -160,18 +117,28 @@ func (sm *ServiceManager) getHardcodedServiceInfo(serviceName string) *consul.Se
 			Name:    "openusp-mtp-service",
 			Address: "localhost",
 			Port:    8081,
+			GRPCPort: 8082,
 			Health:  "passing",
 		},
 		"openusp-cwmp-service": {
 			Name:    "openusp-cwmp-service",
 			Address: "localhost",
 			Port:    7547,
+			GRPCPort: 7548,
 			Health:  "passing",
 		},
 		"openusp-usp-service": {
 			Name:     "openusp-usp-service",
 			Address:  "localhost",
-			GRPCPort: 56250,
+			Port:     6400,
+			GRPCPort: 6401,
+			Health:   "passing",
+		},
+		"openusp-connection-manager": {
+			Name:     "openusp-connection-manager",
+			Address:  "localhost",
+			Port:     6200,
+			GRPCPort: 6201,
 			Health:   "passing",
 		},
 	}
@@ -180,8 +147,8 @@ func (sm *ServiceManager) getHardcodedServiceInfo(serviceName string) *consul.Se
 		return service
 	}
 
-	// Return default service info
-	return &consul.ServiceInfo{
+	// Return default service info for unknown services
+	return &ServiceInfo{
 		Name:    serviceName,
 		Address: "localhost",
 		Port:    8080,
@@ -199,28 +166,19 @@ func (sm *ServiceManager) GetMetrics() *metrics.OpenUSPMetrics {
 	return sm.metrics
 }
 
-// GetServiceInfo returns the registered service information
-func (sm *ServiceManager) GetServiceInfo() *consul.ServiceInfo {
-	return sm.serviceInfo
+// GetServiceInfo returns the service information using static configuration
+func (sm *ServiceManager) GetServiceInfo() *ServiceInfo {
+	return sm.getStaticServiceInfo(sm.config.ServiceName)
 }
 
-// IsConsulEnabled returns whether Consul is enabled
+// IsConsulEnabled returns whether Consul is enabled (always false now)
 func (sm *ServiceManager) IsConsulEnabled() bool {
-	return sm.config.IsConsulEnabled()
+	return false // Static port configuration - no service discovery
 }
 
 // Shutdown gracefully shuts down the service
 func (sm *ServiceManager) Shutdown() error {
 	log.Printf("🛑 Shutting down service...")
-
-	// Deregister from Consul
-	if sm.registry != nil && sm.serviceInfo != nil {
-		if err := sm.registry.DeregisterService(sm.serviceInfo.ID); err != nil {
-			log.Printf("⚠️  Failed to deregister from Consul: %v", err)
-		} else {
-			log.Printf("✅ Deregistered from Consul successfully")
-		}
-	}
 
 	// Close listener
 	if sm.listener != nil {

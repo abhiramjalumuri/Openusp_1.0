@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -9,15 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	grpcImpl "openusp/internal/grpc"
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
-	"openusp/pkg/consul"
 	"openusp/pkg/metrics"
 	"openusp/pkg/proto/uspservice"
 	v1_3 "openusp/pkg/proto/v1_3"
@@ -585,8 +581,6 @@ func main() {
 	log.Printf("🚀 Starting OpenUSP Core Service...")
 
 	// Command line flags
-	var enableConsul = flag.Bool("consul", false, "Enable Consul service discovery")
-	var port = flag.Int("port", 56250, "gRPC port")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -612,55 +606,15 @@ func main() {
 		return
 	}
 
-	// Override environment from flags
-	if *enableConsul {
-		os.Setenv("CONSUL_ENABLED", "true")
-	}
-	if *port != 56250 {
-		os.Setenv("SERVICE_PORT", fmt.Sprintf("%d", *port))
-	}
+	// Static port configuration - no environment overrides needed
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 56250, "OPENUSP_USP_SERVICE_PORT")
+	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 6400, "OPENUSP_USP_SERVICE_PORT")
 
-	// Initialize Consul if enabled
-	var registry *consul.ServiceRegistry
-	var serviceInfo *consul.ServiceInfo
-	if deployConfig.IsConsulEnabled() {
-		consulAddr, interval, timeout := deployConfig.GetConsulConfig()
-		consulConfig := &consul.Config{
-			Address:       consulAddr,
-			Datacenter:    "openusp-dev",
-			CheckInterval: interval,
-			CheckTimeout:  timeout,
-		}
+	// Static port configuration - no Consul initialization needed
 
-		var err error
-		registry, err = consul.NewServiceRegistry(consulConfig)
-		if err != nil {
-			log.Fatalf("Failed to connect to Consul: %v", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		serviceInfo, err = registry.RegisterService(ctx, deployConfig.ServiceName, deployConfig.ServiceType)
-		if err != nil {
-			log.Fatalf("Failed to register with Consul: %v", err)
-		}
-
-		log.Printf("🏛️ Connected to Consul at %s", consulAddr)
-		log.Printf("🎯 Service registered with Consul: %s (%s) at localhost:%d",
-			serviceInfo.Name, serviceInfo.Meta["service_type"], serviceInfo.GRPCPort)
-	}
-
-	// Determine the gRPC port to use
-	var grpcPort int
-	if serviceInfo != nil && serviceInfo.GRPCPort > 0 {
-		grpcPort = serviceInfo.GRPCPort
-	} else {
-		grpcPort = deployConfig.ServicePort
-	}
+	// Static port configuration - use configured port directly
+	grpcPort := deployConfig.ServicePort + 1 // gRPC is HTTP + 1
 
 	fmt.Println("OpenUSP Core Service - Multi-Version TR-369 Protocol Engine")
 	fmt.Println("==========================================================")
@@ -681,7 +635,7 @@ func main() {
 	log.Printf("✅ USP Core Service initialized with TR-181 data model")
 
 	// Create connection client for dynamic service discovery
-	connectionClient, err := client.NewOpenUSPConnectionClient(registry)
+	connectionClient := client.NewOpenUSPConnectionClient(30 * time.Second)
 	if err != nil {
 		log.Fatalf("Failed to create connection client: %v", err)
 	}
@@ -694,23 +648,8 @@ func main() {
 	}
 	log.Printf("✅ Connected to Data Service via connection manager")
 
-	// Start HTTP server for health checks and metrics
-	var httpPort int
-	if serviceInfo != nil && serviceInfo.Port > 0 {
-		// Use Consul-allocated HTTP port
-		httpPort = serviceInfo.Port
-	} else {
-		// Fallback to environment or default port
-		if envPort := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_PORT")); envPort != "" {
-			if port, err := strconv.Atoi(envPort); err == nil {
-				httpPort = port
-			} else {
-				httpPort = 6250 // Default HTTP port for USP Service
-			}
-		} else {
-			httpPort = 6250 // Default HTTP port for USP Service
-		}
-	}
+	// Start HTTP server for health checks and metrics - static port configuration
+	httpPort := 6400 // Static HTTP port for USP Service
 
 	go func() {
 		mux := http.NewServeMux()
@@ -725,7 +664,6 @@ func main() {
 				"version": "1.0.0",
 				"grpc_port": %d,
 				"http_port": %d,
-				"consul": %t,
 				"timestamp": "%s"
 			}`, grpcPort, httpPort, deployConfig.IsConsulEnabled(), time.Now().Format(time.RFC3339))
 			w.Write([]byte(response))
@@ -741,7 +679,6 @@ func main() {
 				"version": "1.0.0",
 				"grpc_port": %d,
 				"http_port": %d,
-				"consul": %t,
 				"tr181_objects": 822,
 				"usp_versions": ["1.3", "1.4"],
 				"timestamp": "%s"
@@ -792,18 +729,11 @@ func main() {
 	}()
 
 	log.Printf("🚀 USP Service started successfully")
-	if deployConfig.IsConsulEnabled() && serviceInfo != nil {
-		log.Printf("   └── gRPC Port: %d", serviceInfo.GRPCPort)
-		log.Printf("   └── HTTP Port: %d", httpPort)
-		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-		log.Printf("   └── Status: http://localhost:%d/status", httpPort)
-		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
-	} else {
-		log.Printf("   └── gRPC Port: %d", grpcPort)
-		log.Printf("   └── HTTP Port: %d", httpPort)
-		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
-	}
+	log.Printf("   └── gRPC Port: %d", grpcPort)
+	log.Printf("   └── HTTP Port: %d", httpPort)
+	log.Printf("   └── Static Port Configuration: ✅ Enabled")
+	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
+	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 	log.Printf("   └── TR-181 Device:2 data model loaded")
 	log.Printf("   └── USP protocol versions 1.3 and 1.4 supported")
 	fmt.Printf("   🔧 HTTP Endpoints: http://localhost:%d/health, /status, /metrics\n", httpPort)
@@ -822,14 +752,7 @@ func main() {
 	<-sigChan
 	log.Printf("� Received shutdown signal")
 
-	// Deregister from Consul
-	if registry != nil && serviceInfo != nil {
-		if err := registry.DeregisterService(serviceInfo.ID); err != nil {
-			log.Printf("⚠️  Failed to deregister from Consul: %v", err)
-		} else {
-			log.Printf("✅ Deregistered from Consul successfully")
-		}
-	}
+	// Static port configuration - no service deregistration needed
 
 	grpcServer.GracefulStop()
 	log.Printf("✅ USP Service stopped successfully")

@@ -1,0 +1,49 @@
+# OpenUSP Static Prometheus Configuration for Linux
+# No Consul service discovery - uses static targets
+# Uses Docker bridge gateway IP (172.17.0.1) for Linux compatibility
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # OpenUSP Services - Static Configuration (Linux Bridge Gateway)
+  - job_name: 'openusp-api-gateway'
+    static_configs:
+    - targets: ['172.17.0.1:6500']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-data-service'
+    static_configs:
+    - targets: ['172.17.0.1:6100']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-connection-manager'
+    static_configs:
+    - targets: ['172.17.0.1:6200']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-usp-service'
+    static_configs:
+    - targets: ['172.17.0.1:6400']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-cwmp-service'
+    static_configs:
+    - targets: ['172.17.0.1:7548']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'openusp-mtp-service'
+    static_configs:
+    - targets: ['172.17.0.1:8082']
+    metrics_path: '/metrics'
+    scrape_interval: 30s

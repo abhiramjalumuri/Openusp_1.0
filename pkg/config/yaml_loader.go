@@ -13,9 +13,6 @@ import (
 // YAMLAgentConfig represents the YAML structure for agent configuration
 type YAMLAgentConfig struct {
 	ServiceDiscovery struct {
-		ConsulEnabled    bool   `yaml:"consul_enabled"`
-		ConsulAddr       string `yaml:"consul_addr"`
-		ConsulDatacenter string `yaml:"consul_datacenter"`
 	} `yaml:"service_discovery"`
 
 	DeviceInfo struct {
@@ -274,10 +271,7 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 	// Convert to TR369Config
 	config := &TR369Config{}
 
-	// Service Discovery
-	config.ConsulEnabled = yamlConfig.ServiceDiscovery.ConsulEnabled
-	config.ConsulAddr = yamlConfig.ServiceDiscovery.ConsulAddr
-	config.ConsulDatacenter = yamlConfig.ServiceDiscovery.ConsulDatacenter
+	// Service Discovery - Static configuration only (Consul removed)
 
 	// Device Information
 	config.EndpointID = yamlConfig.DeviceInfo.EndpointID
@@ -451,10 +445,7 @@ func LoadYAMLTR069Config(configPath string) (*TR069Config, error) {
 	// Convert to TR069Config
 	config := &TR069Config{}
 
-	// Service Discovery
-	config.ConsulEnabled = yamlConfig.ServiceDiscovery.ConsulEnabled
-	config.ConsulAddr = yamlConfig.ServiceDiscovery.ConsulAddr
-	config.ConsulDatacenter = yamlConfig.ServiceDiscovery.ConsulDatacenter
+	// Service Discovery - Static configuration only (Consul removed)
 
 	// Device Information
 	config.EndpointID = yamlConfig.DeviceInfo.EndpointID
