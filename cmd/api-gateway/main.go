@@ -63,7 +63,7 @@ type APIGateway struct {
 func NewAPIGateway() (*APIGateway, error) {
 	// Load full configuration including security settings
 	fullConfig := config.Load()
-	
+
 	// Load deployment configuration with service-specific port environment variable
 	deploymentConfig := config.LoadDeploymentConfigWithPortEnv("openusp-api-gateway", "api-gateway", 6500, "OPENUSP_API_GATEWAY_PORT")
 
@@ -72,7 +72,7 @@ func NewAPIGateway() (*APIGateway, error) {
 	if certFile == "" {
 		certFile = "certs/server.crt"
 	}
-	
+
 	keyFile := fullConfig.Security.TLSKeyPath
 	if keyFile == "" {
 		keyFile = "certs/server.key"
@@ -135,7 +135,7 @@ func (gw *APIGateway) setupRoutes() {
 	// Health and status endpoints
 	gw.router.GET("/health", gw.healthCheck)
 	gw.router.GET("/status", gw.getStatus)
-	
+
 	// Metrics endpoint - support both GET and HEAD for Prometheus
 	metricsHandler := gin.WrapH(metrics.HTTPHandler())
 	gw.router.GET("/metrics", metricsHandler)
@@ -143,8 +143,10 @@ func (gw *APIGateway) setupRoutes() {
 
 	// Swagger UI endpoint - no host specification for dynamic association
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
+		ginSwagger.URL("/swagger/doc.json"),
 		ginSwagger.DeepLinking(true),
 		ginSwagger.DocExpansion("none"),
+		ginSwagger.DefaultModelsExpandDepth(1),
 	))
 
 	// API v1 routes
@@ -256,7 +258,7 @@ func (gw *APIGateway) hasTLSCertificates() bool {
 	if gw.certFile == "" || gw.keyFile == "" {
 		return false
 	}
-	
+
 	// Check if both files exist
 	_, err1 := os.Stat(gw.certFile)
 	_, err2 := os.Stat(gw.keyFile)
@@ -271,12 +273,12 @@ func (gw *APIGateway) createHTTPRedirectHandler() http.Handler {
 		if strings.Contains(host, ":") {
 			host = strings.Split(host, ":")[0]
 		}
-		
+
 		// Build HTTPS URL with correct HTTPS port
 		httpsURL := fmt.Sprintf("https://%s:%d%s", host, gw.getHTTPPort(), r.RequestURI)
-		
+
 		log.Printf("🔄 HTTP→HTTPS redirect: %s → %s", r.URL.String(), httpsURL)
-		
+
 		// Send redirect response
 		w.Header().Set("Location", httpsURL)
 		w.Header().Set("Connection", "close")
@@ -305,10 +307,10 @@ func (gw *APIGateway) dualProtocolListener() (net.Listener, error) {
 
 	// Create custom listener that detects HTTP vs HTTPS
 	return &dualListener{
-		Listener:      ln,
-		tlsConfig:     tlsConfig,
-		httpsHandler:  gw.router,
-		httpHandler:   gw.createHTTPRedirectHandler(),
+		Listener:     ln,
+		tlsConfig:    tlsConfig,
+		httpsHandler: gw.router,
+		httpHandler:  gw.createHTTPRedirectHandler(),
 	}, nil
 }
 
@@ -348,17 +350,17 @@ type protocolDetectConn struct {
 func (c *protocolDetectConn) Read(b []byte) (int, error) {
 	if !c.peekedOnce {
 		c.peekedOnce = true
-		
+
 		// Peek at first few bytes to detect protocol
 		peek := make([]byte, 1)
 		n, err := c.Conn.Read(peek)
 		if err != nil {
 			return 0, err
 		}
-		
+
 		c.peeked = make([]byte, n)
 		copy(c.peeked, peek[:n])
-		
+
 		// Check if it's TLS (starts with 0x16 for TLS handshake)
 		if n > 0 && peek[0] == 0x16 {
 			// It's TLS/HTTPS - upgrade the connection
@@ -368,14 +370,14 @@ func (c *protocolDetectConn) Read(b []byte) (int, error) {
 		}
 		// If not TLS, it's HTTP and will be handled by redirect
 	}
-	
+
 	// Return peeked data first, then normal reads
 	if len(c.peeked) > 0 {
 		n := copy(b, c.peeked)
 		c.peeked = c.peeked[n:]
 		return n, nil
 	}
-	
+
 	return c.Conn.Read(b)
 }
 
@@ -2031,7 +2033,7 @@ func main() {
 	if gateway.hasTLSCertificates() {
 		protocol = "https"
 	}
-	
+
 	log.Printf("🚀 API Gateway started successfully")
 	log.Printf("   └── Protocol: %s (port %d)", strings.ToUpper(protocol), httpPort)
 	log.Printf("   └── Service Discovery: Static port configuration")
