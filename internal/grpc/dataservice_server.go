@@ -143,12 +143,38 @@ func (s *DataServiceServer) UpdateDevice(ctx context.Context, req *pb.UpdateDevi
 	}, nil
 }
 
+// DeleteDevice performs cascading deletion of a device and all associated data
+// This includes:
+// - All TR-181 parameters and data model entries
+// - All device alerts and notifications
+// - All active and historical sessions
+// - The device record itself
+// The deletion is performed in dependency order to maintain referential integrity
 func (s *DataServiceServer) DeleteDevice(ctx context.Context, req *pb.DeleteDeviceRequest) (*pb.DeleteDeviceResponse, error) {
 	if req.Id == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "device ID is required")
 	}
 
-	if err := s.repos.Device.Delete(uint(req.Id)); err != nil {
+	deviceID := uint(req.Id)
+
+	// Cascade delete all associated data in proper order
+	// 1. Delete all parameters associated with the device (TR-181 data model entries)
+	if err := s.repos.Parameter.DeleteByDeviceID(deviceID); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete device parameters: %v", err)
+	}
+
+	// 2. Delete all alerts associated with the device
+	if err := s.repos.Alert.DeleteByDeviceID(deviceID); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete device alerts: %v", err)
+	}
+
+	// 3. Delete all sessions associated with the device
+	if err := s.repos.Session.DeleteByDeviceID(deviceID); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete device sessions: %v", err)
+	}
+
+	// 4. Finally, delete the device itself
+	if err := s.repos.Device.Delete(deviceID); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to delete device: %v", err)
 	}
 

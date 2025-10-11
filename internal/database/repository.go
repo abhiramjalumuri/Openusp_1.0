@@ -172,6 +172,11 @@ func (r *ParameterRepository) Delete(deviceID uint, path string) error {
 	return r.db.Where("device_id = ? AND path = ?", deviceID, path).Delete(&Parameter{}).Error
 }
 
+// DeleteByDeviceID deletes all parameters for a device
+func (r *ParameterRepository) DeleteByDeviceID(deviceID uint) error {
+	return r.db.Where("device_id = ?", deviceID).Delete(&Parameter{}).Error
+}
+
 // AlertRepository handles alert-related database operations
 type AlertRepository struct {
 	db *gorm.DB
@@ -213,6 +218,11 @@ func (r *AlertRepository) Resolve(id uint) error {
 		"resolved":    true,
 		"resolved_at": now,
 	}).Error
+}
+
+// DeleteByDeviceID deletes all alerts for a device
+func (r *AlertRepository) DeleteByDeviceID(deviceID uint) error {
+	return r.db.Where("device_id = ?", deviceID).Delete(&Alert{}).Error
 }
 
 // SessionRepository handles session-related database operations
@@ -263,6 +273,11 @@ func (r *SessionRepository) GetActiveSessionsForDevice(deviceID uint) ([]Session
 	var sessions []Session
 	err := r.db.Where("device_id = ? AND status = ?", deviceID, "active").Find(&sessions).Error
 	return sessions, err
+}
+
+// DeleteByDeviceID deletes all sessions for a device
+func (r *SessionRepository) DeleteByDeviceID(deviceID uint) error {
+	return r.db.Where("device_id = ?", deviceID).Delete(&Session{}).Error
 }
 
 // Repositories aggregates all repository instances

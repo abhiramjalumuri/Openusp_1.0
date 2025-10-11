@@ -15,7 +15,7 @@ info:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   title: OpenUSP API Gateway
-  version: 1.2.0
+  version: 1.0.0
 paths:
   /devices:
     get:
@@ -98,8 +98,12 @@ paths:
       - application/json
       description: |-
         Deprovision and remove a device from the OpenUSP platform
-        This endpoint handles device deprovisioning including certificate
-        revocation, configuration cleanup, and removal from the platform
+        This endpoint handles complete device deprovisioning including:
+        - Deletion of all device parameters and data model entries
+        - Removal of all device alerts and notifications
+        - Termination of all active sessions
+        - Certificate revocation and configuration cleanup
+        - Complete removal from the platform database
       parameters:
       - description: Device ID
         in: path

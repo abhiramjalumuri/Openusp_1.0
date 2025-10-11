@@ -127,7 +127,7 @@ const docTemplate = `{
         },
         "/devices/{device_id}": {
             "delete": {
-                "description": "Deprovision and remove a device from the OpenUSP platform\nThis endpoint handles device deprovisioning including certificate\nrevocation, configuration cleanup, and removal from the platform",
+                "description": "Deprovision and remove a device from the OpenUSP platform\nThis endpoint handles complete device deprovisioning including:\n- Deletion of all device parameters and data model entries\n- Removal of all device alerts and notifications\n- Termination of all active sessions\n- Certificate revocation and configuration cleanup\n- Complete removal from the platform database",
                 "consumes": [
                     "application/json"
                 ],

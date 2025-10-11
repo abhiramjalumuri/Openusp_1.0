@@ -68,6 +68,7 @@ INFRA_VOLUMES := \
 .PHONY: swagger swagger-install swagger-generate swagger-validate
 .PHONY: docker-health docker-fix
 .PHONY: clean fmt vet test
+.PHONY: bash-completion bash-completion-install
 
 .DEFAULT_GOAL := help
 
@@ -886,6 +887,10 @@ help:
 
 	@echo "  docker-health          - Check Docker health"
 	@echo ""
+	@echo "⚡ Shell Integration:"
+	@echo "  bash-completion        - Generate bash completion script for make targets"
+	@echo "  bash-completion-install- Install bash completion system-wide"
+	@echo ""
 	@echo "📖 Documentation:"
 	@echo "   - docs/README.md       - Main documentation"
 	@echo "   - docs/NETWORKING.md   - Network architecture"
@@ -905,6 +910,53 @@ prometheus-reload:
 grafana-restart:
 	@echo "🔄 Restarting Grafana..."
 	@docker restart openusp-grafana-dev
+
+# =============================================================================
+# Bash Completion
+# =============================================================================
+
+bash-completion: ## Generate bash completion script for all make targets
+	@echo "#!/usr/bin/env bash" > .openusp-completion.bash
+	@echo "# OpenUSP Makefile bash completion script" >> .openusp-completion.bash
+	@echo "# Source this file to enable bash completion for make targets" >> .openusp-completion.bash
+	@echo "# Usage: source .openusp-completion.bash" >> .openusp-completion.bash
+	@echo "" >> .openusp-completion.bash
+	@echo "_openusp_make_completion() {" >> .openusp-completion.bash
+	@echo "    local cur prev opts" >> .openusp-completion.bash
+	@echo "    COMPREPLY=()" >> .openusp-completion.bash
+	@echo "    cur=\"\$${COMP_WORDS[COMP_CWORD]}\"" >> .openusp-completion.bash
+	@echo "    prev=\"\$${COMP_WORDS[COMP_CWORD-1]}\"" >> .openusp-completion.bash
+	@echo "" >> .openusp-completion.bash
+	@echo "    # Make targets extracted from Makefile" >> .openusp-completion.bash
+	@printf "    opts=\"" >> .openusp-completion.bash
+	@$(MAKE) -qp 2>/dev/null | awk -F':' '/^[a-zA-Z0-9][^$$#\/\t=]*:([^=]|$$)/ {split($$1,A,/ /);for(i in A)print A[i]}' | grep -v '^Makefile$$' | sort -u | tr '\n' ' ' >> .openusp-completion.bash
+	@echo "\"" >> .openusp-completion.bash
+	@echo "" >> .openusp-completion.bash
+	@echo "    COMPREPLY=( \$$(compgen -W \"\$$opts\" -- \$$cur) )" >> .openusp-completion.bash
+	@echo "    return 0" >> .openusp-completion.bash
+	@echo "}" >> .openusp-completion.bash
+	@echo "" >> .openusp-completion.bash
+	@echo "# Register completion for 'make' command in this directory" >> .openusp-completion.bash
+	@echo "complete -F _openusp_make_completion make" >> .openusp-completion.bash
+	@echo "" >> .openusp-completion.bash
+	@echo "echo \"✅ OpenUSP make bash completion loaded! Try: make <TAB><TAB>\"" >> .openusp-completion.bash
+	@echo "📝 Generated bash completion script: .openusp-completion.bash"
+	@echo "💡 To enable completion, run: source .openusp-completion.bash"
+
+bash-completion-install: bash-completion ## Generate and install bash completion system-wide
+	@echo "🔧 Installing bash completion for OpenUSP make targets..."
+	@if [ -d "/usr/local/etc/bash_completion.d" ]; then \
+		sudo cp .openusp-completion.bash /usr/local/etc/bash_completion.d/openusp-make; \
+		echo "✅ Installed to /usr/local/etc/bash_completion.d/openusp-make"; \
+	elif [ -d "/etc/bash_completion.d" ]; then \
+		sudo cp .openusp-completion.bash /etc/bash_completion.d/openusp-make; \
+		echo "✅ Installed to /etc/bash_completion.d/openusp-make"; \
+	else \
+		echo "⚠️  No system bash completion directory found"; \
+		echo "💡 Manual setup: Add 'source $(PWD)/.openusp-completion.bash' to your ~/.bashrc"; \
+	fi
+	@echo "🎯 Bash completion installed! Restart your shell or run: source ~/.bashrc"
+	@echo "💫 Test with: make <TAB><TAB>"
 
 # =============================================================================
 # End of Makefile

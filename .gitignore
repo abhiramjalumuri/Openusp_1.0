@@ -107,5 +107,8 @@ logs/
 *.bak
 *.orig
 
+# Generated bash completion
+.openusp-completion.bash
+
 # macOS specific
 .DS_Store

@@ -500,8 +500,12 @@ func (gw *APIGateway) updateDevice(c *gin.Context) {
 // Delete device (deprovision)
 // @Summary Deprovision Device
 // @Description Deprovision and remove a device from the OpenUSP platform
-// @Description This endpoint handles device deprovisioning including certificate
-// @Description revocation, configuration cleanup, and removal from the platform
+// @Description This endpoint handles complete device deprovisioning including:
+// @Description - Deletion of all device parameters and data model entries
+// @Description - Removal of all device alerts and notifications
+// @Description - Termination of all active sessions
+// @Description - Certificate revocation and configuration cleanup
+// @Description - Complete removal from the platform database
 // @Tags Devices
 // @Accept json
 // @Produce json
