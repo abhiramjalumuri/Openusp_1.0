@@ -124,11 +124,6 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
-	// Serve swagger.json from api directory
-	gw.router.GET("/swagger/doc.json", func(c *gin.Context) {
-		c.File("api/swagger.json")
-	})
-
 	// Swagger UI endpoint - no host specification for dynamic association
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
 		ginSwagger.DeepLinking(true),
