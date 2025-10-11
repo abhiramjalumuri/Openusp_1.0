@@ -12,6 +12,9 @@ scrape_configs:
 
   # OpenUSP Services - Direct localhost access via host network
   - job_name: 'openusp-api-gateway'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
     static_configs:
     - targets: ['localhost:6500']
     metrics_path: '/metrics'

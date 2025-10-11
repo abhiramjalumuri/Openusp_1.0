@@ -112,12 +112,13 @@ type TR181Config struct {
 
 // SecurityConfig holds security configuration
 type SecurityConfig struct {
-	CORSEnabled   bool
-	CORSOrigins   string
-	CWMPBasicAuth bool
-	TLSEnabled    bool
-	TLSCertPath   string
-	TLSKeyPath    string
+	CORSEnabled      bool
+	CORSOrigins      string
+	CWMPBasicAuth    bool
+	TLSEnabled       bool
+	TLSCertPath      string
+	TLSKeyPath       string
+	HTTPRedirectPort int
 }
 
 // Load loads configuration from environment variables
@@ -142,7 +143,7 @@ func Load() *Config {
 
 		// Service Inter-communication
 		DataServiceAddr: getEnv("OPENUSP_DATA_SERVICE_ADDR", "localhost:6101"),
-		APIGatewayURL:   getEnv("OPENUSP_API_GATEWAY_URL", "http://localhost:6500"),
+		APIGatewayURL:   getEnv("OPENUSP_API_GATEWAY_URL", "https://localhost:6500"),
 		MTPServiceURL:   getEnv("OPENUSP_MTP_SERVICE_URL", "http://localhost:6100"),
 		CWMPServiceURL:  getEnv("OPENUSP_CWMP_SERVICE_URL", "http://localhost:6300"),
 
@@ -205,12 +206,13 @@ func Load() *Config {
 
 		// Security
 		Security: SecurityConfig{
-			CORSEnabled:   getBoolEnv("OPENUSP_API_CORS_ENABLED", true),
-			CORSOrigins:   getEnv("OPENUSP_API_CORS_ORIGINS", "*"),
-			CWMPBasicAuth: getBoolEnv("OPENUSP_CWMP_BASIC_AUTH_ENABLED", true),
-			TLSEnabled:    getBoolEnv("OPENUSP_TLS_ENABLED", false),
-			TLSCertPath:   getEnv("OPENUSP_TLS_CERT_PATH", ""),
-			TLSKeyPath:    getEnv("OPENUSP_TLS_KEY_PATH", ""),
+			CORSEnabled:      getBoolEnv("OPENUSP_API_CORS_ENABLED", true),
+			CORSOrigins:      getEnv("OPENUSP_API_CORS_ORIGINS", "*"),
+			CWMPBasicAuth:    getBoolEnv("OPENUSP_CWMP_BASIC_AUTH_ENABLED", true),
+			TLSEnabled:       getBoolEnv("OPENUSP_TLS_ENABLED", false),
+			TLSCertPath:      getEnv("OPENUSP_TLS_CERT_PATH", ""),
+			TLSKeyPath:       getEnv("OPENUSP_TLS_KEY_PATH", ""),
+			HTTPRedirectPort: getIntEnv("OPENUSP_HTTP_REDIRECT_PORT", 6501),
 		},
 	}
 

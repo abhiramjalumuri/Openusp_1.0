@@ -38,8 +38,11 @@ BUILD_DIR := build
 LOG_DIR := logs
 
 # OpenUSP Service definitions
-OPENUSP_SERVICES := api-gateway data-service connection-manager usp-service cwmp-service mtp-service
+OPENUSP_CORE_SERVICES := data-service connection-manager usp-service cwmp-service mtp-service
+OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES)
 OPENUSP_AGENTS := usp-agent cwmp-agent
+
+
 
 # Infrastructure volumes
 INFRA_VOLUMES := \
@@ -66,6 +69,7 @@ INFRA_VOLUMES := \
 .PHONY: $(addprefix run-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix stop-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: swagger swagger-install swagger-generate swagger-validate
+.PHONY: certs generate-certs clean-certs verify-certs
 .PHONY: docker-health docker-fix
 .PHONY: clean fmt vet test
 .PHONY: bash-completion bash-completion-install
@@ -385,7 +389,7 @@ build-$(1):
 	@echo "✅ $(1) built successfully"
 endef
 
-$(foreach service,$(OPENUSP_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
+$(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
 $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call BUILD_TEMPLATE,$(agent))))
 
 # Individual service run targets (with background support)
@@ -431,8 +435,58 @@ run-$(1): build-$(1)
 	@./$(BUILD_DIR)/$(1) --config configs/$(1).yaml
 endef
 
-$(foreach service,$(OPENUSP_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
+$(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
 $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
+
+# Custom API Gateway targets with TLS configuration
+run-api-gateway:
+	@echo "🚀 Starting API Gateway with HTTPS support..."
+	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
+		echo "   🔐 TLS certificates found - enabling HTTPS"; \
+		OPENUSP_TLS_CERT_PATH=certs/server.crt OPENUSP_TLS_KEY_PATH=certs/server.key ./$(BUILD_DIR)/api-gateway; \
+	else \
+		echo "   ⚠️  No TLS certificates found - using HTTP"; \
+		./$(BUILD_DIR)/api-gateway; \
+	fi
+
+run-api-gateway-background:
+	@echo "🚀 Starting API Gateway in background with HTTPS support..."
+	@mkdir -p logs
+	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
+		echo "   🔐 TLS certificates found - enabling HTTPS"; \
+		nohup env OPENUSP_TLS_CERT_PATH=certs/server.crt OPENUSP_TLS_KEY_PATH=certs/server.key ./$(BUILD_DIR)/api-gateway > logs/api-gateway.log 2>&1 & echo $$! > logs/api-gateway.pid; \
+	else \
+		echo "   ⚠️  No TLS certificates found - using HTTP"; \
+		nohup ./$(BUILD_DIR)/api-gateway > logs/api-gateway.log 2>&1 & echo $$! > logs/api-gateway.pid; \
+	fi
+	@sleep 2
+	@echo "✅ API Gateway started (PID: $$(cat logs/api-gateway.pid))"
+
+build-api-gateway:
+	@echo "🔨 Building api-gateway..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/api-gateway ./cmd/api-gateway
+	@echo "✅ api-gateway built successfully"
+
+stop-api-gateway:
+	@echo "🛑 Stopping api-gateway..."
+	@stopped=false; \
+	if [ -f logs/api-gateway.pid ]; then \
+		pid=$$(cat logs/api-gateway.pid); \
+		if kill $$pid 2>/dev/null; then \
+			echo "  Stopped via PID file ($$pid)"; \
+			stopped=true; \
+		fi; \
+		rm -f logs/api-gateway.pid; \
+	fi; \
+	if pkill -f "./$(BUILD_DIR)/api-gateway" 2>/dev/null; then \
+		echo "  Stopped api-gateway processes"; \
+		stopped=true; \
+	fi; \
+	if [ "$$stopped" = "false" ]; then \
+		echo "  No running api-gateway process found"; \
+	fi; \
+	echo "✅ api-gateway stop completed"
 
 # =============================================================================
 # Swagger API Documentation
@@ -486,6 +540,44 @@ swagger-validate:
 	fi; \
 	$$SWAGGER_CMD validate api/swagger.yaml
 	@echo "✅ Swagger documentation is valid"
+
+# =============================================================================
+# TLS Certificate Management
+# =============================================================================
+
+certs: generate-certs
+
+generate-certs:
+	@echo "🔐 Generating test TLS certificates for API Gateway..."
+	@if [ -f scripts/generate-test-certs.sh ]; then \
+		chmod +x scripts/generate-test-certs.sh && ./scripts/generate-test-certs.sh; \
+	else \
+		echo "❌ Certificate generation script not found at scripts/generate-test-certs.sh"; \
+		exit 1; \
+	fi
+
+clean-certs:
+	@echo "🗑️  Removing TLS certificates..."
+	@rm -f certs/server.crt certs/server.key
+	@echo "✅ TLS certificates removed"
+
+verify-certs:
+	@echo "🔍 Verifying TLS certificates..."
+	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
+		echo "✅ Certificate files found:"; \
+		echo "   📄 Certificate: certs/server.crt"; \
+		echo "   🔑 Private Key: certs/server.key"; \
+		echo ""; \
+		echo "📋 Certificate details:"; \
+		openssl x509 -in certs/server.crt -text -noout | grep -E "(Subject:|DNS:|IP Address:)" | head -5; \
+		echo ""; \
+		echo "📅 Certificate validity:"; \
+		openssl x509 -in certs/server.crt -dates -noout; \
+	else \
+		echo "❌ TLS certificates not found"; \
+		echo "💡 Run 'make generate-certs' to create test certificates"; \
+		exit 1; \
+	fi
 
 infra-volumes:
 	@echo "📦 Creating infrastructure volumes..."
@@ -870,6 +962,12 @@ help:
 	@echo "  swagger-install        - Install Swagger tools (swag & swagger)"
 	@echo "  swagger-generate       - Generate Swagger documentation"
 	@echo "  swagger-validate       - Validate Swagger documentation"
+	@echo ""
+	@echo "🔐 TLS Certificate Management:"
+	@echo "  certs                  - Generate test TLS certificates (alias for generate-certs)"
+	@echo "  generate-certs         - Generate self-signed test certificates for HTTPS"
+	@echo "  verify-certs           - Show certificate details and validity"
+	@echo "  clean-certs            - Remove existing TLS certificates"
 	@echo ""
 	@echo "📊 Monitoring & Observability:"
 	@echo "  monitoring-cleanup     - Clean up and reload monitoring stack"

@@ -78,7 +78,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Environment Variables:")
 	fmt.Println("  USP_WS_URL      # Override WebSocket URL (default: ws://localhost:8081/ws)")
-	fmt.Println("  API_GATEWAY_URL # Override API Gateway URL (default: http://localhost:6500)")
+	fmt.Println("  API_GATEWAY_URL # Override API Gateway URL (default: https://localhost:6500)")
 }
 
 // printAgentInfo displays agent and device information
@@ -160,7 +160,7 @@ func getAPIGatewayURL() string {
 	// Fallback to environment or default
 	apiGatewayURL := os.Getenv("API_GATEWAY_URL")
 	if apiGatewayURL == "" {
-		apiGatewayURL = "http://localhost:6500" // Standard OpenUSP API Gateway port
+		apiGatewayURL = "https://localhost:6500" // Standard OpenUSP API Gateway port
 	}
 	log.Printf("✅ Using API Gateway URL from environment/default: %s", apiGatewayURL)
 	return apiGatewayURL

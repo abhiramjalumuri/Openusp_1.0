@@ -63,7 +63,7 @@ mtp:
 
 # OpenUSP Platform Integration
 platform:
-  url: "http://localhost:6500"
+  url: "https://localhost:6500"
   api_version: "v1"
   registration_endpoint: "/api/v1/devices"
   heartbeat_interval: "60s"

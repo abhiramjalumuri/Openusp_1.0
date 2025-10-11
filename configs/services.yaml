@@ -1,5 +1,5 @@
 # OpenUSP Static Service Configuration
-# Replaces Consul service discovery with predictable static ports
+# Static ports for predictable service discovery
 
 services:
   api-gateway:

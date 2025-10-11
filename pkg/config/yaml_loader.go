@@ -34,12 +34,6 @@ type YAMLAgentConfig struct {
 		HeartbeatInterval    string `yaml:"heartbeat_interval"`
 	} `yaml:"platform"`
 
-	ConsulIntegration struct {
-		ServiceDiscoveryEnabled bool     `yaml:"service_discovery_enabled"`
-		HealthCheckInterval     string   `yaml:"health_check_interval"`
-		ServiceTags             []string `yaml:"service_tags"`
-	} `yaml:"consul_integration"`
-
 	Security struct {
 		TLSEnabled    bool   `yaml:"tls_enabled"`
 		TLSCertFile   string `yaml:"tls_cert_file"`
@@ -372,14 +366,10 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 	config.EventNotification = yamlConfig.AgentBehavior.EventNotification
 	config.DiagnosticMode = yamlConfig.AgentBehavior.DiagnosticMode
 
-	// Consul Integration
-	config.ServiceDiscoveryEnabled = yamlConfig.ConsulIntegration.ServiceDiscoveryEnabled
-	if yamlConfig.ConsulIntegration.HealthCheckInterval != "" {
-		if duration, err := time.ParseDuration(yamlConfig.ConsulIntegration.HealthCheckInterval); err == nil {
-			config.HealthCheckInterval = duration
-		}
-	}
-	config.ServiceTags = yamlConfig.ConsulIntegration.ServiceTags
+	// Static configuration - no service discovery
+	config.ServiceDiscoveryEnabled = false
+	config.HealthCheckInterval = 30 * time.Second // Default value
+	config.ServiceTags = []string{"openusp", "usp-agent"}
 
 	// Security
 	config.TLSEnabled = yamlConfig.Security.TLSEnabled
@@ -491,14 +481,10 @@ func LoadYAMLTR069Config(configPath string) (*TR069Config, error) {
 	config.ConnectionRequestUsername = yamlConfig.ConnectionRequest.Username
 	config.ConnectionRequestPassword = yamlConfig.ConnectionRequest.Password
 
-	// Consul Integration
-	config.ServiceDiscoveryEnabled = yamlConfig.ConsulIntegration.ServiceDiscoveryEnabled
-	if yamlConfig.ConsulIntegration.HealthCheckInterval != "" {
-		if duration, err := time.ParseDuration(yamlConfig.ConsulIntegration.HealthCheckInterval); err == nil {
-			config.HealthCheckInterval = duration
-		}
-	}
-	config.ServiceTags = yamlConfig.ConsulIntegration.ServiceTags
+	// Static configuration - no service discovery
+	config.ServiceDiscoveryEnabled = false
+	config.HealthCheckInterval = 30 * time.Second // Default value
+	config.ServiceTags = []string{"openusp", "cwmp-agent"}
 
 	// Security
 	config.TLSEnabled = yamlConfig.Security.TLSEnabled

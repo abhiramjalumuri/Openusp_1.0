@@ -12,6 +12,9 @@ scrape_configs:
 
   # OpenUSP Services - Static Configuration
   - job_name: 'openusp-api-gateway'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
     static_configs:
     - targets: ['host.docker.internal:6500']
     metrics_path: '/metrics'

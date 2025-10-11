@@ -75,16 +75,6 @@ func (c *DeploymentConfig) GetDatabaseDSN() string {
 		c.DatabaseHost, c.DatabasePort, c.DatabaseUser, c.DatabasePassword, c.DatabaseName, c.DatabaseSSLMode)
 }
 
-// IsConsulEnabled returns whether Consul service discovery is enabled (always false now)
-func (c *DeploymentConfig) IsConsulEnabled() bool {
-	return false // Static port configuration - no service discovery
-}
-
-// GetConsulConfig returns Consul-specific configuration (deprecated)
-func (c *DeploymentConfig) GetConsulConfig() (string, time.Duration, time.Duration) {
-	return "", 0, 0 // Consul removed - use static ports
-}
-
 // Helper functions for environment variable parsing
 func getEnvString(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

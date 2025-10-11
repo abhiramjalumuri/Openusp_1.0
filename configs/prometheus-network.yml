@@ -40,6 +40,9 @@ scrape_configs:
 
   # Container-based OpenUSP services (when running in the same network)
   - job_name: 'openusp-containerized'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
     static_configs:
     - targets: [
         'openusp-api-gateway:6500',
