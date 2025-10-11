@@ -65,7 +65,7 @@ INFRA_VOLUMES := \
 .PHONY: $(addprefix build-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix run-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix stop-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
-.PHONY: swagger swagger-generate swagger-validate
+.PHONY: swagger swagger-install swagger-generate swagger-validate
 .PHONY: docker-health docker-fix
 .PHONY: clean fmt vet test
 
@@ -439,13 +439,34 @@ $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
 
 swagger: swagger-generate swagger-validate
 
+swagger-install:
+	@echo "🔧 Installing Swagger tools..."
+	@echo "📍 Go binary path: $$(go env GOPATH)/bin"
+	@echo "📍 Current PATH: $$PATH"
+	@go install github.com/swaggo/swag/cmd/swag@latest
+	@go install github.com/go-swagger/go-swagger/cmd/swagger@latest
+	@echo "✅ Swagger tools installed"
+	@echo ""
+	@echo "💡 If you get 'command not found' errors, add Go bin to PATH:"
+	@echo "   export PATH=\$$PATH:\$$(go env GOPATH)/bin"
+	@echo "   echo 'export PATH=\$$PATH:\$$(go env GOPATH)/bin' >> ~/.bashrc"
+	@echo "   source ~/.bashrc"
+
 swagger-generate:
 	@echo "📚 Generating Swagger documentation..."
 	@command -v swag >/dev/null 2>&1 || { \
 		echo "⚠️  Installing swag..."; \
 		go install github.com/swaggo/swag/cmd/swag@latest; \
+		echo "✅ swag installed to $$(go env GOPATH)/bin/swag"; \
 	}
-	@swag init -g cmd/api-gateway/main.go -o api/
+	@SWAG_CMD=$$(command -v swag 2>/dev/null || echo "$$(go env GOPATH)/bin/swag"); \
+	if [ ! -f "$$SWAG_CMD" ]; then \
+		echo "❌ swag not found at $$SWAG_CMD"; \
+		echo "💡 Please ensure $$(go env GOPATH)/bin is in your PATH"; \
+		echo "💡 Or run: export PATH=\$$PATH:\$$(go env GOPATH)/bin"; \
+		exit 1; \
+	fi; \
+	$$SWAG_CMD init -g cmd/api-gateway/main.go -o api/
 	@echo "✅ Swagger documentation generated"
 
 swagger-validate:
@@ -453,8 +474,16 @@ swagger-validate:
 	@command -v swagger >/dev/null 2>&1 || { \
 		echo "⚠️  Installing swagger validator..."; \
 		go install github.com/go-swagger/go-swagger/cmd/swagger@latest; \
+		echo "✅ swagger validator installed to $$(go env GOPATH)/bin/swagger"; \
 	}
-	@swagger validate api/swagger.yaml
+	@SWAGGER_CMD=$$(command -v swagger 2>/dev/null || echo "$$(go env GOPATH)/bin/swagger"); \
+	if [ ! -f "$$SWAGGER_CMD" ]; then \
+		echo "❌ swagger validator not found at $$SWAGGER_CMD"; \
+		echo "💡 Please ensure $$(go env GOPATH)/bin is in your PATH"; \
+		echo "💡 Or run: export PATH=\$$PATH:\$$(go env GOPATH)/bin"; \
+		exit 1; \
+	fi; \
+	$$SWAGGER_CMD validate api/swagger.yaml
 	@echo "✅ Swagger documentation is valid"
 
 infra-volumes:
@@ -837,6 +866,7 @@ help:
 	@echo ""
 	@echo "📚 API Documentation:"
 	@echo "  swagger                - Generate and validate Swagger docs"
+	@echo "  swagger-install        - Install Swagger tools (swag & swagger)"
 	@echo "  swagger-generate       - Generate Swagger documentation"
 	@echo "  swagger-validate       - Validate Swagger documentation"
 	@echo ""
