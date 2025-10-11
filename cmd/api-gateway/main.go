@@ -13,7 +13,6 @@
 //	@license.name	Apache 2.0
 //	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 //
-//	@host		localhost:6500
 //	@BasePath	/api/v1
 //
 //	@externalDocs.description	OpenUSP Documentation
@@ -29,11 +28,8 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
-
-	"openusp/api" // Import generated docs
 	grpcclient "openusp/internal/grpc"
 	"openusp/pkg/config"
 	"openusp/pkg/metrics"
@@ -126,28 +122,7 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
-	// Dynamic swagger doc.json endpoint with host detection
-	gw.router.GET("/swagger/doc.json", func(c *gin.Context) {
-		// Get the host from the request
-		host := c.Request.Header.Get("Host")
-		if host == "" {
-			host = c.Request.Host
-		}
-		if host == "" {
-			host = "localhost:6500" // fallback
-		}
-		
-		// Get the base swagger doc and replace the host
-		doc := api.SwaggerInfo.ReadDoc()
-		// Simple string replacement to update the host
-		doc = fmt.Sprintf(strings.ReplaceAll(doc, `"host": "localhost:6500"`, `"host": "%s"`), host)
-		
-		// Return the swagger documentation as JSON
-		c.Header("Content-Type", "application/json")
-		c.String(200, doc)
-	})
-
-	// Swagger UI endpoint with dynamic host detection for cross-platform compatibility
+	// Swagger UI endpoint - no host specification for dynamic association
 	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
 		ginSwagger.DeepLinking(true),
 		ginSwagger.DocExpansion("none"),

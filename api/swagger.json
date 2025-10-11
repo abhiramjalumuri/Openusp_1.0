@@ -14,7 +14,6 @@
         },
         "version": "1.0.0"
     },
-    "host": "localhost:6500",
     "basePath": "/api/v1",
     "paths": {
         "/devices": {
