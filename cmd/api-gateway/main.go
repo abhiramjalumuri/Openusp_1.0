@@ -13,7 +13,7 @@
 //	@license.name	Apache 2.0
 //	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 //
-//	@host		localhost:6500
+//	@host		{host}
 //	@BasePath	/api/v1
 //
 //	@externalDocs.description	OpenUSP Documentation
@@ -32,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"openusp/api" // Import generated docs
 	grpcclient "openusp/internal/grpc"
 	"openusp/pkg/config"
 	"openusp/pkg/metrics"
@@ -46,11 +47,11 @@ import (
 
 // APIGateway represents the REST API Gateway service
 type APIGateway struct {
-	config      *config.DeploymentConfig
-	router      *gin.Engine
-	server      *http.Server
-	dataClient  *grpcclient.DataServiceClient
-	metrics     *metrics.OpenUSPMetrics
+	config     *config.DeploymentConfig
+	router     *gin.Engine
+	server     *http.Server
+	dataClient *grpcclient.DataServiceClient
+	metrics    *metrics.OpenUSPMetrics
 }
 
 // NewAPIGateway creates a new API Gateway instance
@@ -124,11 +125,17 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
 
-	// Swagger UI endpoint - Default configuration for maximum cross-platform compatibility
-	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
-		ginSwagger.DeepLinking(true),
-		ginSwagger.DocExpansion("none"),
-	))
+	// Swagger UI endpoint with dynamic host detection for cross-platform compatibility
+	gw.router.GET("/swagger/*any", func(c *gin.Context) {
+		// Configure SwaggerInfo at runtime with dynamic host detection
+		if host := c.Request.Header.Get("Host"); host != "" {
+			api.SwaggerInfo.Host = host
+		}
+		ginSwagger.WrapHandler(swaggerFiles.Handler,
+			ginSwagger.DeepLinking(true),
+			ginSwagger.DocExpansion("none"),
+		)(c)
+	})
 
 	// API v1 routes
 	v1 := gw.router.Group("/api/v1")
