@@ -2,7 +2,7 @@ basePath: /api/v1
 externalDocs:
   description: OpenUSP Documentation
   url: https://github.com/plume-design-inc/openusp/docs
-host: '{host}'
+host: localhost:6500
 info:
   contact:
     email: support@openusp.org
