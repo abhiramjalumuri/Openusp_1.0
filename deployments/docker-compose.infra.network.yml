@@ -30,36 +30,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Consul Service Discovery
-  consul:
-    image: hashicorp/consul:1.16
-    container_name: openusp-consul
-    hostname: openusp-consul
-    ports:
-      - "8500:8500"    # HTTP API and Web UI
-      - "8600:8600/udp" # DNS
-    environment:
-      - CONSUL_BIND_INTERFACE=eth0
-    command: >
-      consul agent -dev -ui 
-      -client=0.0.0.0 
-      -bootstrap-expect=1 
-      -datacenter=openusp-dev
-      -node=openusp-consul-dev
-    volumes:
-      - consul_data:/consul/data
-    networks:
-      openusp-dev:
-        aliases:
-          - consul
-          - service-discovery
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "consul", "members"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
   # RabbitMQ Message Broker
   rabbitmq-dev:
     image: rabbitmq:3.13-management-alpine
@@ -137,8 +107,6 @@ services:
         aliases:
           - prometheus
           - metrics
-    depends_on:
-      - consul
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/"]
@@ -200,9 +168,6 @@ volumes:
   postgres_data:
     external: true
     name: openusp-postgres-data
-  consul_data:
-    external: true  
-    name: openusp-consul-data
   rabbitmq_dev_data:
     external: true
     name: openusp-rabbitmq-dev-data
