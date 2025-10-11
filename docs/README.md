@@ -9,16 +9,10 @@ Welcome to the OpenUSP (Open User Service Platform) documentation. This project 
 - [**Installation**](INSTALLATION.md) - Complete installation instructions
 - [**User Guide**](USER_GUIDE.md) - How to use OpenUSP for device management
 - [**API Reference**](API_REFERENCE.md) - REST API documentation
-- [**Proactive Onboarding**](PROACTIVE_ONBOARDING.md) - Factory default device onboarding solution
-- [**Examples**](../README.md#-testing-and-validation) - Working examples and tutorials
-
-### Platform-Specific Guides
-- [**Cross-Platform Development**](CROSS_PLATFORM.md) - Professional cross-platform system (Linux, macOS, Windows)
-- [**Linux Deployment**](LINUX_DEPLOYMENT.md) - Linux-specific setup and troubleshooting
+- [**USP Message Flow**](USP_MSG_FLOW.md) - Protocol message flow and communication patterns
 
 ### For Developers
 - [**Development Guide**](DEVELOPMENT.md) - Setting up development environment
-- [**Makefile Guide**](MAKEFILE_GUIDE.md) - Complete Makefile reference and workflows
 - [**Architecture**](../README.md#-architecture-overview) - System design and components
 - [**Contributing**](CONTRIBUTING.md) - How to contribute to the project
 - [**Testing**](../README.md#-testing-and-validation) - Running tests and validation

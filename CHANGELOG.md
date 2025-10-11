@@ -5,6 +5,42 @@ All notable changes to the OpenUSP project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-10-11
+
+### 🚀 Major Protocol Upgrades
+
+#### TR-069 CWMP Service - v1.2 Protocol Upgrade
+- **TR-069 v1.2 Support**: Complete upgrade from v1.0 to v1.2 with enhanced capabilities
+- **Enhanced RPC Methods**: Added Download, Upload, GetAllQueuedTransfers, ScheduleInform, SetVouchers, GetOptions
+- **Parameter Attributes**: Implemented TR-069 v1.2 enhanced parameter attribute structures with access control
+- **Namespace Update**: Migrated from `urn:dslforum-org:cwmp-1-0` to `urn:dslforum-org:cwmp-1-2`
+- **Backward Compatibility**: Maintained support for TR-069 v1.0, v1.1, and v1.2
+
+#### API Gateway - TR-181 Compliance & Cleanup
+- **TR-181 REST Endpoints**: Implemented comprehensive TR-181 compliant REST API structure
+- **Device Management**: Updated endpoints from `/devices/{id}` to `/devices/{device_id}` with proper terminology
+- **Parameter Operations**: Added bulk get/set, search, and filtering capabilities
+- **Object Management**: Implemented object instance creation, update, and deletion
+- **Command Execution**: Added TR-181 command execution with async support
+- **Subscription Management**: Implemented parameter change notification subscriptions
+- **Data Model Operations**: Added schema, data model, and object tree endpoints
+- **API Cleanup**: Removed deprecated `/parameters/endpoint/{endpoint_id}` API
+- **Swagger Documentation**: Comprehensive update with TR-181 compliant API documentation
+
+### 🔧 Configuration Updates
+- **CWMP Agent**: Updated default TR-069 version to 1.2 in `configs/cwmp-agent.yaml`
+- **Service Health**: Enhanced health endpoints with protocol version information
+
+### 📝 Documentation Improvements
+- **API Documentation**: Complete Swagger specification update with TR-181 endpoints
+- **TR-181 Test Suite**: Added comprehensive test script for all TR-181 operations
+- **Protocol Documentation**: Updated README with TR-069 v1.2 feature descriptions
+
+### 🧪 Testing & Validation
+- **Integration Testing**: Verified TR-069 v1.2 protocol compatibility
+- **API Testing**: Comprehensive TR-181 endpoint validation
+- **Backward Compatibility**: Confirmed support for multiple TR-069 versions
+
 ## [1.1.0] - 2025-10-10
 
 ### 🎯 Major Architecture Changes
@@ -153,9 +189,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Data Visualization**: All OpenUSP platform dashboards now display live metrics correctly
 
 #### Documentation & Tooling
-- **Quick Fix Guide**: Added comprehensive troubleshooting guide (`docs/quickFix.md`)
+- **Troubleshooting Guide**: Added comprehensive troubleshooting guide (`docs/TROUBLESHOOTING.md`)
 - **API Gateway Scripts**: Created dynamic port discovery script (`scripts/check-api-gateway.sh`)
-- **Grafana Troubleshooting**: Detailed monitoring troubleshooting guide (`docs/GRAFANA_TROUBLESHOOTING.md`)
+- **Configuration Guide**: Detailed configuration and monitoring guide (`docs/CONFIGURATION.md`)
 
 ### Enhanced
 

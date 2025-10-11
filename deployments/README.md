@@ -349,9 +349,9 @@ grpc_health_probe -addr=localhost:9093
 ## 📚 Additional Resources
 
 - [OpenUSP Documentation](../docs/)
-- [API Gateway README](../cmd/api-gateway/README.md)
-- [Data Service Documentation](../docs/DATA_SERVICE.md)
-- [Versioning Guide](../docs/VERSIONING.md)
+- [Configuration Guide](../docs/CONFIGURATION.md)
+- [API Reference](../docs/API_REFERENCE.md)
+- [Troubleshooting Guide](../docs/TROUBLESHOOTING.md)
 - [TR-369 Specification](https://www.broadband-forum.org/tr-369)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [Kubernetes Documentation](https://kubernetes.io/docs/)

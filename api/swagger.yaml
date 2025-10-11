@@ -15,7 +15,7 @@ info:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   title: OpenUSP API Gateway
-  version: 1.0.0
+  version: 1.2.0
 paths:
   /devices:
     get:
@@ -52,9 +52,14 @@ paths:
     post:
       consumes:
       - application/json
-      description: Register a new device in the system
+      description: |-
+        Provision and register a new device in the OpenUSP platform
+        This endpoint handles the initial device registration process
+        including endpoint ID assignment, certificate management, and
+        initial configuration according to TR-181/TR-369 specifications
       parameters:
-      - description: Device information
+      - description: Device provisioning information (endpoint_id, serial_number,
+          product_class, etc.)
         in: body
         name: device
         required: true
@@ -65,39 +70,154 @@ paths:
       - application/json
       responses:
         "201":
-          description: Device created successfully
+          description: Device provisioned successfully
           schema:
             additionalProperties: true
             type: object
         "400":
-          description: Invalid request body
+          description: Invalid provisioning request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Device already provisioned
           schema:
             additionalProperties: true
             type: object
         "500":
-          description: Internal server error
+          description: Device provisioning failed
           schema:
             additionalProperties: true
             type: object
-      summary: Create Device
+      summary: Provision Device
       tags:
       - Devices
-  /devices/{id}:
+  /devices/{device_id}:
     delete:
       consumes:
       - application/json
-      description: Delete a device by ID from the OpenUSP platform
+      description: |-
+        Deprovision and remove a device from the OpenUSP platform
+        This endpoint handles device deprovisioning including certificate
+        revocation, configuration cleanup, and removal from the platform
       parameters:
       - description: Device ID
         in: path
-        name: id
+        name: device_id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: Device deleted successfully
+          description: Device deprovisioned successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Device not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Device deprovisioning failed
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Deprovision Device
+      tags:
+      - Devices
+  /devices/{device_id}/commands/execute:
+    post:
+      consumes:
+      - application/json
+      description: Execute a command on a device or object
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Command execution request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Command executed successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Command execution failed
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Execute Command (TR-181)
+      tags:
+      - TR-181 Commands
+  /devices/{device_id}/datamodel:
+    get:
+      consumes:
+      - application/json
+      description: Get the complete data model schema for a device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Data model retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Data Model (TR-181)
+      tags:
+      - TR-181 Data Model
+  /devices/{device_id}/objects:
+    get:
+      consumes:
+      - application/json
+      description: Get all objects/object instances for a device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path filter
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Objects retrieved successfully
           schema:
             additionalProperties: true
             type: object
@@ -107,13 +227,578 @@ paths:
             additionalProperties: true
             type: object
         "500":
-          description: Failed to delete device
+          description: Internal server error
           schema:
             additionalProperties: true
             type: object
-      summary: Delete Device
+      summary: Get Device Objects (TR-181)
       tags:
-      - Devices
+      - TR-181 Objects
+  /devices/{device_id}/objects/{path}:
+    get:
+      consumes:
+      - application/json
+      description: Get specific object details by path
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Object details retrieved
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Object not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Object by Path (TR-181)
+      tags:
+      - TR-181 Objects
+  /devices/{device_id}/objects/{path}/commands:
+    get:
+      consumes:
+      - application/json
+      description: Get available commands for a specific object
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path
+        in: path
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Commands retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Object Commands (TR-181)
+      tags:
+      - TR-181 Commands
+  /devices/{device_id}/objects/{path}/instances:
+    post:
+      consumes:
+      - application/json
+      description: Create a new instance of a multi-instance object
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path
+        in: path
+        name: path
+        required: true
+        type: string
+      - description: Instance creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Instance created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create Object Instance (TR-181)
+      tags:
+      - TR-181 Objects
+  /devices/{device_id}/objects/{path}/instances/{instance_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an object instance
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path
+        in: path
+        name: path
+        required: true
+        type: string
+      - description: Instance ID
+        in: path
+        name: instance_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Instance deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Instance not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete Object Instance (TR-181)
+      tags:
+      - TR-181 Objects
+    put:
+      consumes:
+      - application/json
+      description: Update an existing object instance
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Object path
+        in: path
+        name: path
+        required: true
+        type: string
+      - description: Instance ID
+        in: path
+        name: instance_id
+        required: true
+        type: string
+      - description: Instance update request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Instance updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Instance not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update Object Instance (TR-181)
+      tags:
+      - TR-181 Objects
+  /devices/{device_id}/parameters:
+    get:
+      consumes:
+      - application/json
+      description: Get all parameters for a specific device, optionally filtered by
+        path pattern
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Parameter path pattern (e.g., Device.DeviceInfo.*)
+        in: query
+        name: path
+        type: string
+      - description: Enable partial path matching
+        in: query
+        name: partial_path
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameters retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Device Parameters (TR-181)
+      tags:
+      - TR-181 Parameters
+    put:
+      consumes:
+      - application/json
+      description: Set a single parameter value for a device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Parameter set request with path and value
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameter set successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Set Single Parameter (TR-181)
+      tags:
+      - TR-181 Parameters
+  /devices/{device_id}/parameters/get:
+    post:
+      consumes:
+      - application/json
+      description: Get multiple parameters by paths in a single request
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Parameter get request with paths array
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameters retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bulk Get Parameters (TR-181)
+      tags:
+      - TR-181 Parameters
+  /devices/{device_id}/parameters/search:
+    get:
+      consumes:
+      - application/json
+      description: Search parameters using advanced filters and patterns
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Path pattern to search
+        in: query
+        name: path
+        type: string
+      - description: Value pattern to search
+        in: query
+        name: value
+        type: string
+      - description: Parameter type filter
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameters found
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Search Parameters (TR-181)
+      tags:
+      - TR-181 Parameters
+  /devices/{device_id}/parameters/set:
+    post:
+      consumes:
+      - application/json
+      description: Set multiple parameters in a single request
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Parameter set request with parameters array
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Parameters set successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bulk Set Parameters (TR-181)
+      tags:
+      - TR-181 Parameters
+  /devices/{device_id}/schema:
+    get:
+      consumes:
+      - application/json
+      description: Get the TR-181 schema information supported by the device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Schema information retrieved
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Schema (TR-181)
+      tags:
+      - TR-181 Data Model
+  /devices/{device_id}/subscriptions:
+    get:
+      consumes:
+      - application/json
+      description: Get all subscriptions for a device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Subscriptions retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Subscriptions (TR-181)
+      tags:
+      - TR-181 Subscriptions
+    post:
+      consumes:
+      - application/json
+      description: Create a notification subscription for parameter changes
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Subscription request
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Subscription created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create Subscription (TR-181)
+      tags:
+      - TR-181 Subscriptions
+  /devices/{device_id}/subscriptions/{subscription_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a notification subscription
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - description: Subscription ID
+        in: path
+        name: subscription_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Subscription deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Subscription not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete Subscription (TR-181)
+      tags:
+      - TR-181 Subscriptions
+  /devices/{device_id}/tree:
+    get:
+      consumes:
+      - application/json
+      description: Get the hierarchical object tree structure for a device
+      parameters:
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      - default: 3
+        description: Maximum depth to retrieve
+        in: query
+        name: depth
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Object tree retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid device ID
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Object Tree (TR-181)
+      tags:
+      - TR-181 Data Model
   /health:
     get:
       consumes:
@@ -135,41 +820,4 @@ paths:
       summary: Health Check
       tags:
       - Health
-  /parameters/endpoint/{endpoint_id}:
-    get:
-      consumes:
-      - application/json
-      description: Get device parameters filtered by endpoint ID with optional path
-        pattern
-      parameters:
-      - description: Endpoint ID
-        in: path
-        name: endpoint_id
-        required: true
-        type: string
-      - description: Path pattern for filtering parameters
-        in: query
-        name: path_pattern
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Parameters retrieved successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Invalid endpoint ID
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get parameters by endpoint ID
-      tags:
-      - Parameters
 swagger: "2.0"

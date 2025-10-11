@@ -49,17 +49,21 @@ type Header struct {
 }
 
 type Body struct {
-	Inform                     *Inform                     `xml:"urn:dslforum-org:cwmp-1-0 Inform,omitempty"`
-	InformResponse             *InformResponse             `xml:"urn:dslforum-org:cwmp-1-0 InformResponse,omitempty"`
-	GetRPCMethods              *GetRPCMethods              `xml:"urn:dslforum-org:cwmp-1-0 GetRPCMethods,omitempty"`
-	GetRPCMethodsResponse      *GetRPCMethodsResponse      `xml:"urn:dslforum-org:cwmp-1-0 GetRPCMethodsResponse,omitempty"`
-	GetParameterNames          *GetParameterNames          `xml:"urn:dslforum-org:cwmp-1-0 GetParameterNames,omitempty"`
-	GetParameterNamesResponse  *GetParameterNamesResponse  `xml:"urn:dslforum-org:cwmp-1-0 GetParameterNamesResponse,omitempty"`
-	GetParameterValues         *GetParameterValues         `xml:"urn:dslforum-org:cwmp-1-0 GetParameterValues,omitempty"`
-	GetParameterValuesResponse *GetParameterValuesResponse `xml:"urn:dslforum-org:cwmp-1-0 GetParameterValuesResponse,omitempty"`
-	SetParameterValues         *SetParameterValues         `xml:"urn:dslforum-org:cwmp-1-0 SetParameterValues,omitempty"`
-	SetParameterValuesResponse *SetParameterValuesResponse `xml:"urn:dslforum-org:cwmp-1-0 SetParameterValuesResponse,omitempty"`
-	Fault                      *Fault                      `xml:"http://schemas.xmlsoap.org/soap/envelope/ Fault,omitempty"`
+	Inform                         *Inform                         `xml:"urn:dslforum-org:cwmp-1-2 Inform,omitempty"`
+	InformResponse                 *InformResponse                 `xml:"urn:dslforum-org:cwmp-1-2 InformResponse,omitempty"`
+	GetRPCMethods                  *GetRPCMethods                  `xml:"urn:dslforum-org:cwmp-1-2 GetRPCMethods,omitempty"`
+	GetRPCMethodsResponse          *GetRPCMethodsResponse          `xml:"urn:dslforum-org:cwmp-1-2 GetRPCMethodsResponse,omitempty"`
+	GetParameterNames              *GetParameterNames              `xml:"urn:dslforum-org:cwmp-1-2 GetParameterNames,omitempty"`
+	GetParameterNamesResponse      *GetParameterNamesResponse      `xml:"urn:dslforum-org:cwmp-1-2 GetParameterNamesResponse,omitempty"`
+	GetParameterValues             *GetParameterValues             `xml:"urn:dslforum-org:cwmp-1-2 GetParameterValues,omitempty"`
+	GetParameterValuesResponse     *GetParameterValuesResponse     `xml:"urn:dslforum-org:cwmp-1-2 GetParameterValuesResponse,omitempty"`
+	SetParameterValues             *SetParameterValues             `xml:"urn:dslforum-org:cwmp-1-2 SetParameterValues,omitempty"`
+	SetParameterValuesResponse     *SetParameterValuesResponse     `xml:"urn:dslforum-org:cwmp-1-2 SetParameterValuesResponse,omitempty"`
+	GetParameterAttributes         *GetParameterAttributes         `xml:"urn:dslforum-org:cwmp-1-2 GetParameterAttributes,omitempty"`
+	GetParameterAttributesResponse *GetParameterAttributesResponse `xml:"urn:dslforum-org:cwmp-1-2 GetParameterAttributesResponse,omitempty"`
+	SetParameterAttributes         *SetParameterAttributes         `xml:"urn:dslforum-org:cwmp-1-2 SetParameterAttributes,omitempty"`
+	SetParameterAttributesResponse *SetParameterAttributesResponse `xml:"urn:dslforum-org:cwmp-1-2 SetParameterAttributesResponse,omitempty"`
+	Fault                          *Fault                          `xml:"http://schemas.xmlsoap.org/soap/envelope/ Fault,omitempty"`
 }
 
 // Inform message structure
@@ -136,6 +140,32 @@ type SetParameterValuesResponse struct {
 	Status int `xml:"Status"`
 }
 
+// TR-069 v1.2 Parameter Attributes message structures
+type GetParameterAttributes struct {
+	ParameterNames []string `xml:"ParameterNames>string"`
+}
+
+type GetParameterAttributesResponse struct {
+	ParameterList []ParameterAttributeStruct `xml:"ParameterList>ParameterAttributeStruct"`
+}
+
+type SetParameterAttributes struct {
+	ParameterList []ParameterAttributeStruct `xml:"ParameterList>ParameterAttributeStruct"`
+}
+
+type SetParameterAttributesResponse struct {
+	Status int `xml:"Status"`
+}
+
+// TR-069 v1.2 Enhanced Parameter Attribute Structure
+type ParameterAttributeStruct struct {
+	Name               string   `xml:"Name"`
+	Notification       int      `xml:"Notification"`       // 0=off, 1=passive, 2=active
+	AccessList         []string `xml:"AccessList>string"`  // TR-069 v1.2 access control
+	NotificationChange bool     `xml:"NotificationChange"` // TR-069 v1.2 attribute change notification
+	AccessListChange   bool     `xml:"AccessListChange"`   // TR-069 v1.2 access list change
+}
+
 // Fault message structure
 type Fault struct {
 	FaultCode   string       `xml:"faultcode"`
@@ -144,7 +174,7 @@ type Fault struct {
 }
 
 type FaultDetail struct {
-	CWMPFault *CWMPFault `xml:"urn:dslforum-org:cwmp-1-0 Fault,omitempty"`
+	CWMPFault *CWMPFault `xml:"urn:dslforum-org:cwmp-1-2 Fault,omitempty"`
 }
 
 type CWMPFault struct {
@@ -271,6 +301,13 @@ func (mp *MessageProcessor) handleGetRPCMethods(session *Session) (*Envelope, er
 		"DeleteObject",
 		"Reboot",
 		"FactoryReset",
+		// TR-069 v1.2 enhanced methods
+		"Download",
+		"Upload",
+		"GetAllQueuedTransfers",
+		"ScheduleInform",
+		"SetVouchers",
+		"GetOptions",
 	}
 
 	response := &Envelope{

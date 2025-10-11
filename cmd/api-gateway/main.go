@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -137,25 +138,47 @@ func (gw *APIGateway) setupRoutes() {
 		v1.GET("/health", gw.healthCheck)
 		v1.GET("/status", gw.getStatus)
 
-		// Device management endpoints
+		// Device management endpoints (TR-181 compliant)
 		devices := v1.Group("/devices")
 		{
+			// Basic device lifecycle management
 			devices.GET("", gw.listDevices)
-			devices.POST("", gw.createDevice)
-			devices.GET("/:id", gw.getDevice)
-			devices.PUT("/:id", gw.updateDevice)
-			devices.DELETE("/:id", gw.deleteDevice)
-			devices.GET("/:id/parameters", gw.getDeviceParameters)
-			devices.GET("/:id/alerts", gw.getDeviceAlerts)
-			devices.GET("/:id/sessions", gw.getDeviceSessions)
-		}
+			devices.POST("", gw.provisionDevice)
+			devices.GET("/:device_id", gw.getDevice)
+			devices.PUT("/:device_id", gw.updateDevice)
+			devices.DELETE("/:device_id", gw.deleteDevice)
 
-		// Parameter management endpoints
-		parameters := v1.Group("/parameters")
-		{
-			parameters.GET("/endpoint/:endpoint_id", gw.getParametersByEndpoint)
-			parameters.POST("", gw.createParameter)
-			parameters.DELETE("/:device_id/:path", gw.deleteParameter)
+			// TR-181 Parameter operations
+			devices.GET("/:device_id/parameters", gw.getParameters)
+			devices.PUT("/:device_id/parameters", gw.setParameter)
+			devices.POST("/:device_id/parameters/get", gw.bulkGetParameters)
+			devices.POST("/:device_id/parameters/set", gw.bulkSetParameters)
+			devices.GET("/:device_id/parameters/search", gw.searchParameters)
+
+			// TR-181 Object operations
+			devices.GET("/:device_id/objects", gw.getObjects)
+			devices.GET("/:device_id/objects/:object_path", gw.getObjectByPath)
+			devices.POST("/:device_id/objects/:object_path/instances", gw.createInstance)
+			devices.PUT("/:device_id/objects/:object_path/instances/:instance_id", gw.updateInstance)
+			devices.DELETE("/:device_id/objects/:object_path/instances/:instance_id", gw.deleteInstance)
+
+			// TR-181 Command operations
+			devices.POST("/:device_id/commands/execute", gw.executeCommand)
+			devices.GET("/:device_id/objects/:object_path/commands", gw.getObjectCommands)
+
+			// TR-181 Subscription operations
+			devices.POST("/:device_id/subscriptions", gw.createSubscription)
+			devices.GET("/:device_id/subscriptions", gw.getSubscriptions)
+			devices.DELETE("/:device_id/subscriptions/:subscription_id", gw.deleteSubscription)
+
+			// TR-181 Data model operations
+			devices.GET("/:device_id/datamodel", gw.getDataModel)
+			devices.GET("/:device_id/schema", gw.getSchema)
+			devices.GET("/:device_id/tree", gw.getObjectTree)
+
+			// Legacy endpoints (backward compatibility)
+			devices.GET("/:device_id/alerts", gw.getDeviceAlerts)
+			devices.GET("/:device_id/sessions", gw.getDeviceSessions)
 		}
 
 		// Alert management endpoints
@@ -347,47 +370,54 @@ func (gw *APIGateway) listDevices(c *gin.Context) {
 	})
 }
 
-// createDevice handles device creation
+// provisionDevice handles device provisioning
 //
-//	@Summary		Create Device
-//	@Description	Register a new device in the system
+//	@Summary		Provision Device
+//	@Description	Provision and register a new device in the OpenUSP platform
+//	@Description	This endpoint handles the initial device registration process
+//	@Description	including endpoint ID assignment, certificate management, and
+//	@Description	initial configuration according to TR-181/TR-369 specifications
 //	@Tags			Devices
 //	@Accept			json
 //	@Produce		json
-//	@Param			device	body		map[string]interface{}	true	"Device information"
-//	@Success		201		{object}	map[string]interface{}	"Device created successfully"
-//	@Failure		400		{object}	map[string]interface{}	"Invalid request body"
-//	@Failure		500		{object}	map[string]interface{}	"Internal server error"
+//	@Param			device	body		map[string]interface{}	true	"Device provisioning information (endpoint_id, serial_number, product_class, etc.)"
+//	@Success		201		{object}	map[string]interface{}	"Device provisioned successfully"
+//	@Failure		400		{object}	map[string]interface{}	"Invalid provisioning request"
+//	@Failure		409		{object}	map[string]interface{}	"Device already provisioned"
+//	@Failure		500		{object}	map[string]interface{}	"Device provisioning failed"
 //	@Router			/devices [post]
-func (gw *APIGateway) createDevice(c *gin.Context) {
+func (gw *APIGateway) provisionDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	var device pb.Device
 	if err := c.ShouldBindJSON(&device); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
+			"error":   "Invalid provisioning request",
 			"details": err.Error(),
 		})
 		return
 	}
 
-	// Set timestamps
+	// Set timestamps for device provisioning
 	now := timestamppb.Now()
 	device.CreatedAt = now
 	device.UpdatedAt = now
 
-	// Call data service
+	// Call data service to provision the device
 	resp, err := gw.dataClient.CreateDevice(ctx, &device)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create device",
+			"error":   "Device provisioning failed",
 			"details": err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp.Device)
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Device provisioned successfully",
+		"device":  resp.Device,
+	})
 }
 
 // Get device by ID
@@ -395,7 +425,13 @@ func (gw *APIGateway) getDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	// Try both parameter names for backward compatibility
+	idStr := c.Param("device_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid device ID",
@@ -421,7 +457,13 @@ func (gw *APIGateway) updateDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	// Try both parameter names for backward compatibility
+	idStr := c.Param("device_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid device ID",
@@ -455,22 +497,31 @@ func (gw *APIGateway) updateDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, resp.Device)
 }
 
-// Delete device
-// @Summary Delete Device
-// @Description Delete a device by ID from the OpenUSP platform
+// Delete device (deprovision)
+// @Summary Deprovision Device
+// @Description Deprovision and remove a device from the OpenUSP platform
+// @Description This endpoint handles device deprovisioning including certificate
+// @Description revocation, configuration cleanup, and removal from the platform
 // @Tags Devices
 // @Accept json
 // @Produce json
-// @Param id path int true "Device ID"
-// @Success 200 {object} map[string]interface{} "Device deleted successfully"
+// @Param device_id path string true "Device ID"
+// @Success 200 {object} map[string]interface{} "Device deprovisioned successfully"
 // @Failure 400 {object} map[string]interface{} "Invalid device ID"
-// @Failure 500 {object} map[string]interface{} "Failed to delete device"
-// @Router /devices/{id} [delete]
+// @Failure 404 {object} map[string]interface{} "Device not found"
+// @Failure 500 {object} map[string]interface{} "Device deprovisioning failed"
+// @Router /devices/{device_id} [delete]
 func (gw *APIGateway) deleteDevice(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	// Try both parameter names for backward compatibility
+	idStr := c.Param("device_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid device ID",
@@ -482,42 +533,14 @@ func (gw *APIGateway) deleteDevice(c *gin.Context) {
 	_, err = gw.dataClient.DeleteDevice(ctx, uint32(id))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete device",
+			"error":   "Failed to deprovision device",
 			"details": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Device deleted successfully",
-	})
-}
-
-// Get device parameters
-func (gw *APIGateway) getDeviceParameters(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid device ID",
-		})
-		return
-	}
-
-	// Call data service
-	resp, err := gw.dataClient.GetDeviceParameters(ctx, uint32(id))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to fetch device parameters",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"parameters": resp.Parameters,
+		"message": "Device deprovisioned successfully",
 	})
 }
 
@@ -526,7 +549,13 @@ func (gw *APIGateway) getDeviceAlerts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	// Try both parameter names for backward compatibility
+	idStr := c.Param("device_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid device ID",
@@ -562,7 +591,13 @@ func (gw *APIGateway) getDeviceSessions(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	// Try both parameter names for backward compatibility
+	idStr := c.Param("device_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid device ID",
@@ -582,119 +617,6 @@ func (gw *APIGateway) getDeviceSessions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"sessions": resp.Sessions,
-	})
-}
-
-// Parameter management handlers
-
-// Create parameter
-func (gw *APIGateway) createParameter(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var parameter pb.Parameter
-	if err := c.ShouldBindJSON(&parameter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	// Set timestamps
-	now := timestamppb.Now()
-	parameter.LastUpdated = now
-	parameter.CreatedAt = now
-	parameter.UpdatedAt = now
-
-	// Call data service
-	resp, err := gw.dataClient.CreateParameter(ctx, &parameter)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create parameter",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusCreated, resp.Parameter)
-}
-
-// Delete parameter
-func (gw *APIGateway) deleteParameter(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	deviceID, err := strconv.ParseUint(c.Param("device_id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid device ID",
-		})
-		return
-	}
-
-	path := c.Param("path")
-	if path == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Parameter path is required",
-		})
-		return
-	}
-
-	// Call data service
-	_, err = gw.dataClient.DeleteParameter(ctx, uint32(deviceID), path)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete parameter",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Parameter deleted successfully",
-	})
-}
-
-// @Summary Get parameters by endpoint ID
-// @Description Get device parameters filtered by endpoint ID with optional path pattern
-// @Tags Parameters
-// @Accept json
-// @Produce json
-// @Param endpoint_id path string true "Endpoint ID"
-// @Param path_pattern query string false "Path pattern for filtering parameters"
-// @Success 200 {object} map[string]interface{} "Parameters retrieved successfully"
-// @Failure 400 {object} map[string]interface{} "Invalid endpoint ID"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /parameters/endpoint/{endpoint_id} [get]
-func (gw *APIGateway) getParametersByEndpoint(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	endpointID := c.Param("endpoint_id")
-	if endpointID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Endpoint ID is required",
-		})
-		return
-	}
-
-	// Get optional path pattern from query parameter
-	pathPattern := c.Query("path_pattern")
-
-	// Call data service
-	resp, err := gw.dataClient.GetParametersByEndpoint(ctx, endpointID, pathPattern)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to fetch parameters by endpoint",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"device":     resp.Device,
-		"parameters": resp.Parameters,
 	})
 }
 
@@ -876,6 +798,995 @@ func (gw *APIGateway) closeSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Session closed successfully",
 	})
+}
+
+// TR-181 Parameter Operations Handlers
+
+// @Summary Get Device Parameters (TR-181)
+// @Description Get all parameters for a specific device, optionally filtered by path pattern
+// @Tags TR-181 Parameters
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path query string false "Parameter path pattern (e.g., Device.DeviceInfo.*)"
+// @Param partial_path query bool false "Enable partial path matching"
+// @Success 200 {object} map[string]interface{} "Parameters retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/parameters [get]
+func (gw *APIGateway) getParameters(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	// Get optional filters from query parameters
+	pathPattern := c.DefaultQuery("path", "*")
+	partialPath, _ := strconv.ParseBool(c.DefaultQuery("partial_path", "false"))
+
+	// Call data service
+	resp, err := gw.dataClient.GetParametersByPath(ctx, uint32(deviceID), pathPattern)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch device parameters",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":    deviceID,
+		"path_pattern": pathPattern,
+		"partial_path": partialPath,
+		"parameters":   resp.Parameters,
+		"count":        len(resp.Parameters),
+	})
+}
+
+// @Summary Set Single Parameter (TR-181)
+// @Description Set a single parameter value for a device
+// @Tags TR-181 Parameters
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param request body map[string]interface{} true "Parameter set request with path and value"
+// @Success 200 {object} map[string]interface{} "Parameter set successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/parameters [put]
+func (gw *APIGateway) setParameter(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	var request struct {
+		Path  string      `json:"path" binding:"required"`
+		Value interface{} `json:"value" binding:"required"`
+		Type  string      `json:"type,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Convert value to string for now (in a real implementation, you'd handle types properly)
+	valueStr := fmt.Sprintf("%v", request.Value)
+
+	// Create parameter object
+	parameter := &pb.Parameter{
+		DeviceId:    uint32(deviceID),
+		Path:        request.Path,
+		Value:       valueStr,
+		Type:        request.Type,
+		LastUpdated: timestamppb.Now(),
+		UpdatedAt:   timestamppb.Now(),
+	}
+
+	// Call data service to update parameter
+	resp, err := gw.dataClient.CreateParameter(ctx, parameter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to set parameter",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Parameter set successfully",
+		"parameter": resp.Parameter,
+	})
+}
+
+// @Summary Bulk Get Parameters (TR-181)
+// @Description Get multiple parameters by paths in a single request
+// @Tags TR-181 Parameters
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param request body map[string]interface{} true "Parameter get request with paths array"
+// @Success 200 {object} map[string]interface{} "Parameters retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/parameters/get [post]
+func (gw *APIGateway) bulkGetParameters(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	var request struct {
+		Paths []string `json:"paths" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Get all parameters for the device and filter by paths
+	allParams, err := gw.dataClient.GetParametersByPath(ctx, uint32(deviceID), "*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch parameters",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Filter parameters by requested paths
+	var filteredParams []*pb.Parameter
+	for _, param := range allParams.Parameters {
+		for _, requestedPath := range request.Paths {
+			if param.Path == requestedPath {
+				filteredParams = append(filteredParams, param)
+				break
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":  deviceID,
+		"paths":      request.Paths,
+		"parameters": filteredParams,
+		"count":      len(filteredParams),
+	})
+}
+
+// @Summary Bulk Set Parameters (TR-181)
+// @Description Set multiple parameters in a single request
+// @Tags TR-181 Parameters
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param request body map[string]interface{} true "Parameter set request with parameters array"
+// @Success 200 {object} map[string]interface{} "Parameters set successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/parameters/set [post]
+func (gw *APIGateway) bulkSetParameters(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	var request struct {
+		Parameters []struct {
+			Path  string      `json:"path" binding:"required"`
+			Value interface{} `json:"value" binding:"required"`
+			Type  string      `json:"type,omitempty"`
+		} `json:"parameters" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	var results []map[string]interface{}
+	var successCount, errorCount int
+
+	// Process each parameter
+	for _, paramReq := range request.Parameters {
+		valueStr := fmt.Sprintf("%v", paramReq.Value)
+		parameter := &pb.Parameter{
+			DeviceId:    uint32(deviceID),
+			Path:        paramReq.Path,
+			Value:       valueStr,
+			Type:        paramReq.Type,
+			LastUpdated: timestamppb.Now(),
+			UpdatedAt:   timestamppb.Now(),
+		}
+
+		resp, err := gw.dataClient.CreateParameter(ctx, parameter)
+		if err != nil {
+			results = append(results, map[string]interface{}{
+				"path":    paramReq.Path,
+				"success": false,
+				"error":   err.Error(),
+			})
+			errorCount++
+		} else {
+			results = append(results, map[string]interface{}{
+				"path":      paramReq.Path,
+				"success":   true,
+				"parameter": resp.Parameter,
+			})
+			successCount++
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":     deviceID,
+		"total":         len(request.Parameters),
+		"success_count": successCount,
+		"error_count":   errorCount,
+		"results":       results,
+	})
+}
+
+// @Summary Search Parameters (TR-181)
+// @Description Search parameters using advanced filters and patterns
+// @Tags TR-181 Parameters
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path query string false "Path pattern to search"
+// @Param value query string false "Value pattern to search"
+// @Param type query string false "Parameter type filter"
+// @Success 200 {object} map[string]interface{} "Parameters found"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/parameters/search [get]
+func (gw *APIGateway) searchParameters(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	// Get search filters
+	pathPattern := c.Query("path")
+	valuePattern := c.Query("value")
+	typeFilter := c.Query("type")
+
+	// Get all parameters for the device
+	allParams, err := gw.dataClient.GetParametersByPath(ctx, uint32(deviceID), "*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch parameters",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Apply filters
+	var filteredParams []*pb.Parameter
+	for _, param := range allParams.Parameters {
+		match := true
+
+		// Apply path filter
+		if pathPattern != "" && !strings.Contains(param.Path, pathPattern) {
+			match = false
+		}
+
+		// Apply value filter
+		if valuePattern != "" && !strings.Contains(param.Value, valuePattern) {
+			match = false
+		}
+
+		// Apply type filter
+		if typeFilter != "" && param.Type != typeFilter {
+			match = false
+		}
+
+		if match {
+			filteredParams = append(filteredParams, param)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":     deviceID,
+		"path_pattern":  pathPattern,
+		"value_pattern": valuePattern,
+		"type_filter":   typeFilter,
+		"parameters":    filteredParams,
+		"count":         len(filteredParams),
+	})
+}
+
+// TR-181 Object Operations Handlers
+
+// @Summary Get Device Objects (TR-181)
+// @Description Get all objects/object instances for a device
+// @Tags TR-181 Objects
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path query string false "Object path filter"
+// @Success 200 {object} map[string]interface{} "Objects retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/objects [get]
+func (gw *APIGateway) getObjects(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	pathFilter := c.Query("path")
+
+	// For now, return a mock response - in a real implementation, you'd have object management
+	objects := []map[string]interface{}{
+		{
+			"path":           "Device.DeviceInfo.",
+			"object_type":    "single",
+			"access":         "readOnly",
+			"parameters":     []string{"Manufacturer", "ModelName", "SerialNumber"},
+			"commands":       []string{},
+			"instance_count": 1,
+		},
+		{
+			"path":           "Device.WiFi.Radio.",
+			"object_type":    "multi",
+			"access":         "readWrite",
+			"parameters":     []string{"Enable", "Status", "Channel"},
+			"commands":       []string{"Reset", "Restart"},
+			"instance_count": 2,
+		},
+	}
+
+	// Apply path filter if provided
+	if pathFilter != "" {
+		var filteredObjects []map[string]interface{}
+		for _, obj := range objects {
+			if strings.Contains(obj["path"].(string), pathFilter) {
+				filteredObjects = append(filteredObjects, obj)
+			}
+		}
+		objects = filteredObjects
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":   deviceID,
+		"path_filter": pathFilter,
+		"objects":     objects,
+		"count":       len(objects),
+	})
+}
+
+// @Summary Get Object by Path (TR-181)
+// @Description Get specific object details by path
+// @Tags TR-181 Objects
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path path string true "Object path"
+// @Success 200 {object} map[string]interface{} "Object details retrieved"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 404 {object} map[string]interface{} "Object not found"
+// @Router /devices/{device_id}/objects/{path} [get]
+func (gw *APIGateway) getObjectByPath(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	objectPath := c.Param("object_path")
+	if objectPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Object path is required",
+		})
+		return
+	}
+
+	// Mock object details - in real implementation, fetch from data service
+	objectDetails := map[string]interface{}{
+		"device_id":      deviceID,
+		"path":           objectPath,
+		"object_type":    "multi",
+		"access":         "readWrite",
+		"description":    "WiFi Radio configuration object",
+		"parameters":     []string{"Enable", "Status", "Channel", "PowerLevel"},
+		"commands":       []string{"Reset", "Restart", "ScanChannels"},
+		"instance_count": 2,
+		"instances": []map[string]interface{}{
+			{"instance_id": "1", "alias": "Radio_2.4GHz", "status": "Up"},
+			{"instance_id": "2", "alias": "Radio_5GHz", "status": "Up"},
+		},
+	}
+
+	c.JSON(http.StatusOK, objectDetails)
+}
+
+// @Summary Create Object Instance (TR-181)
+// @Description Create a new instance of a multi-instance object
+// @Tags TR-181 Objects
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path path string true "Object path"
+// @Param request body map[string]interface{} true "Instance creation request"
+// @Success 201 {object} map[string]interface{} "Instance created successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/objects/{path}/instances [post]
+func (gw *APIGateway) createInstance(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	objectPath := c.Param("object_path")
+
+	var request struct {
+		Alias      string                 `json:"alias,omitempty"`
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Mock instance creation - in real implementation, call data service
+	newInstance := map[string]interface{}{
+		"device_id":   deviceID,
+		"object_path": objectPath,
+		"instance_id": "3",
+		"alias":       request.Alias,
+		"status":      "Created",
+		"parameters":  request.Parameters,
+		"created_at":  time.Now().Unix(),
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":  "Object instance created successfully",
+		"instance": newInstance,
+	})
+}
+
+// @Summary Update Object Instance (TR-181)
+// @Description Update an existing object instance
+// @Tags TR-181 Objects
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path path string true "Object path"
+// @Param instance_id path string true "Instance ID"
+// @Param request body map[string]interface{} true "Instance update request"
+// @Success 200 {object} map[string]interface{} "Instance updated successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 404 {object} map[string]interface{} "Instance not found"
+// @Router /devices/{device_id}/objects/{path}/instances/{instance_id} [put]
+func (gw *APIGateway) updateInstance(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	objectPath := c.Param("object_path")
+	instanceID := c.Param("instance_id")
+
+	var request struct {
+		Alias      string                 `json:"alias,omitempty"`
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Mock instance update
+	updatedInstance := map[string]interface{}{
+		"device_id":   deviceID,
+		"object_path": objectPath,
+		"instance_id": instanceID,
+		"alias":       request.Alias,
+		"status":      "Updated",
+		"parameters":  request.Parameters,
+		"updated_at":  time.Now().Unix(),
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Object instance updated successfully",
+		"instance": updatedInstance,
+	})
+}
+
+// @Summary Delete Object Instance (TR-181)
+// @Description Delete an object instance
+// @Tags TR-181 Objects
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path path string true "Object path"
+// @Param instance_id path string true "Instance ID"
+// @Success 200 {object} map[string]interface{} "Instance deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 404 {object} map[string]interface{} "Instance not found"
+// @Router /devices/{device_id}/objects/{path}/instances/{instance_id} [delete]
+func (gw *APIGateway) deleteInstance(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	objectPath := c.Param("object_path")
+	instanceID := c.Param("instance_id")
+
+	// Mock instance deletion
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Object instance deleted successfully",
+		"device_id":   deviceID,
+		"object_path": objectPath,
+		"instance_id": instanceID,
+		"deleted_at":  time.Now().Unix(),
+	})
+}
+
+// TR-181 Command Operations Handlers
+
+// @Summary Execute Command (TR-181)
+// @Description Execute a command on a device or object
+// @Tags TR-181 Commands
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param request body map[string]interface{} true "Command execution request"
+// @Success 200 {object} map[string]interface{} "Command executed successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Command execution failed"
+// @Router /devices/{device_id}/commands/execute [post]
+func (gw *APIGateway) executeCommand(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	var request struct {
+		Command    string                 `json:"command" binding:"required"`
+		ObjectPath string                 `json:"object_path,omitempty"`
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+		Async      bool                   `json:"async,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Mock command execution
+	executionID := fmt.Sprintf("exec_%d_%d", deviceID, time.Now().Unix())
+
+	result := map[string]interface{}{
+		"execution_id": executionID,
+		"device_id":    deviceID,
+		"command":      request.Command,
+		"object_path":  request.ObjectPath,
+		"status":       "completed",
+		"result":       "Command executed successfully",
+		"executed_at":  time.Now().Unix(),
+	}
+
+	if request.Async {
+		result["status"] = "pending"
+		result["result"] = "Command execution started asynchronously"
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary Get Object Commands (TR-181)
+// @Description Get available commands for a specific object
+// @Tags TR-181 Commands
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param path path string true "Object path"
+// @Success 200 {object} map[string]interface{} "Commands retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Router /devices/{device_id}/objects/{path}/commands [get]
+func (gw *APIGateway) getObjectCommands(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	objectPath := c.Param("object_path")
+
+	// Mock command list based on object path
+	commands := []map[string]interface{}{
+		{
+			"name":        "Reset",
+			"description": "Reset the object to default values",
+			"parameters":  []string{},
+			"async":       false,
+		},
+		{
+			"name":        "Restart",
+			"description": "Restart the object/service",
+			"parameters":  []string{},
+			"async":       true,
+		},
+	}
+
+	// Add object-specific commands
+	if strings.Contains(objectPath, "WiFi.Radio") {
+		commands = append(commands, map[string]interface{}{
+			"name":        "ScanChannels",
+			"description": "Scan for available WiFi channels",
+			"parameters":  []string{"duration", "band"},
+			"async":       true,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":   deviceID,
+		"object_path": objectPath,
+		"commands":    commands,
+		"count":       len(commands),
+	})
+}
+
+// TR-181 Subscription Operations Handlers
+
+// @Summary Create Subscription (TR-181)
+// @Description Create a notification subscription for parameter changes
+// @Tags TR-181 Subscriptions
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param request body map[string]interface{} true "Subscription request"
+// @Success 201 {object} map[string]interface{} "Subscription created successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /devices/{device_id}/subscriptions [post]
+func (gw *APIGateway) createSubscription(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	var request struct {
+		Paths      []string `json:"paths" binding:"required"`
+		NotifyType string   `json:"notify_type" binding:"required"`
+		Recipient  string   `json:"recipient" binding:"required"`
+		Enabled    bool     `json:"enabled"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Mock subscription creation
+	subscriptionID := fmt.Sprintf("sub_%d_%d", deviceID, time.Now().Unix())
+
+	subscription := map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"device_id":       deviceID,
+		"paths":           request.Paths,
+		"notify_type":     request.NotifyType,
+		"recipient":       request.Recipient,
+		"enabled":         request.Enabled,
+		"created_at":      time.Now().Unix(),
+		"status":          "active",
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":      "Subscription created successfully",
+		"subscription": subscription,
+	})
+}
+
+// @Summary Get Subscriptions (TR-181)
+// @Description Get all subscriptions for a device
+// @Tags TR-181 Subscriptions
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Success 200 {object} map[string]interface{} "Subscriptions retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Router /devices/{device_id}/subscriptions [get]
+func (gw *APIGateway) getSubscriptions(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	// Mock subscriptions list
+	subscriptions := []map[string]interface{}{
+		{
+			"subscription_id": "sub_1_12345",
+			"device_id":       deviceID,
+			"paths":           []string{"Device.WiFi.Radio.*.Status"},
+			"notify_type":     "ValueChange",
+			"recipient":       "controller@example.com",
+			"enabled":         true,
+			"created_at":      time.Now().Unix() - 86400,
+			"status":          "active",
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"device_id":     deviceID,
+		"subscriptions": subscriptions,
+		"count":         len(subscriptions),
+	})
+}
+
+// @Summary Delete Subscription (TR-181)
+// @Description Delete a notification subscription
+// @Tags TR-181 Subscriptions
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param subscription_id path string true "Subscription ID"
+// @Success 200 {object} map[string]interface{} "Subscription deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 404 {object} map[string]interface{} "Subscription not found"
+// @Router /devices/{device_id}/subscriptions/{subscription_id} [delete]
+func (gw *APIGateway) deleteSubscription(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	subscriptionID := c.Param("subscription_id")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "Subscription deleted successfully",
+		"device_id":       deviceID,
+		"subscription_id": subscriptionID,
+		"deleted_at":      time.Now().Unix(),
+	})
+}
+
+// TR-181 Data Model Operations Handlers
+
+// @Summary Get Data Model (TR-181)
+// @Description Get the complete data model schema for a device
+// @Tags TR-181 Data Model
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Success 200 {object} map[string]interface{} "Data model retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Router /devices/{device_id}/datamodel [get]
+func (gw *APIGateway) getDataModel(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	// Mock data model - in real implementation, this would be device-specific
+	dataModel := map[string]interface{}{
+		"device_id": deviceID,
+		"version":   "1.0",
+		"schema":    "TR-181 Issue 2 Amendment 15",
+		"objects": []map[string]interface{}{
+			{
+				"path":        "Device.",
+				"type":        "object",
+				"access":      "readOnly",
+				"description": "Top-level object for a Device",
+			},
+			{
+				"path":        "Device.DeviceInfo.",
+				"type":        "object",
+				"access":      "readOnly",
+				"description": "Device information",
+			},
+			{
+				"path":        "Device.WiFi.",
+				"type":        "object",
+				"access":      "readWrite",
+				"description": "WiFi configuration",
+			},
+		},
+		"generated_at": time.Now().Unix(),
+	}
+
+	c.JSON(http.StatusOK, dataModel)
+}
+
+// @Summary Get Schema (TR-181)
+// @Description Get the TR-181 schema information supported by the device
+// @Tags TR-181 Data Model
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Success 200 {object} map[string]interface{} "Schema information retrieved"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Router /devices/{device_id}/schema [get]
+func (gw *APIGateway) getSchema(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	schema := map[string]interface{}{
+		"device_id":    deviceID,
+		"schema_name":  "TR-181",
+		"version":      "Issue 2 Amendment 15",
+		"date":         "September 2020",
+		"organization": "Broadband Forum",
+		"supported_profiles": []string{
+			"Baseline:1",
+			"EthernetInterface:1",
+			"WiFiDevice:1",
+			"Routing:1",
+		},
+		"extensions": []string{
+			"VendorSpecific.OpenUSP",
+		},
+		"retrieved_at": time.Now().Unix(),
+	}
+
+	c.JSON(http.StatusOK, schema)
+}
+
+// @Summary Get Object Tree (TR-181)
+// @Description Get the hierarchical object tree structure for a device
+// @Tags TR-181 Data Model
+// @Accept json
+// @Produce json
+// @Param device_id path string true "Device ID"
+// @Param depth query int false "Maximum depth to retrieve" default(3)
+// @Success 200 {object} map[string]interface{} "Object tree retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid device ID"
+// @Router /devices/{device_id}/tree [get]
+func (gw *APIGateway) getObjectTree(c *gin.Context) {
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid device ID",
+		})
+		return
+	}
+
+	depth, _ := strconv.Atoi(c.DefaultQuery("depth", "3"))
+
+	// Mock object tree structure
+	objectTree := map[string]interface{}{
+		"device_id": deviceID,
+		"depth":     depth,
+		"tree": map[string]interface{}{
+			"Device": map[string]interface{}{
+				"type":           "object",
+				"instance_count": 1,
+				"children": map[string]interface{}{
+					"DeviceInfo": map[string]interface{}{
+						"type":           "object",
+						"instance_count": 1,
+						"parameters":     []string{"Manufacturer", "ModelName", "SerialNumber"},
+					},
+					"WiFi": map[string]interface{}{
+						"type":           "object",
+						"instance_count": 1,
+						"children": map[string]interface{}{
+							"Radio": map[string]interface{}{
+								"type":           "multi_object",
+								"instance_count": 2,
+								"parameters":     []string{"Enable", "Status", "Channel"},
+							},
+						},
+					},
+				},
+			},
+		},
+		"generated_at": time.Now().Unix(),
+	}
+
+	c.JSON(http.StatusOK, objectTree)
 }
 
 func main() {

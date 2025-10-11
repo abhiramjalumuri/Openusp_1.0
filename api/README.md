@@ -25,5 +25,5 @@ The OpenUSP platform provides the following APIs:
 
 ## Documentation Access
 
-- **Swagger UI**: http://localhost:8082/swagger/index.html (development)
-- **API Docs**: See `docs/SWAGGER_UI.md` for detailed documentation
+- **Swagger UI**: http://localhost:6500/swagger/index.html (API Gateway)
+- **API Documentation**: See [API Reference](../docs/API_REFERENCE.md) for detailed documentation

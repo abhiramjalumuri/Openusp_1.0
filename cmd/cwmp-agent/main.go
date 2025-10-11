@@ -164,8 +164,8 @@ type Header struct {
 }
 
 type Body struct {
-	Inform         *Inform         `xml:"urn:dslforum-org:cwmp-1-0 Inform,omitempty"`
-	InformResponse *InformResponse `xml:"urn:dslforum-org:cwmp-1-0 InformResponse,omitempty"`
+	Inform         *Inform         `xml:"urn:dslforum-org:cwmp-1-2 Inform,omitempty"`
+	InformResponse *InformResponse `xml:"urn:dslforum-org:cwmp-1-2 InformResponse,omitempty"`
 }
 
 type Inform struct {

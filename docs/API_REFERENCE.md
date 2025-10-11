@@ -13,7 +13,11 @@ Complete API documentation for OpenUSP services.
 
 ## REST API Gateway
 
-Base URL: `http://localhost:8080/api/v1`
+Base URL: `http://localhost:6500/api/v1`
+
+### TR-181 Compliant Endpoints
+
+The OpenUSP API Gateway provides TR-181 compliant REST endpoints for comprehensive device management following Broadband Forum specifications.
 
 ### Devices API
 
@@ -167,76 +171,262 @@ DELETE /api/v1/devices/{device_id}
 }
 ```
 
-### Parameters API
+### TR-181 Parameters API
 
-#### List Device Parameters
+#### Get Device Parameters
 ```http
 GET /api/v1/devices/{device_id}/parameters
 ```
 
 **Query Parameters:**
-- `path` (optional): Filter by parameter path
-- `writable` (optional): Filter by writable status (true/false)
+- `path` (optional): Parameter path pattern (e.g., Device.DeviceInfo.*)
+- `partial_path` (optional): Enable partial path matching (true/false)
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": [
+  "device_id": 1,
+  "path_pattern": "Device.DeviceInfo.*",
+  "partial_path": false,
+  "parameters": [
     {
-      "id": "param-001",
-      "device_id": "device-001",
-      "path": "Device.DeviceInfo.ModelName",
-      "value": "Model-X1",
-      "type": "string",
-      "writable": false,
-      "last_update": "2024-01-15T10:30:00Z",
-      "created_at": "2024-01-01T00:00:00Z",
-      "updated_at": "2024-01-15T10:30:00Z"
+      "name": "Device.DeviceInfo.Manufacturer",
+      "value": "OpenUSP",
+      "type": "xsd:string"
+    },
+    {
+      "name": "Device.DeviceInfo.ModelName", 
+      "value": "Gateway-v1",
+      "type": "xsd:string"
     }
+  ],
+  "count": 2
+}
+```
+
+#### Set Single Parameter
+```http
+PUT /api/v1/devices/{device_id}/parameters
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "path": "Device.WiFi.SSID.1.SSID",
+  "value": "MyNewNetwork",
+  "type": "xsd:string"
+}
+```
+
+#### Bulk Get Parameters
+```http
+POST /api/v1/devices/{device_id}/parameters/get
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "paths": [
+    "Device.DeviceInfo.Manufacturer",
+    "Device.DeviceInfo.ModelName",
+    "Device.WiFi.Radio.1.Status"
   ]
 }
 ```
 
-#### Get Parameter
+#### Bulk Set Parameters
 ```http
-GET /api/v1/devices/{device_id}/parameters/{parameter_id}
-```
-
-#### Set Parameter Value
-```http
-PUT /api/v1/devices/{device_id}/parameters/{parameter_id}
+POST /api/v1/devices/{device_id}/parameters/set
 Content-Type: application/json
 ```
 
 **Request Body:**
 ```json
 {
-  "value": "New Value"
-}
-```
-
-#### Bulk Parameter Operations
-```http
-POST /api/v1/devices/{device_id}/parameters/bulk
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "operation": "set",
   "parameters": [
     {
       "path": "Device.WiFi.SSID.1.SSID",
-      "value": "MyNewNetwork"
+      "value": "MyNewNetwork",
+      "type": "xsd:string"
     },
     {
       "path": "Device.WiFi.SSID.1.Enable",
-      "value": "true"
+      "value": "true",
+      "type": "xsd:boolean"
     }
   ]
 }
+```
+
+#### Search Parameters
+```http
+GET /api/v1/devices/{device_id}/parameters/search
+```
+
+**Query Parameters:**
+- `path` (optional): Path pattern to search
+- `value` (optional): Value pattern to search
+- `type` (optional): Parameter type filter
+
+### TR-181 Objects API
+
+#### Get Device Objects
+```http
+GET /api/v1/devices/{device_id}/objects
+```
+
+**Query Parameters:**
+- `path` (optional): Object path filter
+
+**Response:**
+```json
+{
+  "device_id": 1,
+  "path_filter": "",
+  "objects": [
+    {
+      "path": "Device.DeviceInfo.",
+      "object_type": "single",
+      "access": "readOnly",
+      "parameters": ["Manufacturer", "ModelName", "SerialNumber"],
+      "commands": [],
+      "instance_count": 1
+    },
+    {
+      "path": "Device.WiFi.Radio.",
+      "object_type": "multi",
+      "access": "readWrite", 
+      "parameters": ["Enable", "Status", "Channel"],
+      "commands": ["Reset", "Restart"],
+      "instance_count": 2
+    }
+  ],
+  "count": 2
+}
+```
+
+#### Get Object by Path
+```http
+GET /api/v1/devices/{device_id}/objects/{path}
+```
+
+#### Create Object Instance
+```http
+POST /api/v1/devices/{device_id}/objects/{path}/instances
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "alias": "NewRadio",
+  "parameters": {
+    "Enable": "true",
+    "Channel": "6"
+  }
+}
+```
+
+#### Update Object Instance
+```http
+PUT /api/v1/devices/{device_id}/objects/{path}/instances/{instance_id}
+Content-Type: application/json
+```
+
+#### Delete Object Instance
+```http
+DELETE /api/v1/devices/{device_id}/objects/{path}/instances/{instance_id}
+```
+
+### TR-181 Commands API
+
+#### Execute Command
+```http
+POST /api/v1/devices/{device_id}/commands/execute
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "command": "Reset",
+  "object_path": "Device.WiFi.Radio.1",
+  "parameters": {
+    "ResetType": "Factory"
+  },
+  "async": false
+}
+```
+
+**Response:**
+```json
+{
+  "execution_id": "exec_1_1705392000",
+  "device_id": 1,
+  "command": "Reset", 
+  "object_path": "Device.WiFi.Radio.1",
+  "status": "completed",
+  "result": "Command executed successfully",
+  "executed_at": 1705392000
+}
+```
+
+#### Get Object Commands
+```http
+GET /api/v1/devices/{device_id}/objects/{path}/commands
+```
+
+### TR-181 Subscriptions API
+
+#### Create Subscription
+```http
+POST /api/v1/devices/{device_id}/subscriptions
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "paths": ["Device.WiFi.Radio.*.Status"],
+  "notify_type": "ValueChange",
+  "recipient": "controller@example.com",
+  "enabled": true
+}
+```
+
+#### Get Subscriptions
+```http
+GET /api/v1/devices/{device_id}/subscriptions
+```
+
+#### Delete Subscription
+```http
+DELETE /api/v1/devices/{device_id}/subscriptions/{subscription_id}
+```
+
+### TR-181 Data Model API
+
+#### Get Data Model
+```http
+GET /api/v1/devices/{device_id}/datamodel
+```
+
+#### Get Schema
+```http
+GET /api/v1/devices/{device_id}/schema
+```
+
+#### Get Object Tree
+```http
+GET /api/v1/devices/{device_id}/tree
+```
+
+**Query Parameters:**
+- `depth` (optional): Maximum depth to retrieve (default: 3)
+
+### Alerts API
 ```
 
 ### Alerts API
@@ -555,7 +745,7 @@ X-RateLimit-Reset: 1642248600
 ```go
 import "openusp/pkg/client"
 
-client := client.NewOpenUSPClient("http://localhost:8080", "your-api-key")
+client := client.NewOpenUSPClient("http://localhost:6500", "your-api-key")
 
 devices, err := client.ListDevices(context.Background(), &client.ListDevicesOptions{
     Limit: 10,
@@ -568,7 +758,7 @@ devices, err := client.ListDevices(context.Background(), &client.ListDevicesOpti
 const OpenUSP = require('openusp-client');
 
 const client = new OpenUSP.Client({
-  baseURL: 'http://localhost:8080',
+  baseURL: 'http://localhost:6500',
   apiKey: 'your-api-key'
 });
 
@@ -581,7 +771,7 @@ const devices = await client.devices.list({ limit: 10 });
 import openusp
 
 client = openusp.Client(
-    base_url='http://localhost:8080',
+    base_url='http://localhost:6500',
     api_key='your-api-key'
 )
 
@@ -595,28 +785,28 @@ devices = client.devices.list(limit=10)
 ```bash
 # List devices
 curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:8080/api/v1/devices
+     http://localhost:6500/api/v1/devices
 
 # Get device
 curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:8080/api/v1/devices/device-001
+     http://localhost:6500/api/v1/devices/device-001
 
 # Create device
 curl -X POST \
      -H "Authorization: Bearer your-api-key" \
      -H "Content-Type: application/json" \
      -d '{"endpoint_id":"test-device","oui":"123456"}' \
-     http://localhost:8080/api/v1/devices
+     http://localhost:6500/api/v1/devices
 ```
 
 ### Using httpie
 
 ```bash
 # List devices
-http GET localhost:8080/api/v1/devices Authorization:"Bearer your-api-key"
+http GET localhost:6500/api/v1/devices Authorization:"Bearer your-api-key"
 
 # Create device
-http POST localhost:8080/api/v1/devices \
+http POST localhost:6500/api/v1/devices \
      Authorization:"Bearer your-api-key" \
      endpoint_id=test-device oui=123456
 ```
@@ -641,4 +831,4 @@ Import the OpenAPI specification from `/api/v1/swagger.json` to automatically ge
 
 ---
 
-For more examples and interactive testing, visit the [Swagger UI](http://localhost:8080/swagger/index.html) when the API Gateway is running.
+For more examples and interactive testing, visit the [Swagger UI](http://localhost:6500/swagger/index.html) when the API Gateway is running.

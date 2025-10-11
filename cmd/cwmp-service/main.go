@@ -292,13 +292,15 @@ func (s *CWMPService) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	healthStatus := map[string]interface{}{
-		"service":      "cwmp-service",
-		"status":       "healthy",
-		"timestamp":    time.Now().UTC().Format(time.RFC3339),
-		"version":      "1.0.0",
-		"protocol":     "TR-069",
-		"sessions":     len(s.connections),
-		"max_sessions": s.config.MaxConcurrentSessions,
+		"service":            "cwmp-service",
+		"status":             "healthy",
+		"timestamp":          time.Now().UTC().Format(time.RFC3339),
+		"version":            "1.0.0",
+		"protocol":           "TR-069 v1.2",
+		"protocol_namespace": "urn:dslforum-org:cwmp-1-2",
+		"supported_versions": []string{"1.0", "1.1", "1.2"},
+		"sessions":           len(s.connections),
+		"max_sessions":       s.config.MaxConcurrentSessions,
 	}
 
 	if err := json.NewEncoder(w).Encode(healthStatus); err != nil {

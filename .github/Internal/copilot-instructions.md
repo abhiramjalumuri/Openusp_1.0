@@ -315,10 +315,10 @@ openusp/
     - Agents include proper binary message handling, authentication, and TR-369 compliance
 
 12. **Development Infrastructure**
-    - **Swagger UI Documentation** (`docs/docs.go`, `docs/SWAGGER_UI.md`)
+    - **API Documentation** (`api/docs.go`, `docs/API_REFERENCE.md`)
     - **Development Scripts** (`scripts/start-dev-with-swagger.sh`, `scripts/swagger-demo.sh`)
     - **Comprehensive Makefile** with all build, run, and testing targets
-    - **Alternative Port Configuration** for conflict-free development
+    - **Static Port Configuration** for predictable service deployment
 
 6. **Unified Configuration System** (`pkg/config/deployment.go`)
    - Environment-driven configuration with comprehensive defaults

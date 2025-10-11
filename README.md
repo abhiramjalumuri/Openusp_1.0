@@ -18,8 +18,11 @@ A cloud-native microservice implementation of the Broadband Forum's **TR-369 bas
 - **🆕 Proactive Device Onboarding**: Factory default agent support without initial NOTIFY messages
 
 ### TR-069 CWMP Backward Compatibility
-- **✅ Full CWMP Protocol**: Complete TR-069 implementation with SOAP/XML processing
-- **✅ Standard RPC Methods**: GetRPCMethods, GetParameterNames, GetParameterValues, SetParameterValues
+- **✅ TR-069 v1.2 Support**: Complete implementation with enhanced parameter attributes and extended RPC methods
+- **✅ Enhanced RPC Methods**: Download, Upload, GetAllQueuedTransfers, ScheduleInform, SetVouchers, GetOptions
+- **✅ Parameter Attributes**: TR-069 v1.2 access control, notification settings, and attribute management
+- **✅ Backward Compatibility**: Supports TR-069 v1.0, v1.1, and v1.2 with proper namespace handling
+- **✅ SOAP/XML Processing**: Complete envelope parsing with TR-069 v1.2 namespace (urn:dslforum-org:cwmp-1-2)
 - **✅ Authentication**: Basic HTTP authentication with session management
 - **✅ TR-181 Integration**: Seamless parameter management across both protocols
 
@@ -345,6 +348,28 @@ export DB_NAME=openusp
 - **[TR-069](https://www.broadband-forum.org/technical/download/TR-069.pdf)**: CPE WAN Management Protocol
 - **Protocol Buffers**: USP message encoding (versions 1.3 and 1.4)
 - **SOAP/XML**: CWMP message encoding for TR-069 compatibility
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+### Getting Started
+- [**Quick Start Guide**](docs/QUICKSTART.md) - Get up and running in 5 minutes
+- [**Installation Guide**](docs/INSTALLATION.md) - Complete installation instructions
+- [**User Guide**](docs/USER_GUIDE.md) - Device management and operations
+
+### API & Development
+- [**API Reference**](docs/API_REFERENCE.md) - Complete REST API documentation
+- [**Development Guide**](docs/DEVELOPMENT.md) - Setting up development environment
+- [**Contributing Guide**](docs/CONTRIBUTING.md) - How to contribute to the project
+
+### Configuration & Deployment
+- [**Configuration Guide**](docs/CONFIGURATION.md) - Advanced configuration options
+- [**Deployment Guide**](docs/DEPLOYMENT.md) - Production deployment strategies
+- [**Troubleshooting Guide**](docs/TROUBLESHOOTING.md) - Common issues and solutions
+
+### Protocol Details
+- [**USP Message Flow**](docs/USP_MSG_FLOW.md) - Protocol communication patterns
 
 ## 🤝 Contributing
 
