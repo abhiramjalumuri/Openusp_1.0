@@ -77,12 +77,12 @@ type ServiceConnectionPool struct {
 
 // ManagedConnection represents a single managed gRPC connection
 type ManagedConnection struct {
-	conn        *grpc.ClientConn
-	target      string
-	state       connectivity.State
-	lastUsed    time.Time
-	errorCount  int
-	createdAt   time.Time
+	conn       *grpc.ClientConn
+	target     string
+	state      connectivity.State
+	lastUsed   time.Time
+	errorCount int
+	createdAt  time.Time
 
 	// Connection metadata
 	metadata map[string]string

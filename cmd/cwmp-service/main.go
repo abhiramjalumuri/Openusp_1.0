@@ -432,7 +432,7 @@ func main() {
 
 	// Load configuration with static ports
 	// CWMP protocol uses standard port 7547, health API uses port 7548
-	healthPort := deployConfig.ServicePort + 1  // Health port is CWMP port + 1
+	healthPort := deployConfig.ServicePort + 1 // Health port is CWMP port + 1
 	config := DefaultConfig(healthPort)
 
 	// Create CWMP service
@@ -460,7 +460,7 @@ func main() {
 	// Start CWMP service and show status
 	log.Printf("🚀 CWMP Service started successfully")
 	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Static Port Configuration: ✅ Enabled") 
+	log.Printf("   └── Static Port Configuration: ✅ Enabled")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 

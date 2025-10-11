@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
+
+	"gopkg.in/yaml.v2"
 )
 
 // StaticServiceConfig represents the static service configuration
@@ -98,40 +99,40 @@ func GetStaticServiceConfig() *StaticServiceConfig {
 // GetServiceGRPCPort returns the gRPC port for a given service
 func GetServiceGRPCPort(serviceName string) (int, error) {
 	config := GetStaticServiceConfig()
-	
+
 	service, exists := config.Services[serviceName]
 	if !exists {
 		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
 	}
-	
+
 	if service.GRPCPort == 0 {
 		return 0, fmt.Errorf("gRPC port not configured for service %s", serviceName)
 	}
-	
+
 	return service.GRPCPort, nil
 }
 
 // GetServicePort returns the main port for a given service
 func GetServicePort(serviceName string) (int, error) {
 	config := GetStaticServiceConfig()
-	
+
 	service, exists := config.Services[serviceName]
 	if !exists {
 		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
 	}
-	
+
 	return service.Port, nil
 }
 
 // GetServiceHealthPort returns the health check port for a given service
 func GetServiceHealthPort(serviceName string) (int, error) {
 	config := GetStaticServiceConfig()
-	
+
 	service, exists := config.Services[serviceName]
 	if !exists {
 		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
 	}
-	
+
 	return service.HealthPort, nil
 }
 
@@ -141,6 +142,6 @@ func GetServiceGRPCTarget(serviceName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return fmt.Sprintf("localhost:%d", port), nil
 }

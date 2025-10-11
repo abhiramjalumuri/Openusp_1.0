@@ -1332,9 +1332,9 @@ func main() {
 	// Static port configuration - no environment overrides needed
 
 	// Static port configuration - MTP service uses predefined ports
-	healthPort := 8082  // Static health/admin port
-	grpcPort := 8083    // Static gRPC port (different from health port)
-	
+	healthPort := 8082 // Static health/admin port
+	grpcPort := 8083   // Static gRPC port (different from health port)
+
 	log.Printf("🎯 Using static ports: WebSocket=8081, Health=%d, gRPC=%d", healthPort, grpcPort)
 
 	// Load MTP configuration with static ports

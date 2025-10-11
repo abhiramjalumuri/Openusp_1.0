@@ -13,9 +13,9 @@ import (
 
 // ServiceManager handles unified service lifecycle management
 type ServiceManager struct {
-	config      *config.DeploymentConfig
-	metrics     *metrics.OpenUSPMetrics
-	listener    net.Listener
+	config   *config.DeploymentConfig
+	metrics  *metrics.OpenUSPMetrics
+	listener net.Listener
 }
 
 // ServiceOptions contains service-specific configuration
@@ -103,8 +103,8 @@ func (sm *ServiceManager) getStaticServiceInfo(serviceName string) *ServiceInfo 
 		"openusp-data-service": {
 			Name:     "openusp-data-service",
 			Address:  "localhost",
-			Port:     6100,  // HTTP port
-			GRPCPort: 6101,  // gRPC port
+			Port:     6100, // HTTP port
+			GRPCPort: 6101, // gRPC port
 			Health:   "passing",
 		},
 		"openusp-api-gateway": {
@@ -114,18 +114,18 @@ func (sm *ServiceManager) getStaticServiceInfo(serviceName string) *ServiceInfo 
 			Health:  "passing",
 		},
 		"openusp-mtp-service": {
-			Name:    "openusp-mtp-service",
-			Address: "localhost",
-			Port:    8081,
+			Name:     "openusp-mtp-service",
+			Address:  "localhost",
+			Port:     8081,
 			GRPCPort: 8082,
-			Health:  "passing",
+			Health:   "passing",
 		},
 		"openusp-cwmp-service": {
-			Name:    "openusp-cwmp-service",
-			Address: "localhost",
-			Port:    7547,
+			Name:     "openusp-cwmp-service",
+			Address:  "localhost",
+			Port:     7547,
 			GRPCPort: 7548,
-			Health:  "passing",
+			Health:   "passing",
 		},
 		"openusp-usp-service": {
 			Name:     "openusp-usp-service",

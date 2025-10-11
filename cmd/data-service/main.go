@@ -28,13 +28,13 @@ import (
 
 // DataService represents a modern unified data service
 type DataService struct {
-	config      *config.DeploymentConfig
-	grpcServer  *grpc.Server
-	httpServer  *http.Server
-	healthSrv   *health.Server
-	database    *database.Database
-	repos       *database.Repositories
-	metrics     *metrics.OpenUSPMetrics
+	config     *config.DeploymentConfig
+	grpcServer *grpc.Server
+	httpServer *http.Server
+	healthSrv  *health.Server
+	database   *database.Database
+	repos      *database.Repositories
+	metrics    *metrics.OpenUSPMetrics
 }
 
 func main() {
