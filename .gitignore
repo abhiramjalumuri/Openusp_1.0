@@ -1,114 +1,87 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
 
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-
-# Go workspace file
-go.work
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go build cache
-build/
-dist/
-
-# IDE specific files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Backup files
-*.backup
-Makefile.backup
-
-# OS specific files
+._*
+.dockerignore
 .DS_Store
 .DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Environment files
+.DS_Storebin/
 .env
 .env.local
 .env.production
 .env.staging
-
-# Log files
-*.log
-logs/
-
-# Database files
+.idea/
+.openusp-completion.bash
+.Spotlight-V100
+.Trashes
+.vscode/
+*.backup
+*.bak
+*.bench
+*.crt
 *.db
+*.dll
+*.dylib
+*.exe
+*.exe~
+*.key
+*.log
+*.orig
+*.out
+*.p12
+*.pem
+*.so
 *.sqlite
 *.sqlite3
-
-# Temporary files
-tmp/
-temp/
-
-# Configuration files with sensitive data
-config/local.yaml
-config/production.yaml
-secrets/
-
-# Docker files
-.dockerignore
-docker-compose.override.yml
-
-# Kubernetes secrets
-k8s/secrets/
-
-# Certificate files
-*.pem
-*.key
-*.crt
-*.p12
-
-# Coverage reports
-coverage.txt
-coverage.html
-
-# Benchmarking files
-*.bench
-
-# Protocol buffer generated files (uncomment if you want to regenerate them)
+*.swo
+*.swp
+*.test
+*.tmp
+*~
 # *.pb.go
-
+# Backup files
+# Benchmarking files
+# Binaries for programs and plugins
 # Build artifacts
-main
-openusp
+# Certificate files
+# Configuration files with sensitive data
+# Coverage reports
+# Database files
+# Dependency directories (remove the comment below to include it)
+# Docker files
+# Environment files
+# Generated bash completion
+# Go build cache
+# Go workspace file
+# IDE specific files
+# Kubernetes secrets
+# Log files
+# macOS specific
+# OS specific files
+# Output of the go coverage tool, specifically when used with LiteIDE
+# Protocol buffer generated files (uncomment if you want to regenerate them)
+# Temporary files
+# Test binary, built with `go test -c`
+# vendor/
+build/
 cmd/*/main
 cmd/api-gateway/api-gateway
-cmd/mtp-service/mtp-service
 cmd/cwmp-service/cwmp-service
-cmd/usp-service/usp-service
 cmd/data-service/data-service
-
-# Log files
-*.log
+cmd/mtp-service/mtp-service
+cmd/usp-service/usp-service
+config/local.yaml
+config/production.yaml
+coverage.html
+coverage.txt
+dist/
+docker-compose.override.yml
+ehthumbs.db
+go.work
+k8s/secrets/
 logs/
-
-# Temporary files
-*.tmp
-*.bak
-*.orig
-
-# Generated bash completion
-.openusp-completion.bash
-
-# macOS specific
-.DS_Store
+main
+Makefile.backup
+openusp
+secrets/
+temp/
+Thumbs.db
+tmp/

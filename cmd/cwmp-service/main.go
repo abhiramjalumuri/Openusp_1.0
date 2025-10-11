@@ -110,7 +110,7 @@ func NewCWMPService(config *Config) (*CWMPService, error) {
 		IdleTimeout:  config.SessionTimeout,
 	}
 
-	// Create health/admin server (dynamic port registered with Consul)
+	// Create health/admin server
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/health", service.handleHealth)
 	healthMux.HandleFunc("/status", service.handleStatus)
@@ -132,7 +132,7 @@ func DefaultConfig(healthPort int) *Config {
 	// CWMP protocol always uses standard TR-069 port
 	cwmpPort := 7547
 
-	// Data service address will be resolved later based on Consul availability
+	// Data service address - using static configuration
 	dataServiceAddr := "" // Will be populated by getDataServiceAddress()
 
 	return &Config{
@@ -417,7 +417,6 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  CONSUL_ENABLED     - Enable Consul service discovery (default: true)")
 		fmt.Println("  SERVICE_PORT       - HTTP port (default: 7547)")
 		return
 	}

@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"openusp/pkg/config"
 	"openusp/pkg/metrics"
 	"openusp/pkg/proto/connectionservice"
 	"openusp/pkg/version"
@@ -708,16 +707,12 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  CONSUL_ENABLED                    - Enable Consul service discovery (default: true)")
 		fmt.Println("  OPENUSP_CONNECTION_MANAGER_PORT   - gRPC port")
 		fmt.Println("  OPENUSP_CONNECTION_MANAGER_HTTP_PORT - HTTP port")
 		return
 	}
 
 	// Static port configuration - no environment overrides needed
-
-	// Load configuration
-	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-connection-manager", "connection-manager", *port, "OPENUSP_CONNECTION_MANAGER_PORT")
 
 	// Create connection manager service
 	connectionManager := NewConnectionManagerService(DefaultConnectionManagerConfig())
@@ -831,14 +826,8 @@ func main() {
 	log.Printf("🚀 Connection Manager Service started successfully")
 	log.Printf("   └── gRPC Port: %d", actualGRPCPort)
 	log.Printf("   └── HTTP Port: %d", httpPortToUse)
-	if deployConfig.IsConsulEnabled() {
-		log.Printf("   └── Consul Service Discovery: ✅ Enabled")
-		log.Printf("   └── Health Check: http://localhost:%d/health", httpPortToUse)
-		log.Printf("   └── Status: http://localhost:%d/status", httpPortToUse)
-		log.Printf("   └── Consul UI: http://localhost:8500/ui/")
-	} else {
-		log.Printf("   └── Consul Service Discovery: ❌ Disabled")
-	}
+	log.Printf("   └── Health Check: http://localhost:%d/health", httpPortToUse)
+	log.Printf("   └── Status: http://localhost:%d/status", httpPortToUse)
 
 	log.Printf("💡 Press Ctrl+C to exit...")
 

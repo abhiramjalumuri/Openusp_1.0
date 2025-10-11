@@ -601,7 +601,6 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  CONSUL_ENABLED     - Enable Consul service discovery (default: true)")
 		fmt.Println("  SERVICE_PORT       - gRPC port (default: 56250)")
 		return
 	}
@@ -611,7 +610,7 @@ func main() {
 	// Load configuration
 	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 6400, "OPENUSP_USP_SERVICE_PORT")
 
-	// Static port configuration - no Consul initialization needed
+	// Static port configuration - no service discovery needed
 
 	// Static port configuration - use configured port directly
 	grpcPort := deployConfig.ServicePort + 1 // gRPC is HTTP + 1
@@ -654,7 +653,7 @@ func main() {
 	go func() {
 		mux := http.NewServeMux()
 
-		// Health check endpoint for Consul
+		// Health check endpoint
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)

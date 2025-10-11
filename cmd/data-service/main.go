@@ -91,7 +91,7 @@ func NewDataService() (*DataService, error) {
 
 	service.repos = database.NewRepositories(db.DB)
 
-	// Setup servers (but don't register with Consul yet)
+	// Setup servers
 	service.setupgRPCServer()
 	service.setupHTTPServer()
 

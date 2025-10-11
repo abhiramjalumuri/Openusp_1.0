@@ -146,7 +146,7 @@ func (s *SimpleMTPService) Start(ctx context.Context) error {
 		Handler: webSocketMux,
 	}
 
-	// Create health/admin server (dynamic port registered with Consul)
+	// Create health/admin server
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/health", s.handleHealth)
 	healthMux.HandleFunc("/status", s.handleStatus)
@@ -1292,9 +1292,9 @@ func marshalMapToJSON(m map[string]interface{}) string {
 	return result
 }
 
-// registerMTPServiceWithConsul registers MTP service with static port configuration
-func registerMTPServiceWithConsul(serviceInfo interface{}, healthPort int) error {
-	// Static port configuration - no Consul registration needed
+// registerMTPService registers MTP service with static port configuration
+func registerMTPService(serviceInfo interface{}, healthPort int) error {
+	// Static port configuration - no service registration needed
 	log.Printf("🎯 MTP Service using static ports: WebSocket=8081, Health=%d", healthPort)
 	return nil // No registration needed for static ports
 }
@@ -1323,7 +1323,6 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  CONSUL_ENABLED     - Enable Consul service discovery (default: true)")
 		fmt.Println("  SERVICE_PORT       - Server port (default: 8081)")
 		fmt.Println("  MTP_PORT           - MTP service port (default: 8081)")
 		return

@@ -717,11 +717,11 @@ func main() {
 
 	log.Printf("\n✅ TR-369 USP Client demonstration completed!")
 	log.Printf("\nNote: Make sure the OpenUSP services are running:")
-	log.Printf("  make infra-up                    # Start infrastructure (Consul, PostgreSQL)")
+	log.Printf("  make infra-up                    # Start infrastructure (PostgreSQL)")
 	log.Printf("  make build-all                   # Build all services")
 	log.Printf("  make start-all                   # Start all OpenUSP services")
 	log.Printf("\nThen run this agent with:")
 	log.Printf("  make start-usp-agent")
 	log.Printf("  ./build/usp-agent --config configs/usp-agent.yaml")
-	log.Printf("\nThe agent will automatically discover the MTP Service via Consul.")
+	log.Printf("\nThe agent will connect to the MTP Service using static configuration.")
 }
