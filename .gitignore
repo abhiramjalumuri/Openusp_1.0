@@ -68,6 +68,8 @@ cmd/cwmp-service/cwmp-service
 cmd/data-service/data-service
 cmd/mtp-service/mtp-service
 cmd/usp-service/usp-service
+bin/api-gateway
+*.tar.gz
 config/local.yaml
 config/production.yaml
 coverage.html
