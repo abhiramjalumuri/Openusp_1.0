@@ -11,11 +11,9 @@ scrape_configs:
     static_configs:
     - targets: ['localhost:9090']
 
-  # OpenUSP Services - Static Configuration (Linux Bridge Gateway)
+  # OpenUSP Services - Direct localhost access for Linux containers
   - job_name: 'openusp-api-gateway'
-    scheme: https
-    tls_config:
-      insecure_skip_verify: true
+    scheme: http
     static_configs:
     - targets: ['172.17.0.1:6500']
     metrics_path: '/metrics'
