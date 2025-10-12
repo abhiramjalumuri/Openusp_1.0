@@ -198,7 +198,8 @@ func LoadAgents(path string) (*Agents, error) {
 					} `yaml:"heartbeat"`
 				} `yaml:"stomp"`
 				UDS struct {
-					SocketPath, SocketMode string `yaml:"socket_path" yaml:"socket_mode"`
+					SocketPath string `yaml:"socket_path"`
+					SocketMode string `yaml:"socket_mode"`
 				} `yaml:"uds"`
 			} `yaml:"mtp"`
 			Behavior struct {
