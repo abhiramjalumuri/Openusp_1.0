@@ -253,6 +253,31 @@ func (gw *APIGateway) metricsMiddleware() gin.HandlerFunc {
 	}
 }
 
+// createTLSErrorLogger creates a custom logger that suppresses common TLS handshake errors
+func (gw *APIGateway) createTLSErrorLogger() *log.Logger {
+	return log.New(&tlsErrorFilter{}, "", log.LstdFlags)
+}
+
+// tlsErrorFilter filters out common TLS handshake errors to reduce log noise
+type tlsErrorFilter struct{}
+
+func (f *tlsErrorFilter) Write(p []byte) (n int, err error) {
+	msg := string(p)
+	
+	// Suppress common TLS handshake errors
+	if strings.Contains(msg, "TLS handshake error") && 
+	   (strings.Contains(msg, "remote error: tls: illegal parameter") ||
+		strings.Contains(msg, "client sent an HTTP request to an HTTPS server") ||
+		strings.Contains(msg, "remote error: tls: protocol version not supported") ||
+		strings.Contains(msg, "remote error: tls: handshake failure")) {
+		// Return without logging
+		return len(p), nil
+	}
+	
+	// Log all other errors normally
+	return os.Stderr.Write(p)
+}
+
 // hasTLSCertificates checks if TLS certificate files are available and valid
 func (gw *APIGateway) hasTLSCertificates() bool {
 	if gw.certFile == "" || gw.keyFile == "" {
@@ -303,6 +328,20 @@ func (gw *APIGateway) dualProtocolListener() (net.Listener, error) {
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		// Minimum TLS version to avoid weak protocols
+		MinVersion: tls.VersionTLS12,
+		// Prefer server cipher suites for better security
+		PreferServerCipherSuites: true,
+		// Enable stronger cipher suites only
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		// Reduce handshake errors by handling bad clients more gracefully
+		InsecureSkipVerify: false,
 	}
 
 	// Create custom listener that detects HTTP vs HTTPS
@@ -386,8 +425,9 @@ func (gw *APIGateway) Start() error {
 	if gw.hasTLSCertificates() {
 		// Start HTTPS server on main port
 		gw.server = &http.Server{
-			Addr:    fmt.Sprintf(":%d", gw.getHTTPPort()),
-			Handler: gw.router,
+			Addr:     fmt.Sprintf(":%d", gw.getHTTPPort()),
+			Handler:  gw.router,
+			ErrorLog: gw.createTLSErrorLogger(),
 		}
 
 		// Start HTTP redirect server on configured port
