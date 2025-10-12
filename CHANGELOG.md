@@ -5,6 +5,29 @@ All notable changes to the OpenUSP project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔄 Refactors & Cleanup
+- Unified agent configuration: merged `unified_agents.go` into `agent.go` introducing `LoadAgents` for single-pass load of USP (TR-369) & CWMP (TR-069) configs.
+- Removed legacy env-based agent loader (`agent_env.go`) – YAML is now the sole source of agent config.
+- Eliminated "static" terminology from service config types, functions, logs, and comments; neutral wording uses "fixed ports".
+- Deleted obsolete `docker-compose.infra.static.yml`; consolidated infrastructure on `docker-compose.infra.yml`.
+- Removed residual references to "static port configuration" in all service mains and error messages.
+
+### 🧹 Deprecated / Removed
+- Deleted: `pkg/config/agent_env.go`, `pkg/config/unified_agents.go` (logic merged).
+- Removed specialized static infra compose file.
+
+### 📝 Documentation
+- Pending doc example updates to demonstrate `LoadAgents` instead of separate per-agent loaders.
+
+### ⚠️ Migration Notes
+- External code using `LoadUSPAgentUnified` / `LoadCWMPAgentUnified` remains supported (they now delegate to `LoadAgents`). Prefer adopting `LoadAgents` directly.
+- Any former reliance on environment variable fallbacks for agent identity should be moved into `openusp.yml`.
+
+### ✅ Integrity
+- Build verified with `go build ./...` after refactor; behavior unchanged aside from naming & loader consolidation.
+
 ## [1.2.0] - 2025-10-11
 
 ### 🚀 Major Protocol Upgrades

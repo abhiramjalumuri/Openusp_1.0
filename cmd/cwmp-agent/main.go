@@ -9,7 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"openusp/pkg/config"
@@ -29,75 +30,21 @@ func getDeviceIPAddress() string {
 	return localAddr.IP.String()
 }
 
-// getConnectionRequestURL generates the connection request URL for this device
-func getConnectionRequestURL() string {
-	deviceIP := getDeviceIPAddress()
-
-	// Use standard TR-069 connection request port 7547
-	// In a real implementation, this could be configurable
-	connectionPort := 7547
-
-	// Check if there's an environment variable override
-	if portEnv := os.Getenv("CWMP_CONNECTION_REQUEST_PORT"); portEnv != "" {
-		if port, err := strconv.Atoi(portEnv); err == nil {
-			connectionPort = port
-		}
+// connectionRequestURL builds a connection request URL from the unified config
+func connectionRequestURL(deviceIP string, cfg *config.TR069Config) string {
+	// Prefer explicit URL if provided in YAML; otherwise synthesize from path/port
+	if cfg.ConnectionRequestURL != "" {
+		return cfg.ConnectionRequestURL
 	}
-
-	return fmt.Sprintf("http://%s:%d/connection_request", deviceIP, connectionPort)
-}
-
-// getCWMPServiceURL gets the CWMP service URL from configuration
-func getCWMPServiceURL() string {
-	// Try to load configuration from YAML
-	configPath := "configs/cwmp-agent.yaml"
-	if _, err := os.Stat(configPath); err == nil {
-		tr069Config, err := config.LoadYAMLTR069Config(configPath)
-		if err == nil && tr069Config.ACSURL != "" {
-			log.Printf("✅ Using CWMP service URL from YAML config: %s", tr069Config.ACSURL)
-			return tr069Config.ACSURL
-		}
+	port := cfg.ConnectionRequestPort
+	if port == 0 {
+		port = 7547
 	}
-
-	// Fallback to environment variables or default standard port
-	cwmpHost := os.Getenv("CWMP_ACS_HOST")
-	if cwmpHost == "" {
-		cwmpHost = "localhost"
+	path := cfg.ConnectionRequestPath
+	if path == "" {
+		path = "/connection_request"
 	}
-	cwmpPort := os.Getenv("CWMP_ACS_PORT")
-	if cwmpPort == "" {
-		cwmpPort = "7547" // Standard TR-069 ACS port
-	}
-	cwmpServiceURL := fmt.Sprintf("http://%s:%s", cwmpHost, cwmpPort)
-	log.Printf("✅ Using CWMP service URL from environment/default: %s", cwmpServiceURL)
-	return cwmpServiceURL
-}
-
-// getCWMPCredentials gets the CWMP credentials from configuration
-func getCWMPCredentials() (string, string) {
-	// Try to load credentials from YAML
-	configPath := "configs/cwmp-agent.yaml"
-	if _, err := os.Stat(configPath); err == nil {
-		tr069Config, err := config.LoadYAMLTR069Config(configPath)
-		if err == nil {
-			if tr069Config.ACSUsername != "" && tr069Config.ACSPassword != "" {
-				log.Printf("✅ Using CWMP credentials from YAML config")
-				return tr069Config.ACSUsername, tr069Config.ACSPassword
-			}
-		}
-	}
-
-	// Fallback to environment variables or defaults
-	username := os.Getenv("CWMP_USERNAME")
-	if username == "" {
-		username = "acs" // Default username
-	}
-	password := os.Getenv("CWMP_PASSWORD")
-	if password == "" {
-		password = "acs123" // Default password
-	}
-	log.Printf("✅ Using CWMP credentials from environment/default")
-	return username, password
+	return fmt.Sprintf("http://%s:%d%s", deviceIP, port, path)
 }
 
 // DeviceInfo represents device information for CWMP agent
@@ -111,45 +58,17 @@ type DeviceInfo struct {
 	HardwareVersion string
 }
 
-// getDeviceInfo gets device information from YAML configuration
-func getDeviceInfo() *DeviceInfo {
-	// Try to load device info from YAML
-	configPath := "configs/cwmp-agent.yaml"
-	if _, err := os.Stat(configPath); err == nil {
-		tr069Config, err := config.LoadYAMLTR069Config(configPath)
-		if err == nil {
-			log.Printf("✅ Using device information from YAML config")
-			return &DeviceInfo{
-				Manufacturer:    tr069Config.Manufacturer,
-				ProductClass:    tr069Config.ProductClass,
-				SerialNumber:    tr069Config.SerialNumber,
-				OUI:             tr069Config.OUI,
-				ModelName:       tr069Config.ModelName,
-				SoftwareVersion: tr069Config.SoftwareVersion,
-				HardwareVersion: tr069Config.HardwareVersion,
-			}
-		}
-	}
-
-	// Fallback to environment variables or defaults
-	log.Printf("✅ Using device information from environment/default")
+// mapDeviceInfo converts unified TR069Config fields to local DeviceInfo struct
+func mapDeviceInfo(agent *config.TR069Config) *DeviceInfo {
 	return &DeviceInfo{
-		Manufacturer:    getEnvOrDefault("CWMP_MANUFACTURER", "OpenUSP"),
-		ProductClass:    getEnvOrDefault("CWMP_PRODUCT_CLASS", "HomeGateway"),
-		SerialNumber:    getEnvOrDefault("CWMP_SERIAL_NUMBER", "DEMO123456"),
-		OUI:             getEnvOrDefault("CWMP_OUI", "00D4FE"),
-		ModelName:       getEnvOrDefault("CWMP_MODEL_NAME", "CWMP-Gateway-v1"),
-		SoftwareVersion: getEnvOrDefault("CWMP_SOFTWARE_VERSION", "1.0.0"),
-		HardwareVersion: getEnvOrDefault("CWMP_HARDWARE_VERSION", "1.0"),
+		Manufacturer:    agent.Manufacturer,
+		ProductClass:    agent.ProductClass,
+		SerialNumber:    agent.SerialNumber,
+		OUI:             agent.OUI,
+		ModelName:       agent.ModelName,
+		SoftwareVersion: agent.SoftwareVersion,
+		HardwareVersion: agent.HardwareVersion,
 	}
-}
-
-// getEnvOrDefault gets environment variable or returns default value
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // CWMP/SOAP structures for TR-069 communication
@@ -284,28 +203,40 @@ func (c *CWMPClient) SendInform(inform *Inform) error {
 	return nil
 }
 
-// TR069OnboardingDemo demonstrates the TR-069 onboarding functionality
-func main() {
-	fmt.Println("🚀 TR-069 Device Onboarding Demo")
-	fmt.Println("================================")
+// runAgent runs the production CWMP agent
+func runAgent() error {
+	log.Printf("OpenUSP CWMP Agent starting (YAML-only config)...")
 
-	// Get CWMP service URL from YAML configuration or environment
-	cwmpServiceURL := getCWMPServiceURL()
+	// Load unified YAML-only TR-069 agent configuration
+	agentCfg, err := config.LoadCWMPAgentUnified("")
+	if err != nil {
+		return fmt.Errorf("failed to load cwmp agent config: %w", err)
+	}
+	if agentCfg.ACSURL == "" {
+		return fmt.Errorf("ACS URL missing in openusp.yml (cwmp_agent.acs.url)")
+	}
 
-	// Get CWMP credentials from YAML configuration or environment
-	username, password := getCWMPCredentials()
+	client := NewCWMPClient(agentCfg.ACSURL, agentCfg.ACSUsername, agentCfg.ACSPassword)
 
-	client := NewCWMPClient(cwmpServiceURL, username, password)
+	deviceInfo := mapDeviceInfo(agentCfg)
 
-	// Get device information from YAML configuration or environment
-	deviceInfo := getDeviceInfo()
+	// Validate required device information
+	if deviceInfo.Manufacturer == "" || deviceInfo.SerialNumber == "" {
+		return fmt.Errorf("manufacturer and serial number are required")
+	}
 
 	// Get dynamic device information
 	deviceIP := getDeviceIPAddress()
-	connectionRequestURL := getConnectionRequestURL()
+	crURL := connectionRequestURL(deviceIP, agentCfg)
 
-	// Create a sample Inform message that would come from a TR-069 device
-	sampleInform := &Inform{
+	log.Printf("Device Information:")
+	log.Printf("  Manufacturer: %s", deviceInfo.Manufacturer)
+	log.Printf("  Product Class: %s", deviceInfo.ProductClass)
+	log.Printf("  Serial Number: %s", deviceInfo.SerialNumber)
+	log.Printf("  Device IP: %s", deviceIP)
+
+	// Create Inform message for device registration
+	inform := &Inform{
 		DeviceId: DeviceIdStruct{
 			Manufacturer: deviceInfo.Manufacturer,
 			OUI:          deviceInfo.OUI,
@@ -363,38 +294,42 @@ func main() {
 			},
 			{
 				Name:  "Device.ManagementServer.ConnectionRequestURL",
-				Value: connectionRequestURL,
+				Value: crURL,
 				Type:  "xsd:string",
 			},
 		},
 	}
 
-	fmt.Printf("📱 Sample Device Information:\n")
-	fmt.Printf("   Manufacturer: %s\n", sampleInform.DeviceId.Manufacturer)
-	fmt.Printf("   Product Class: %s\n", sampleInform.DeviceId.ProductClass)
-	fmt.Printf("   Serial Number: %s\n", sampleInform.DeviceId.SerialNumber)
-	fmt.Printf("   Device IP: %s\n", deviceIP)
-	fmt.Printf("   Connection Request URL: %s\n", connectionRequestURL)
-	fmt.Printf("   Parameters: %d\n", len(sampleInform.ParameterList))
-	fmt.Println()
-
-	// Send the Inform message to CWMP service for onboarding
-	fmt.Println("🔄 Starting TR-069 onboarding process...")
-	if err := client.SendInform(sampleInform); err != nil {
-		fmt.Printf("❌ TR-069 onboarding failed: %v\n", err)
-		fmt.Println()
-		fmt.Println("To see full onboarding in action:")
-		fmt.Println("1. Start infrastructure: make infra-up")
-		fmt.Println("2. Build services: make build-all")
-		fmt.Println("3. Start services: make start-all")
-		fmt.Println("4. Run this TR-069 agent: go run cmd/cwmp-agent/main.go")
-		fmt.Println()
-		fmt.Println("The agent will connect to CWMP service using standard TR-069 port 7547.")
-		return
+	// Send initial Inform message
+	log.Printf("Sending initial Inform message to CWMP service...")
+	if err := client.SendInform(inform); err != nil {
+		return fmt.Errorf("failed to send Inform message: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Println("🎉 TR-069 Device Onboarding Complete!")
-	fmt.Println("✅ Device successfully sent Inform message to CWMP service")
-	fmt.Println("📊 Check the CWMP service logs for onboarding details")
+	log.Printf("CWMP Agent registered successfully")
+
+	// In a production implementation, this would:
+	// 1. Handle periodic inform messages
+	// 2. Process incoming RPC requests from ACS
+	// 3. Handle connection requests
+	// 4. Maintain TR-069 session state
+
+	// For now, just wait for termination signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	log.Printf("CWMP Agent shutting down...")
+	return nil
+}
+
+func main() {
+	log.Printf("OpenUSP CWMP Agent")
+	log.Printf("==================")
+
+	if err := runAgent(); err != nil {
+		log.Fatalf("Agent error: %v", err)
+	}
+
+	log.Printf("CWMP Agent terminated")
 }

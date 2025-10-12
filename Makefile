@@ -7,7 +7,7 @@
 # Configuration
 # =============================================================================
 
-# Docker configuration - Static Port Infrastructure (No Consul)
+# Docker configuration - Unified Infrastructure (Cross-platform)
 DOCKER_COMPOSE_INFRA := deployments/docker-compose.infra.yml
 
 # =============================================================================
@@ -46,12 +46,10 @@ OPENUSP_AGENTS := usp-agent cwmp-agent
 
 # Infrastructure volumes
 INFRA_VOLUMES := \
-	openusp-postgres-data \
-	openusp-rabbitmq-dev-data \
-	openusp-mosquitto-dev-data \
-	openusp-mosquitto-dev-logs \
-	openusp-prometheus-dev-data \
-	openusp-grafana-dev-data
+	openusp_postgres_data \
+	openusp_rabbitmq_data \
+	openusp_prometheus_data \
+	openusp_grafana_data
 
 # =============================================================================
 # PHONY Targets Declaration
@@ -64,12 +62,12 @@ INFRA_VOLUMES := \
 .PHONY: build build-services build-agents build-all
 .PHONY: run run-services run-agents run-all
 .PHONY: stop stop-services stop-agents stop-all force-stop stop-verify status-services status-quick status-debug
-.PHONY: monitoring-cleanup prometheus-reload grafana-restart
+.PHONY: monitoring-cleanup prometheus-reload
 .PHONY: $(addprefix build-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix run-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix stop-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: swagger swagger-install swagger-generate swagger-validate
-.PHONY: certs generate-certs clean-certs verify-certs
+
 .PHONY: docker-health docker-fix
 .PHONY: clean fmt vet test
 .PHONY: bash-completion bash-completion-install
@@ -104,15 +102,16 @@ endpoints:
 	@echo "🌐 OpenUSP Services:"
 	@echo "  API Gateway:     http://localhost:6500 (Health: 6501)"
 	@echo "  Swagger UI:      http://localhost:6500/swagger/index.html"
-	@echo "  Data Service:    http://localhost:6100 (Health: 6101)"
-	@echo "  Connection Mgr:  http://localhost:6200 (Health: 6201)"
-	@echo "  USP Service:     http://localhost:6400 (Health: 6401)"
-	@echo "  CWMP Service:    http://localhost:7547 (Health: 7548)"
-	@echo "  MTP Service:     http://localhost:8081 (WebSocket), 8082 (Health)"
+	@echo "  Data Service:    http://localhost:6400 (gRPC: 50100)"
+	@echo "  Connection Mgr:  http://localhost:6200 (gRPC: 50400)"
+	@echo "  USP Service:     http://localhost:6400 (gRPC: 50200)"
+	@echo "  CWMP Service:    http://localhost:7547 (gRPC: 50500)"
+	@echo "  MTP Service:     http://localhost:8081 (WebSocket), gRPC: 50300"
 	@echo ""
 	@echo "🏛️  Infrastructure:"
-	@echo "  Grafana:         http://localhost:3000 (admin/openusp123)"
+
 	@echo "  Prometheus:      http://localhost:9090"
+	@echo "  Grafana:         http://localhost:3000 (admin/admin)"
 	@echo "  PostgreSQL:      localhost:5433 (openusp/openusp123)"
 	@echo "  RabbitMQ:        http://localhost:15672 (openusp/openusp123)"
 	@echo ""
@@ -154,12 +153,12 @@ all: build-agents run
 # =============================================================================
 # Cross-Platform Infrastructure Management
 # =============================================================================
-# Infrastructure Management (Prometheus, Grafana, Mosquitto, RabbitMQ, PostgreSQL)
+# Infrastructure Management (Prometheus, Mosquitto, RabbitMQ, PostgreSQL)
 # =============================================================================
 
 infra-up: infra-volumes
 	@echo "🏗️  Starting infrastructure services..."
-	@echo "   📊 Prometheus,  Grafana, 🦟 Mosquitto, 🐰 RabbitMQ, 🐘 PostgreSQL"
+	@echo "   📊 Prometheus, 📈 Grafana, 🦟 Mosquitto, 🐰 RabbitMQ, 🐘 PostgreSQL"
 	@echo "   🎯 Static port configuration - no service discovery needed"
 	@docker compose -f $(DOCKER_COMPOSE_INFRA) up -d
 	@echo "⏳ Waiting for services to be ready..."
@@ -401,7 +400,7 @@ run-$(1):
 run-$(1)-background:
 	@echo "🚀 Starting $(1) in background..."
 	@mkdir -p logs
-	@nohup ./$(BUILD_DIR)/$(1) > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
+	@nohup bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/$(1)' > logs/$(1).log 2>&1 & echo $$! > logs/$(1).pid
 	@sleep 2
 	@echo "✅ $(1) started (PID: $$(cat logs/$(1).pid))"
 
@@ -432,33 +431,21 @@ run-$(1): build-$(1)
 	@echo "🚀 Starting $(1) (console application)..."
 	@echo "   Config: configs/$(1).yaml"
 	@echo "   Press Ctrl+C to stop"
-	@./$(BUILD_DIR)/$(1) --config configs/$(1).yaml
+	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/$(1) --config configs/$(1).yaml'
 endef
 
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
 $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
 
-# Custom API Gateway targets with TLS configuration
+# API Gateway targets
 run-api-gateway:
-	@echo "🚀 Starting API Gateway with HTTPS support..."
-	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
-		echo "   🔐 TLS certificates found - enabling HTTPS"; \
-		OPENUSP_TLS_CERT_PATH=certs/server.crt OPENUSP_TLS_KEY_PATH=certs/server.key ./$(BUILD_DIR)/api-gateway; \
-	else \
-		echo "   ⚠️  No TLS certificates found - using HTTP"; \
-		./$(BUILD_DIR)/api-gateway; \
-	fi
+	@echo "🚀 Starting API Gateway..."
+	@./$(BUILD_DIR)/api-gateway
 
 run-api-gateway-background:
-	@echo "🚀 Starting API Gateway in background with HTTPS support..."
+	@echo "🚀 Starting API Gateway in background..."
 	@mkdir -p logs
-	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
-		echo "   🔐 TLS certificates found - enabling HTTPS"; \
-		nohup env OPENUSP_TLS_CERT_PATH=certs/server.crt OPENUSP_TLS_KEY_PATH=certs/server.key ./$(BUILD_DIR)/api-gateway > logs/api-gateway.log 2>&1 & echo $$! > logs/api-gateway.pid; \
-	else \
-		echo "   ⚠️  No TLS certificates found - using HTTP"; \
-		nohup ./$(BUILD_DIR)/api-gateway > logs/api-gateway.log 2>&1 & echo $$! > logs/api-gateway.pid; \
-	fi
+	@nohup ./$(BUILD_DIR)/api-gateway > logs/api-gateway.log 2>&1 & echo $$! > logs/api-gateway.pid
 	@sleep 2
 	@echo "✅ API Gateway started (PID: $$(cat logs/api-gateway.pid))"
 
@@ -541,43 +528,7 @@ swagger-validate:
 	$$SWAGGER_CMD validate api/swagger.yaml
 	@echo "✅ Swagger documentation is valid"
 
-# =============================================================================
-# TLS Certificate Management
-# =============================================================================
 
-certs: generate-certs
-
-generate-certs:
-	@echo "🔐 Generating test TLS certificates for API Gateway..."
-	@if [ -f scripts/generate-test-certs.sh ]; then \
-		chmod +x scripts/generate-test-certs.sh && ./scripts/generate-test-certs.sh; \
-	else \
-		echo "❌ Certificate generation script not found at scripts/generate-test-certs.sh"; \
-		exit 1; \
-	fi
-
-clean-certs:
-	@echo "🗑️  Removing TLS certificates..."
-	@rm -f certs/server.crt certs/server.key
-	@echo "✅ TLS certificates removed"
-
-verify-certs:
-	@echo "🔍 Verifying TLS certificates..."
-	@if [ -f certs/server.crt ] && [ -f certs/server.key ]; then \
-		echo "✅ Certificate files found:"; \
-		echo "   📄 Certificate: certs/server.crt"; \
-		echo "   🔑 Private Key: certs/server.key"; \
-		echo ""; \
-		echo "📋 Certificate details:"; \
-		openssl x509 -in certs/server.crt -text -noout | grep -E "(Subject:|DNS:|IP Address:)" | head -5; \
-		echo ""; \
-		echo "📅 Certificate validity:"; \
-		openssl x509 -in certs/server.crt -dates -noout; \
-	else \
-		echo "❌ TLS certificates not found"; \
-		echo "💡 Run 'make generate-certs' to create test certificates"; \
-		exit 1; \
-	fi
 
 infra-volumes:
 	@echo "📦 Creating infrastructure volumes..."
@@ -590,19 +541,7 @@ infra-volumes:
 # Monitoring and Status
 # =============================================================================
 
-setup-grafana:
-	@echo "📊 Setting up Grafana dashboards..."
-	@./scripts/setup-grafana.sh
-	@echo "✅ Grafana setup complete"
 
-verify-grafana:
-	@echo "🔍 Verifying Grafana setup..."
-	@if curl -s -f http://localhost:3000/api/health > /dev/null; then \
-		echo "✅ Grafana is accessible at http://localhost:3000"; \
-	else \
-		echo "❌ Grafana is not accessible. Make sure infrastructure is running (make infra-up)"; \
-		exit 1; \
-	fi
 
 service-status:
 	@echo "� OpenUSP Service Status (Static Port Configuration):"
@@ -614,8 +553,8 @@ service-status:
 		echo "❌ Not accessible"; \
 	fi
 	@printf "%-20s: " "data-service"; \
-	if curl -s http://localhost:6100/health >/dev/null 2>&1; then \
-		echo "✅ Accessible (http://localhost:6100)"; \
+	if curl -s http://localhost:6400/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:6400)"; \
 	else \
 		echo "❌ Not accessible"; \
 	fi
@@ -648,35 +587,31 @@ service-status:
 	@printf "%-20s: " "api-gateway-grpc"; \
 	echo "ℹ️  HTTP only (no gRPC)"
 	@printf "%-20s: " "data-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/6101" 2>/dev/null; then \
-		echo "✅ Port 6101 open"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/50100" 2>/dev/null; then \
+		echo "✅ Port 50100 open"; \
 	else \
-		echo "❌ Port 6101 closed"; \
-	fi
-	@printf "%-20s: " "connection-mgr-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/6201" 2>/dev/null; then \
-		echo "✅ Port 6201 open"; \
-	else \
-		echo "❌ Port 6201 closed"; \
+		echo "❌ Port 50100 closed"; \
 	fi
 	@printf "%-20s: " "usp-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/6401" 2>/dev/null; then \
-		echo "✅ Port 6401 open"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/50200" 2>/dev/null; then \
+		echo "✅ Port 50200 open"; \
 	else \
-		echo "❌ Port 6401 closed"; \
-	fi
-	@printf "%-20s: " "cwmp-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/7548" 2>/dev/null; then \
-		echo "✅ Port 7548 open"; \
-	else \
-		echo "❌ Port 7548 closed"; \
+		echo "❌ Port 50200 closed"; \
 	fi
 	@printf "%-20s: " "mtp-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/8083" 2>/dev/null; then \
-		echo "✅ Port 8083 open"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/50300" 2>/dev/null; then \
+		echo "✅ Port 50300 open"; \
 	else \
-		echo "❌ Port 8083 closed"; \
+		echo "❌ Port 50300 closed"; \
 	fi
+	@printf "%-20s: " "connection-mgr-grpc"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/50400" 2>/dev/null; then \
+		echo "✅ Port 50400 open"; \
+	else \
+		echo "❌ Port 50400 closed"; \
+	fi
+	@printf "%-20s: " "cwmp-service-grpc"; \
+	echo "ℹ️  Uses data-service gRPC (no own server)"
 
 # =============================================================================
 # Development Environment Management
@@ -850,7 +785,7 @@ status:
 		fi; \
 		if [ "$$service" = "api-gateway" ] && curl -s http://localhost:6500/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
-		elif [ "$$service" = "data-service" ] && curl -s http://localhost:6100/health >/dev/null 2>&1; then \
+		elif [ "$$service" = "data-service" ] && curl -s http://localhost:6400/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
 		elif [ "$$service" = "connection-manager" ] && curl -s http://localhost:6200/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
@@ -963,16 +898,11 @@ help:
 	@echo "  swagger-generate       - Generate Swagger documentation"
 	@echo "  swagger-validate       - Validate Swagger documentation"
 	@echo ""
-	@echo "🔐 TLS Certificate Management:"
-	@echo "  certs                  - Generate test TLS certificates (alias for generate-certs)"
-	@echo "  generate-certs         - Generate self-signed test certificates for HTTPS"
-	@echo "  verify-certs           - Show certificate details and validity"
-	@echo "  clean-certs            - Remove existing TLS certificates"
-	@echo ""
+
 	@echo "📊 Monitoring & Observability:"
 	@echo "  monitoring-cleanup     - Clean up and reload monitoring stack"
 	@echo "  prometheus-reload      - Reload Prometheus configuration"
-	@echo "  grafana-restart        - Restart Grafana container"
+
 	@echo ""
 	@echo "🛠️  Development Tools:"
 	@echo "  status-quick           - Show brief status overview"
@@ -998,16 +928,14 @@ help:
 # Monitoring and Observability Commands
 # =============================================================================
 
-monitoring-cleanup: prometheus-reload grafana-restart
+monitoring-cleanup: prometheus-reload
 	@echo "✅ Monitoring stack cleaned up"
 
 prometheus-reload:
 	@echo "🔄 Reloading Prometheus configuration..."
 	@curl -X POST http://localhost:9090/-/reload 2>/dev/null || echo "⚠️  Prometheus not accessible"
 
-grafana-restart:
-	@echo "🔄 Restarting Grafana..."
-	@docker restart openusp-grafana-dev
+
 
 # =============================================================================
 # Bash Completion

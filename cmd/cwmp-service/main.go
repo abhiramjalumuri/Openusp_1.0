@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -129,8 +131,13 @@ func NewCWMPService(config *Config) (*CWMPService, error) {
 
 // DefaultConfig returns default CWMP service configuration
 func DefaultConfig(healthPort int) *Config {
-	// CWMP protocol always uses standard TR-069 port
-	cwmpPort := 7547
+	// CWMP protocol port from environment or TR-069 standard port
+	cwmpPort := 7547 // Default TR-069 standard port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CWMP_SERVICE_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			cwmpPort = p
+		}
+	}
 
 	// Data service address - using static configuration
 	dataServiceAddr := "" // Will be populated by getDataServiceAddress()
@@ -197,10 +204,16 @@ func (s *CWMPService) Start(ctx context.Context) error {
 	return s.Stop()
 }
 
-// getDataServiceAddress returns the static data service address
+// getDataServiceAddress returns the data service address using environment configuration
 func (s *CWMPService) getDataServiceAddress() (string, error) {
-	// Static port configuration - data service gRPC port is 6101
-	dataServiceAddr := "localhost:6101"
+	// Environment-based port configuration - data service gRPC port (5xxxx series)
+	dataServicePort := 50100 // Default data service gRPC port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			dataServicePort = p
+		}
+	}
+	dataServiceAddr := fmt.Sprintf("localhost:%d", dataServicePort)
 	return dataServiceAddr, nil
 }
 
@@ -421,12 +434,12 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Fixed ports – no environment overrides needed
 
 	// Load configuration
 	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-cwmp-service", "cwmp-service", 7547, "OPENUSP_CWMP_SERVICE_PORT")
 
-	// Static port configuration - use configured port directly
+	// Use configured port directly
 	httpPort := deployConfig.ServicePort
 
 	fmt.Println()
@@ -453,7 +466,7 @@ func main() {
 		<-sigChan
 		log.Printf("� Received shutdown signal")
 
-		// Static port configuration - no service deregistration needed
+		// Fixed ports – no service deregistration needed
 
 		cancel()
 	}()
@@ -461,7 +474,7 @@ func main() {
 	// Start CWMP service and show status
 	log.Printf("🚀 CWMP Service started successfully")
 	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Static Port Configuration: ✅ Enabled")
+	log.Printf("   └── Environment Configuration: ✅ Enabled")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 

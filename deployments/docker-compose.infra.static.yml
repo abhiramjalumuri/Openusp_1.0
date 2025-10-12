@@ -60,6 +60,8 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: openusp
       RABBITMQ_DEFAULT_PASS: openusp123
+    volumes:
+      - ../configs/rabbitmq-plugins:/etc/rabbitmq/enabled_plugins:ro
     networks:
       - openusp-dev
     restart: unless-stopped

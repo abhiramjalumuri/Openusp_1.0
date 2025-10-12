@@ -7,13 +7,13 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// StaticServiceConfig represents the static service configuration
-type StaticServiceConfig struct {
-	Services map[string]StaticService `yaml:"services"`
+// ServiceConfig represents the service configuration directory
+type ServiceConfig struct {
+	Services map[string]Service `yaml:"services"`
 }
 
-// StaticService represents a service with static port configuration
-type StaticService struct {
+// Service represents a service with port configuration
+type Service struct {
 	Port       int      `yaml:"port"`
 	HealthPort int      `yaml:"health_port"`
 	GRPCPort   int      `yaml:"grpc_port"`
@@ -21,32 +21,32 @@ type StaticService struct {
 	Endpoints  []string `yaml:"endpoints"`
 }
 
-// staticServiceConfig holds the loaded configuration
-var staticServiceConfig *StaticServiceConfig
+// serviceConfigInstance holds the loaded configuration
+var serviceConfigInstance *ServiceConfig
 
-// LoadStaticServiceConfig loads the static service configuration from file
-func LoadStaticServiceConfig(configPath string) error {
+// LoadServiceConfig loads the service configuration from file
+func LoadServiceConfig(configPath string) error {
 	data, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	config := &StaticServiceConfig{}
+	config := &ServiceConfig{}
 	err = yaml.Unmarshal(data, config)
 	if err != nil {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	staticServiceConfig = config
+	serviceConfigInstance = config
 	return nil
 }
 
-// GetStaticServiceConfig returns the current static service configuration
-func GetStaticServiceConfig() *StaticServiceConfig {
-	if staticServiceConfig == nil {
+// GetServiceConfig returns the current service configuration directory
+func GetServiceConfig() *ServiceConfig {
+	if serviceConfigInstance == nil {
 		// Load default configuration if not loaded
-		defaultConfig := &StaticServiceConfig{
-			Services: map[string]StaticService{
+		defaultConfig := &ServiceConfig{
+			Services: map[string]Service{
 				"api-gateway": {
 					Port:       6500,
 					HealthPort: 6501,
@@ -91,18 +91,18 @@ func GetStaticServiceConfig() *StaticServiceConfig {
 				},
 			},
 		}
-		staticServiceConfig = defaultConfig
+		serviceConfigInstance = defaultConfig
 	}
-	return staticServiceConfig
+	return serviceConfigInstance
 }
 
 // GetServiceGRPCPort returns the gRPC port for a given service
 func GetServiceGRPCPort(serviceName string) (int, error) {
-	config := GetStaticServiceConfig()
+	config := GetServiceConfig()
 
 	service, exists := config.Services[serviceName]
 	if !exists {
-		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
+		return 0, fmt.Errorf("service %s not found in configuration", serviceName)
 	}
 
 	if service.GRPCPort == 0 {
@@ -114,11 +114,11 @@ func GetServiceGRPCPort(serviceName string) (int, error) {
 
 // GetServicePort returns the main port for a given service
 func GetServicePort(serviceName string) (int, error) {
-	config := GetStaticServiceConfig()
+	config := GetServiceConfig()
 
 	service, exists := config.Services[serviceName]
 	if !exists {
-		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
+		return 0, fmt.Errorf("service %s not found in configuration", serviceName)
 	}
 
 	return service.Port, nil
@@ -126,11 +126,11 @@ func GetServicePort(serviceName string) (int, error) {
 
 // GetServiceHealthPort returns the health check port for a given service
 func GetServiceHealthPort(serviceName string) (int, error) {
-	config := GetStaticServiceConfig()
+	config := GetServiceConfig()
 
 	service, exists := config.Services[serviceName]
 	if !exists {
-		return 0, fmt.Errorf("service %s not found in static configuration", serviceName)
+		return 0, fmt.Errorf("service %s not found in configuration", serviceName)
 	}
 
 	return service.HealthPort, nil

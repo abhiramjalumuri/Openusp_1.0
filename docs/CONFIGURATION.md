@@ -14,7 +14,9 @@ Complete configuration reference for OpenUSP services.
 
 ## Environment Variables
 
-OpenUSP uses environment variables for runtime configuration. All variables are prefixed with `OPENUSP_`.
+OpenUSP uses environment variables for runtime configuration of infrastructure, credentials, and service ports. All variables are prefixed with `OPENUSP_`.
+
+IMPORTANT: Protocol agents (USP/TR-369 and CWMP/TR-069) are now configured exclusively via the unified YAML file `configs/openusp.yml`. There is no environment variable fallback for agent identity, protocol, MTP, or ACS settings. Any previously documented agent-specific env vars are deprecated and ignored.
 
 ### Core Configuration
 
@@ -110,25 +112,15 @@ OPENUSP_CWMP_SESSION_TIMEOUT=300        # Session timeout (seconds)
 OPENUSP_CWMP_MAX_ENVELOPE_SIZE=65536    # Max SOAP envelope size
 ```
 
-### Agent-Specific Variables
+### Deprecated Agent Environment Variables
 
-#### USP Agent  
-```bash
-USP_WS_URL=ws://localhost:8081/ws       # Override WebSocket URL
-API_GATEWAY_URL=http://localhost:6500   # Override API Gateway URL
-USP_VERSION=1.3                         # Override USP protocol version
-USP_ENDPOINT_ID=proto://custom-agent    # Override endpoint ID
-```
+The following categories formerly existed but are now deprecated (use `openusp.yml`):
+- USP agent identity / protocol (e.g., `OPENUSP_USP_AGENT_*`, `USP_ENDPOINT_ID`)
+- USP agent MTP credentials (MQTT/STOMP)
+- CWMP agent device identity (e.g., `OPENUSP_CWMP_AGENT_*`, `CWMP_MANUFACTURER`, etc.)
+- CWMP ACS / Connection Request credentials (`OPENUSP_CWMP_AGENT_ACS_*`, `OPENUSP_CWMP_AGENT_CR_*`, `CWMP_ACS_*`)
 
-#### CWMP Agent
-```bash
-CWMP_ACS_HOST=localhost                 # CWMP ACS host
-CWMP_ACS_PORT=7547                      # CWMP ACS port  
-CWMP_USERNAME=acs                       # CWMP authentication username
-CWMP_PASSWORD=acs123                    # CWMP authentication password
-CWMP_MANUFACTURER=OpenUSP               # Device manufacturer
-CWMP_SERIAL_NUMBER=DEMO123456           # Device serial number
-```
+If set, these variables are ignored by current binaries.
 
 ## Configuration Files
 
@@ -136,61 +128,48 @@ CWMP_SERIAL_NUMBER=DEMO123456           # Device serial number
 
 Location: `configs/openusp.env`
 
-### Agent Configuration Files
+### Agent Configuration (Unified YAML)
 
-OpenUSP now provides dedicated YAML configuration files for protocol agents:
-
-#### USP Agent Configuration
-Location: `configs/usp-agent.yaml`
+All agent configuration lives under sections `usp_agent:` and `cwmp_agent:` inside `configs/openusp.yml`. Example excerpt:
 
 ```yaml
-# TR-369 USP Agent Configuration
-device_info:
-  endpoint_id: "proto://usp-agent-001"
-  manufacturer: "OpenUSP"
-  model_name: "USP Gateway"
-  serial_number: "USP-001-2024"
+usp_agent:
+  device:
+    endpoint_id: "proto://usp-agent-001"
+    manufacturer: "OpenUSP"
+    model_name: "USP Gateway"
+    serial_number: "USP-001-2024"
+    software_version: "1.0.0"
+  protocol:
+    version: "1.3"
+    supported_versions: "1.3,1.4"
+    role: "device"
+  mtp:
+    type: "websocket"
+    websocket:
+      url: "ws://localhost:8081/ws"
+      ping_interval: "30s"
+  behavior:
+    auto_register: true
 
-usp_protocol:
-  version: "1.3"
-  supported_versions: ["1.3", "1.4"]
-
-mtp:
-  type: "websocket"
-  websocket:
-    url: "ws://localhost:8081/ws"
-    ping_interval: "30s"
-    reconnect_interval: "5s"
-
-platform:
-  url: "http://localhost:6500"
-  auto_register: true
+cwmp_agent:
+  device:
+    endpoint_id: "cwmp://device-001"
+    manufacturer: "OpenUSP"
+    model_name: "CWMP Gateway"
+    serial_number: "CWMP-001-2024"
+  acs:
+    url: "http://localhost:7547"
+    username: "acs"
+    password: "acs123"
+  connection_request:
+    port: 7547
+    path: "/connection_request"
+  behavior:
+    inform_on_boot: true
 ```
 
-#### CWMP Agent Configuration  
-Location: `configs/cwmp-agent.yaml`
-
-```yaml
-# TR-069 CWMP Agent Configuration
-device_info:
-  endpoint_id: "cwmp://cwmp-agent-001"
-  manufacturer: "OpenUSP"  
-  model_name: "CWMP Gateway"
-  serial_number: "CWMP-001-2024"
-
-cwmp_protocol:
-  version: "1.4"
-  supported_versions: ["1.0", "1.1", "1.2", "1.3", "1.4"]
-
-acs:
-  url: "http://localhost:7547"
-  username: "acs"
-  password: "acs123"
-
-platform:
-  url: "http://localhost:6500"  
-  auto_register: true
-```
+Move or consolidate any legacy standalone agent YAML files into `openusp.yml` and remove the old ones.
 
 ```bash
 # OpenUSP Platform Configuration

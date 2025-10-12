@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,8 +34,14 @@ func NewOpenUSPConnectionClient(cacheExpiry time.Duration) *OpenUSPConnectionCli
 	var connectionManager connectionservice.ConnectionServiceClient
 	var managerConn *grpc.ClientConn
 
-	// Static port configuration - connect to connection manager on port 6201
-	target := "localhost:6201"
+	// Environment-based port configuration - connect to connection manager
+	connectionManagerPort := 50400 // Default connection manager gRPC port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CONNECTION_MANAGER_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			connectionManagerPort = p
+		}
+	}
+	target := fmt.Sprintf("localhost:%d", connectionManagerPort)
 	conn, err := grpc.Dial(target, grpc.WithInsecure(), grpc.WithTimeout(5*time.Second))
 	if err == nil {
 		connectionManager = connectionservice.NewConnectionServiceClient(conn)

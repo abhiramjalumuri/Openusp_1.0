@@ -105,14 +105,17 @@ type YAMLTR369Config struct {
 		} `yaml:"mqtt"`
 
 		STOMP struct {
-			BrokerURL           string `yaml:"broker_url"`
-			Username            string `yaml:"username"`
-			Password            string `yaml:"password"`
-			DestinationRequest  string `yaml:"destination_request"`
-			DestinationResponse string `yaml:"destination_response"`
-			HeartbeatSend       string `yaml:"heartbeat_send"`
-			HeartbeatReceive    string `yaml:"heartbeat_receive"`
-			MessageEncoding     string `yaml:"message_encoding"`
+			BrokerURL             string `yaml:"broker_url"`
+			Username              string `yaml:"username"`
+			Password              string `yaml:"password"`
+			DestinationRequest    string `yaml:"destination_request"`
+			DestinationResponse   string `yaml:"destination_response"`
+			DestinationController string `yaml:"destination_controller"`
+			DestinationAgent      string `yaml:"destination_agent"`
+			DestinationBroadcast  string `yaml:"destination_broadcast"`
+			HeartbeatSend         string `yaml:"heartbeat_send"`
+			HeartbeatReceive      string `yaml:"heartbeat_receive"`
+			MessageEncoding       string `yaml:"message_encoding"`
 		} `yaml:"stomp"`
 
 		UDS struct {
@@ -339,6 +342,9 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 	config.STOMPPassword = yamlConfig.MTP.STOMP.Password
 	config.STOMPDestinationRequest = yamlConfig.MTP.STOMP.DestinationRequest
 	config.STOMPDestinationResponse = yamlConfig.MTP.STOMP.DestinationResponse
+	config.STOMPDestinationController = yamlConfig.MTP.STOMP.DestinationController
+	config.STOMPDestinationAgent = yamlConfig.MTP.STOMP.DestinationAgent
+	config.STOMPDestinationBroadcast = yamlConfig.MTP.STOMP.DestinationBroadcast
 	if yamlConfig.MTP.STOMP.HeartbeatSend != "" {
 		if duration, err := time.ParseDuration(yamlConfig.MTP.STOMP.HeartbeatSend); err == nil {
 			config.STOMPHeartbeatSend = duration

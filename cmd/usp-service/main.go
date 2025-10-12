@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -104,7 +106,7 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.4 message: %w", err)
 	}
 
-	// Create a simple response (simplified for demo)
+	// Create a simple response
 	responseMsg := s.createUSP14Response(&msg)
 
 	// Marshal response
@@ -151,7 +153,7 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.3 message: %w", err)
 	}
 
-	// Create a simple response (simplified for demo)
+	// Create a simple response
 	responseMsg := s.createUSP13Response(&msg)
 
 	// Marshal response
@@ -192,7 +194,7 @@ func (s *USPCoreService) createUSP14Response(msg *v1_4.Msg) *v1_4.Msg {
 				MsgBody: &v1_4.Body_Error{
 					Error: &v1_4.Error{
 						ErrCode: 7000,
-						ErrMsg:  "Operation not implemented in demo",
+						ErrMsg:  "Operation not implemented",
 					},
 				},
 			},
@@ -217,7 +219,7 @@ func (s *USPCoreService) createUSP13Response(msg *v1_3.Msg) *v1_3.Msg {
 				MsgBody: &v1_3.Body_Error{
 					Error: &v1_3.Error{
 						ErrCode: 7000,
-						ErrMsg:  "Operation not implemented in demo",
+						ErrMsg:  "Operation not implemented",
 					},
 				},
 			},
@@ -410,170 +412,40 @@ func (s *USPCoreService) getParameterValue(path string) string {
 		return fmt.Sprintf("%v", value)
 	}
 
-	// Default values for common parameters
+	// Default values for common parameters with environment variable fallbacks
 	switch path {
 	case "Device.DeviceInfo.Manufacturer":
-		return "OpenUSP Demo"
+		if manufacturer := os.Getenv("OPENUSP_DEVICE_MANUFACTURER"); manufacturer != "" {
+			return manufacturer
+		}
+		return "Unknown"
 	case "Device.DeviceInfo.ManufacturerOUI":
-		return "00D09E"
+		if oui := os.Getenv("OPENUSP_DEVICE_MANUFACTURER_OUI"); oui != "" {
+			return oui
+		}
+		return "000000"
 	case "Device.DeviceInfo.ModelName":
+		if model := os.Getenv("OPENUSP_DEVICE_MODEL_NAME"); model != "" {
+			return model
+		}
 		return "TR-369 USP Agent"
 	case "Device.DeviceInfo.SerialNumber":
-		return "USP-DEMO-001"
+		if serial := os.Getenv("OPENUSP_DEVICE_SERIAL_NUMBER"); serial != "" {
+			return serial
+		}
+		return "UNKNOWN"
 	case "Device.DeviceInfo.SoftwareVersion":
+		if version := os.Getenv("OPENUSP_DEVICE_SOFTWARE_VERSION"); version != "" {
+			return version
+		}
 		return "1.0.0"
 	case "Device.DeviceInfo.HardwareVersion":
+		if version := os.Getenv("OPENUSP_DEVICE_HARDWARE_VERSION"); version != "" {
+			return version
+		}
 		return "1.0"
 	default:
 		return "unknown"
-	}
-}
-
-// Demo functions to show dual protocol support
-func (s *USPCoreService) DemoUSPOperations() {
-	fmt.Println("\n--- USP Multi-Version Protocol Demonstration ---")
-
-	// Demo USP 1.4 operations
-	s.demoUSP14Operations()
-
-	// Demo USP 1.3 operations
-	s.demoUSP13Operations()
-
-	// Demo version detection
-	s.demoVersionDetection()
-
-	// Demo device info
-	s.demoDeviceInfo()
-}
-
-func (s *USPCoreService) demoUSP14Operations() {
-	fmt.Println("\n1. USP 1.4 Message Creation:")
-
-	// Test paths for validation
-	testPaths := []string{
-		"Device.DeviceInfo.Manufacturer",
-		"Device.DeviceInfo.SerialNumber",
-		"Device.InvalidPath.Test",
-	}
-
-	validPaths := []string{}
-	for _, path := range testPaths {
-		if s.deviceManager.ValidateUSPPath(path) {
-			validPaths = append(validPaths, path)
-			fmt.Printf("   ✅ %s - Valid\n", path)
-		} else {
-			fmt.Printf("   ❌ %s - Invalid\n", path)
-		}
-	}
-
-	// Create USP 1.4 Get message
-	msg := &v1_4.Msg{
-		Header: &v1_4.Header{
-			MsgId:   "demo-v14-get-001",
-			MsgType: v1_4.Header_GET,
-		},
-		Body: &v1_4.Body{
-			MsgBody: &v1_4.Body_Request{
-				Request: &v1_4.Request{
-					ReqType: &v1_4.Request_Get{
-						Get: &v1_4.Get{
-							ParamPaths: validPaths,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	msgData, err := proto.Marshal(msg)
-	if err != nil {
-		log.Printf("Failed to marshal USP 1.4 message: %v", err)
-		return
-	}
-
-	fmt.Printf("   📦 Created USP 1.4 Get message (%d bytes)\n", len(msgData))
-	fmt.Printf("   📋 Message ID: %s\n", msg.Header.MsgId)
-}
-
-func (s *USPCoreService) demoUSP13Operations() {
-	fmt.Println("\n2. USP 1.3 Message Creation:")
-
-	validPaths := []string{
-		"Device.DeviceInfo.Manufacturer",
-		"Device.DeviceInfo.SerialNumber",
-	}
-
-	// Create USP 1.3 Get message
-	msg := &v1_3.Msg{
-		Header: &v1_3.Header{
-			MsgId:   "demo-v13-get-001",
-			MsgType: v1_3.Header_GET,
-		},
-		Body: &v1_3.Body{
-			MsgBody: &v1_3.Body_Request{
-				Request: &v1_3.Request{
-					ReqType: &v1_3.Request_Get{
-						Get: &v1_3.Get{
-							ParamPaths: validPaths,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	msgData, err := proto.Marshal(msg)
-	if err != nil {
-		log.Printf("Failed to marshal USP 1.3 message: %v", err)
-		return
-	}
-
-	fmt.Printf("   📦 Created USP 1.3 Get message (%d bytes)\n", len(msgData))
-	fmt.Printf("   📋 Message ID: %s\n", msg.Header.MsgId)
-}
-
-func (s *USPCoreService) demoVersionDetection() {
-	fmt.Println("\n3. USP Version Detection:")
-
-	// Create sample USP 1.4 record
-	record14 := &v1_4.Record{
-		Version: "1.4",
-		ToId:    "agent::demo",
-		FromId:  "controller::demo",
-		RecordType: &v1_4.Record_NoSessionContext{
-			NoSessionContext: &v1_4.NoSessionContextRecord{
-				Payload: []byte("demo-payload"),
-			},
-		},
-	}
-
-	data14, _ := proto.Marshal(record14)
-	version14, _ := s.DetectUSPVersion(data14)
-	fmt.Printf("   📋 Detected version for USP 1.4 record: %s\n", version14)
-
-	// Create sample USP 1.3 record
-	record13 := &v1_3.Record{
-		Version: "1.3",
-		ToId:    "agent::demo",
-		FromId:  "controller::demo",
-		RecordType: &v1_3.Record_NoSessionContext{
-			NoSessionContext: &v1_3.NoSessionContextRecord{
-				Payload: []byte("demo-payload"),
-			},
-		},
-	}
-
-	data13, _ := proto.Marshal(record13)
-	version13, _ := s.DetectUSPVersion(data13)
-	fmt.Printf("   📋 Detected version for USP 1.3 record: %s\n", version13)
-}
-
-func (s *USPCoreService) demoDeviceInfo() {
-	fmt.Println("\n4. Device Information (TR-181 Based):")
-
-	deviceInfo := s.deviceManager.GetDeviceInfo()
-	for path, value := range deviceInfo {
-		fmt.Printf("   📍 %s = %v\n", path, value)
 	}
 }
 
@@ -605,15 +477,22 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Fixed ports – no environment overrides needed
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 6400, "OPENUSP_USP_SERVICE_PORT")
+	_ = config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 6400, "OPENUSP_USP_SERVICE_PORT")
 
-	// Static port configuration - no service discovery needed
+	// Fixed ports – no service discovery needed
 
-	// Static port configuration - use configured port directly
-	grpcPort := deployConfig.ServicePort + 1 // gRPC is HTTP + 1
+	// Use 5xxxx series gRPC port (convention)
+	grpcPort := 50200 // Default gRPC port (5xxxx series)
+
+	// Check environment override for gRPC port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			grpcPort = p
+		}
+	}
 
 	fmt.Println("OpenUSP Core Service - Multi-Version TR-369 Protocol Engine")
 	fmt.Println("==========================================================")
@@ -647,8 +526,13 @@ func main() {
 	}
 	log.Printf("✅ Connected to Data Service via connection manager")
 
-	// Start HTTP server for health checks and metrics - static port configuration
-	httpPort := 6400 // Static HTTP port for USP Service
+	// Start HTTP server for health checks and metrics - environment-based configuration
+	httpPort := 6400 // Default HTTP port for USP Service
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			httpPort = p
+		}
+	}
 
 	go func() {
 		mux := http.NewServeMux()
@@ -730,7 +614,7 @@ func main() {
 	log.Printf("🚀 USP Service started successfully")
 	log.Printf("   └── gRPC Port: %d", grpcPort)
 	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Static Port Configuration: ✅ Enabled")
+	log.Printf("   └── Environment Configuration: ✅ Enabled")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 	log.Printf("   └── TR-181 Device:2 data model loaded")
@@ -751,7 +635,7 @@ func main() {
 	<-sigChan
 	log.Printf("� Received shutdown signal")
 
-	// Static port configuration - no service deregistration needed
+	// Fixed ports – no service deregistration needed
 
 	grpcServer.GracefulStop()
 	log.Printf("✅ USP Service stopped successfully")

@@ -163,7 +163,7 @@ make service-status   # Quick accessibility check
 
 **OpenUSP Services:**
 - **API Gateway**: http://localhost:6500 (Swagger: /swagger/index.html)
-- **MTP Service**: http://localhost:8081 (Demo UI: /usp, WebSocket: /ws)
+- **MTP Service**: http://localhost:8081 (WebSocket: /ws)
 - **CWMP Service**: http://localhost:7547 (TR-069 CWMP endpoint)
 - **Data Service**: http://localhost:6100 (Health: /health, Status: /status)
 - **USP Service**: http://localhost:6400 (Health: /health)
@@ -218,13 +218,13 @@ DB_PORT=5433 go run cmd/data-service/main.go
 ```bash
 # Test TR-369 USP agent
 make start-usp-agent
-# or manually:
-go run cmd/usp-agent/main.go --config configs/usp-agent.yaml
+# or manually (uses unified configs/openusp.yml automatically):
+go run cmd/usp-agent/main.go
 
 # Test TR-069 CWMP agent  
 make start-cwmp-agent  
-# or manually:
-go run cmd/cwmp-agent/main.go --config configs/cwmp-agent.yaml
+# or manually (uses unified configs/openusp.yml automatically):
+go run cmd/cwmp-agent/main.go
 ```
 
 ### USP Protocol Testing

@@ -30,7 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// SimpleMTPService provides a basic MTP service implementation for demo
+// SimpleMTPService provides a basic MTP service implementation
 type SimpleMTPService struct {
 	webSocketPort    int
 	healthPort       int
@@ -125,7 +125,7 @@ func NewSimpleMTPService(config *Config, handler MessageHandler) (*SimpleMTPServ
 		metrics:          metricsInstance,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for demo
+				return true // Allow all origins
 			},
 			Subprotocols: []string{"v1.usp"}, // Support USP WebSocket subprotocol
 		},
@@ -138,8 +138,8 @@ func (s *SimpleMTPService) Start(ctx context.Context) error {
 
 	// Create WebSocket protocol server (standard port 8081)
 	webSocketMux := http.NewServeMux()
-	webSocketMux.HandleFunc("/usp", s.handleUSPWebSocketDemo) // Demo HTML page
-	webSocketMux.HandleFunc("/ws", s.handleUSPWebSocket)      // Actual WebSocket endpoint
+	// Removed demo HTML page endpoint
+	webSocketMux.HandleFunc("/ws", s.handleUSPWebSocket) // Actual WebSocket endpoint
 
 	s.webSocketServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.webSocketPort),
@@ -305,105 +305,6 @@ func (h *USPMessageHandler) triggerProactiveOnboardingWithRealEndpoint(realEndpo
 	} else {
 		log.Printf("✅ ProactiveOnboarding: Successfully initiated for %s", realEndpointID)
 	}
-}
-
-// handleUSPWebSocketDemo provides a demo WebSocket endpoint
-func (s *SimpleMTPService) handleUSPWebSocketDemo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	html := `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>USP MTP Service Demo</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .container { max-width: 800px; }
-        .protocol { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
-        .status { padding: 10px; border-radius: 3px; margin: 10px 0; }
-        .enabled { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .disabled { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 3px; cursor: pointer; }
-        .primary { background-color: #007bff; color: white; }
-        .success { background-color: #28a745; color: white; }
-        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🌐 OpenUSP MTP Service Demo</h1>
-        <p>Message Transfer Protocol Service for TR-369 USP</p>
-        
-        <div class="protocol">
-            <h3>📡 MQTT Protocol</h3>
-            <div class="status enabled">✅ Enabled - Ready for MQTT broker connection</div>
-            <p>Topics: /usp/controller/+, /usp/agent/+, /usp/broadcast</p>
-        </div>
-        
-        <div class="protocol">
-            <h3>📬 STOMP Protocol</h3>
-            <div class="status enabled">✅ Enabled - Ready for STOMP broker connection</div>
-            <p>Destinations: /queue/usp.controller, /queue/usp.agent, /topic/usp.broadcast</p>
-        </div>
-        
-        <div class="protocol">
-            <h3>🌐 WebSocket Protocol</h3>
-            <div class="status enabled">✅ Enabled - Running on port 8081</div>
-            <p>Endpoint: ws://localhost:8081/usp</p>
-            <button class="primary" onclick="testWebSocket()">Test WebSocket Connection</button>
-        </div>
-        
-        <div class="protocol">
-            <h3>🔌 Unix Domain Socket</h3>
-            <div class="status enabled">✅ Enabled - Socket path: /tmp/usp-agent.sock</div>
-            <p>Binary protocol for local IPC communication</p>
-        </div>
-        
-        <div class="protocol">
-            <h3>📊 Service Status</h3>
-            <button class="success" onclick="checkHealth()">Check Health</button>
-            <button class="primary" onclick="simulateMessage()">Simulate USP Message</button>
-            <pre id="output">Ready to test MTP service...</pre>
-        </div>
-    </div>
-    
-    <script>
-        function testWebSocket() {
-            const output = document.getElementById('output');
-            output.textContent = 'Testing WebSocket connection...';
-            
-            // Note: This is a demo - actual WebSocket would require proper implementation
-            setTimeout(() => {
-                output.textContent = 'WebSocket test completed.\n\nNote: Full WebSocket implementation requires:\n- Proper WebSocket upgrade handling\n- USP message serialization\n- Client connection management';
-            }, 1000);
-        }
-        
-        function checkHealth() {
-            const output = document.getElementById('output');
-            fetch('/health')
-                .then(response => response.json())
-                .then(data => {
-                    output.textContent = JSON.stringify(data, null, 2);
-                })
-                .catch(error => {
-                    output.textContent = 'Error: ' + error;
-                });
-        }
-        
-        function simulateMessage() {
-            const output = document.getElementById('output');
-            fetch('/simulate', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    output.textContent = JSON.stringify(data, null, 2);
-                })
-                .catch(error => {
-                    output.textContent = 'Error: ' + error;
-                });
-        }
-    </script>
-</body>
-</html>`
-	w.Write([]byte(html))
 }
 
 // handleUSPWebSocket handles WebSocket connections for USP messages
@@ -591,11 +492,11 @@ func (s *SimpleMTPService) handleSimulate(w http.ResponseWriter, r *http.Request
 	// Create a sample USP 1.4 record
 	sampleRecord := &v1_4.Record{
 		Version: "1.4",
-		ToId:    "agent::demo",
-		FromId:  "controller::demo",
+		ToId:    "agent::sample",
+		FromId:  "controller::mtp-service",
 		RecordType: &v1_4.Record_NoSessionContext{
 			NoSessionContext: &v1_4.NoSessionContextRecord{
-				Payload: []byte("demo USP message payload"),
+				Payload: []byte("sample USP message payload"),
 			},
 		},
 	}
@@ -628,6 +529,7 @@ func (s *SimpleMTPService) handleSimulate(w http.ResponseWriter, r *http.Request
 type USPMessageHandler struct {
 	parser           *usp.USPParser
 	connectionClient *client.OpenUSPConnectionClient
+	mtpConfig        *config.MTPConfig
 
 	// Agent connection tracking
 	connectedAgents map[string]*ConnectedAgent // agentID -> connection info
@@ -647,13 +549,14 @@ type ConnectedAgent struct {
 }
 
 // NewUSPMessageHandler creates a new USP message handler that forwards to USP service
-func NewUSPMessageHandler() *USPMessageHandler {
+func NewUSPMessageHandler(mtpConfig *config.MTPConfig) *USPMessageHandler {
 	// Create connection client for service discovery
 	connectionClient := client.NewOpenUSPConnectionClient(30 * time.Second)
 
 	return &USPMessageHandler{
 		parser:           usp.NewUSPParser(),
 		connectionClient: connectionClient,
+		mtpConfig:        mtpConfig,
 		connectedAgents:  make(map[string]*ConnectedAgent),
 	}
 }
@@ -999,6 +902,13 @@ func (h *USPMessageHandler) createMQTTConnectAck14(fromID, toID string) ([]byte,
 func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte, error) {
 	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
 	// with its own STOMPConnect record to complete session establishment
+
+	// Get configurable controller destination
+	controllerDestination := "/topic/usp.controller" // default fallback
+	if h.mtpConfig != nil && h.mtpConfig.STOMPDestinationController != "" {
+		controllerDestination = h.mtpConfig.STOMPDestinationController
+	}
+
 	ackRecord := &v1_3.Record{
 		Version:         "1.3",
 		ToId:            fromID, // Responding to the Agent
@@ -1007,7 +917,7 @@ func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte
 		RecordType: &v1_3.Record_StompConnect{
 			StompConnect: &v1_3.STOMPConnectRecord{
 				Version:               v1_3.STOMPConnectRecord_V1_2,
-				SubscribedDestination: "/topic/usp.controller",
+				SubscribedDestination: controllerDestination,
 			},
 		},
 	}
@@ -1026,6 +936,13 @@ func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte
 func (h *USPMessageHandler) createSTOMPConnectAck14(fromID, toID string) ([]byte, error) {
 	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
 	// with its own STOMPConnect record to complete session establishment
+
+	// Get configurable controller destination
+	controllerDestination := "/topic/usp.controller" // default fallback
+	if h.mtpConfig != nil && h.mtpConfig.STOMPDestinationController != "" {
+		controllerDestination = h.mtpConfig.STOMPDestinationController
+	}
+
 	ackRecord := &v1_4.Record{
 		Version:         "1.4",
 		ToId:            fromID, // Responding to the Agent
@@ -1034,7 +951,7 @@ func (h *USPMessageHandler) createSTOMPConnectAck14(fromID, toID string) ([]byte
 		RecordType: &v1_4.Record_StompConnect{
 			StompConnect: &v1_4.STOMPConnectRecord{
 				Version:               v1_4.STOMPConnectRecord_V1_2,
-				SubscribedDestination: "/topic/usp.controller",
+				SubscribedDestination: controllerDestination,
 			},
 		},
 	}
@@ -1229,7 +1146,7 @@ func (h *USPMessageHandler) handleDisconnect(parsed *usp.ParsedUSP) ([]byte, err
 	return nil, nil
 }
 
-// Global counters for demo
+// Global counters for service monitoring
 var (
 	startTime    = time.Now()
 	messageCount = 0
@@ -1238,7 +1155,7 @@ var (
 
 // mustMarshalJSON marshals to JSON or panics
 func mustMarshalJSON(v interface{}) string {
-	// Simple JSON marshaling for demo
+	// Simple JSON marshaling
 	switch val := v.(type) {
 	case map[string]interface{}:
 		return marshalMapToJSON(val)
@@ -1292,11 +1209,11 @@ func marshalMapToJSON(m map[string]interface{}) string {
 	return result
 }
 
-// registerMTPService registers MTP service with static port configuration
-func registerMTPService(serviceInfo interface{}, healthPort int) error {
-	// Static port configuration - no service registration needed
-	log.Printf("🎯 MTP Service using static ports: WebSocket=8081, Health=%d", healthPort)
-	return nil // No registration needed for static ports
+// registerMTPService registers MTP service with environment-based port configuration
+func registerMTPService(serviceInfo interface{}, webSocketPort, healthPort int) error {
+	// Environment-based port configuration - no service registration needed
+	log.Printf("🎯 MTP Service using configured ports: WebSocket=%d, Health=%d", webSocketPort, healthPort)
+	return nil // No registration needed for environment-based ports
 }
 
 func main() {
@@ -1328,19 +1245,38 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Environment-based port configuration
 
-	// Static port configuration - MTP service uses predefined ports
-	healthPort := 8082 // Static health/admin port
-	grpcPort := 8083   // Static gRPC port (different from health port)
+	// Health port configuration with environment override
+	healthPort := 8082 // Default health/admin port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_HEALTH_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			healthPort = p
+		}
+	}
 
-	log.Printf("🎯 Using static ports: WebSocket=8081, Health=%d, gRPC=%d", healthPort, grpcPort)
+	// gRPC port configuration with environment override
+	grpcPort := 50300 // Default gRPC port (5xxxx series)
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			grpcPort = p
+		}
+	}
 
-	// Load MTP configuration with static ports
-	config := DefaultConfigWithPorts(healthPort, grpcPort)
+	// Load MTP configuration with configured ports
+	serviceConfig := DefaultConfigWithPorts(healthPort, grpcPort)
+	mtpConfig := config.LoadMTPConfig()
 
-	// Create USP message handler that forwards to USP service - static configuration
-	uspServiceAddr := "localhost:6401" // Static USP service gRPC port
+	log.Printf("🎯 Using configured ports: WebSocket=%d, Health=%d, gRPC=%d", serviceConfig.WebSocketPort, healthPort, grpcPort)
+
+	// Create USP message handler that forwards to USP service - environment-based configuration
+	uspServicePort := 50200 // Default USP service gRPC port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			uspServicePort = p
+		}
+	}
+	uspServiceAddr := fmt.Sprintf("localhost:%d", uspServicePort)
 	log.Printf("✅ Using static USP service address: %s", uspServiceAddr)
 
 	// Fallback to environment variable or default if discovery failed
@@ -1349,15 +1285,15 @@ func main() {
 			uspServiceAddr = "localhost:" + portStr
 			log.Printf("🔁 Using USP service address from OPENUSP_USP_SERVICE_GRPC_PORT: %s", uspServiceAddr)
 		} else {
-			uspServiceAddr = "localhost:56250" // Legacy/static default
-			log.Printf("⚠️  USP service not discovered; using legacy default address: %s", uspServiceAddr)
+			uspServiceAddr = "localhost:50200" // Default USP service gRPC port
+			log.Printf("⚠️  USP service not discovered; using default address: %s", uspServiceAddr)
 		}
 	}
 
-	handler := NewUSPMessageHandler()
+	handler := NewUSPMessageHandler(mtpConfig)
 
 	// Create MTP service
-	mtpService, err := NewSimpleMTPService(config, handler)
+	mtpService, err := NewSimpleMTPService(serviceConfig, handler)
 	if err != nil {
 		log.Fatalf("Failed to create MTP service: %v", err)
 	}
@@ -1371,11 +1307,11 @@ func main() {
 	}
 
 	log.Printf("🚀 MTP Service started successfully")
-	log.Printf("   └── WebSocket Port: %d (USP Protocol)", config.WebSocketPort)
-	log.Printf("   └── Health API Port: %d (Static)", config.HealthPort)
-	log.Printf("   └── Static Port Configuration: ✅ Enabled")
-	log.Printf("   └── Demo UI: http://localhost:%d/usp", config.WebSocketPort)
-	log.Printf("   └── Health Check: http://localhost:%d/health", config.HealthPort)
+	log.Printf("   └── WebSocket Port: %d (USP Protocol)", serviceConfig.WebSocketPort)
+	log.Printf("   └── Health API Port: %d (Static)", serviceConfig.HealthPort)
+	log.Printf("   └── Port Configuration: ✅ Fixed")
+	// Demo UI endpoint removed in production version
+	log.Printf("   └── Health Check: http://localhost:%d/health", serviceConfig.HealthPort)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -1385,7 +1321,7 @@ func main() {
 	<-sigChan
 	log.Printf("� Received shutdown signal")
 
-	// Static port configuration - no service deregistration needed
+	// Fixed ports – no service deregistration needed
 
 	cancel()
 	mtpService.Stop()

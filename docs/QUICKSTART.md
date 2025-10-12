@@ -87,9 +87,9 @@ make start-usp-agent
 # Run TR-069 CWMP agent (YAML-configured) 
 make start-cwmp-agent
 
-# Or run individually with custom configs
-./build/usp-agent --config configs/usp-agent.yaml
-./build/cwmp-agent --config configs/cwmp-agent.yaml
+# Manual runs (agents auto-load unified configs/openusp.yml)
+./build/usp-agent
+./build/cwmp-agent
 ```
 
 ## 🎯 What's Next?

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,7 +52,7 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Fixed ports – no environment overrides needed
 
 	// Create and start the service
 	service, err := NewDataService()
@@ -75,7 +77,7 @@ func NewDataService() (*DataService, error) {
 		metrics: metrics.NewOpenUSPMetrics("data-service"),
 	}
 
-	// Static port configuration - no service discovery needed
+	// Fixed ports – no service discovery needed
 
 	// Initialize database
 	db, err := database.NewDatabase(nil) // Use default config with environment variables
@@ -98,7 +100,7 @@ func NewDataService() (*DataService, error) {
 	return service, nil
 }
 
-// Service registration removed - using static port configuration
+// Service registration removed - using fixed ports
 
 func (ds *DataService) setupgRPCServer() {
 	// Configure gRPC server with keepalive enforcement to prevent ENHANCE_YOUR_CALM errors
@@ -161,7 +163,7 @@ func (ds *DataService) healthHandler(c *gin.Context) {
 }
 
 func (ds *DataService) statusHandler(c *gin.Context) {
-	// Static port configuration status
+	// Port configuration status
 	c.JSON(http.StatusOK, gin.H{
 		"service":        "openusp-data-service",
 		"version":        version.Version,
@@ -183,20 +185,29 @@ func (ds *DataService) statusHandler(c *gin.Context) {
 }
 
 func (ds *DataService) getHTTPPort() int {
-	// Static port configuration
+	// Port configuration
 	return ds.config.ServicePort
 }
 
 func (ds *DataService) getgRPCPort() int {
-	// Static port configuration - gRPC is always HTTP port + 1
-	return ds.config.ServicePort + 1
+	// Use 5xxxx series gRPC port (convention)
+	grpcPort := 50100 // Default gRPC port (OPENUSP_DATA_SERVICE_GRPC_PORT)
+
+	// Check environment override for gRPC port
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			grpcPort = p
+		}
+	}
+
+	return grpcPort
 }
 
 func (ds *DataService) Start() error {
-	// Static port configuration - no service registration needed
-	log.Printf("🎯 Data Service starting with static configuration:")
+	// Environment-based port configuration
+	log.Printf("🎯 Data Service starting with environment configuration:")
 	log.Printf("   └── HTTP Port: %d", ds.config.ServicePort)
-	log.Printf("   └── gRPC Port: %d", ds.config.ServicePort+1)
+	log.Printf("   └── gRPC Port: %d", ds.getgRPCPort())
 
 	// Start gRPC server
 	go ds.startgRPCServer()
@@ -207,15 +218,15 @@ func (ds *DataService) Start() error {
 	// Wait for servers to set their ports
 	time.Sleep(2 * time.Second)
 
-	// No service registration needed with static ports
-	log.Printf("✅ Data Service servers started with static port configuration")
+	// No service registration needed with environment configuration
+	log.Printf("✅ Data Service servers started with environment configuration")
 
 	log.Printf("🚀 Data Service started successfully")
 	httpPort := ds.getHTTPPort()
 	grpcPort := ds.getgRPCPort()
 	log.Printf("   └── gRPC Port: %d", grpcPort)
 	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Service Discovery: Static port configuration")
+	log.Printf("   └── Service Discovery: Environment configuration")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 
@@ -223,7 +234,7 @@ func (ds *DataService) Start() error {
 }
 
 func (ds *DataService) startgRPCServer() {
-	// Static port configuration - listen on fixed port
+	// Listen on fixed port
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", ds.getgRPCPort()))
 	if err != nil {
 		log.Fatalf("Failed to create gRPC listener: %v", err)
@@ -238,7 +249,7 @@ func (ds *DataService) startgRPCServer() {
 }
 
 func (ds *DataService) startHTTPServer() {
-	// Static port configuration - listen on fixed port
+	// Listen on fixed port
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", ds.getHTTPPort()))
 	if err != nil {
 		log.Fatalf("Failed to create HTTP listener: %v", err)
@@ -255,7 +266,7 @@ func (ds *DataService) startHTTPServer() {
 func (ds *DataService) Stop() error {
 	log.Printf("🛑 Shutting down Data Service...")
 
-	// Static port configuration - no service deregistration needed
+	// Fixed ports – no service deregistration needed
 
 	// Stop gRPC server
 	if ds.grpcServer != nil {

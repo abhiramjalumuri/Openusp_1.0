@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -155,18 +157,35 @@ func NewConnectionManagerService(config *ConnectionManagerConfig) *ConnectionMan
 	return cms
 }
 
-// getStaticServiceTarget returns the static target address for a service
-func (cms *ConnectionManagerService) getStaticServiceTarget(serviceName string) string {
-	// Static port mappings based on services.yaml
+// getServiceTarget returns the target address for a service using environment configuration
+func (cms *ConnectionManagerService) getServiceTarget(serviceName string) string {
+	// Environment-based port mappings using 5xxxx series for gRPC (consistent with openusp.env)
 	switch serviceName {
 	case "openusp-data-service":
-		return "localhost:6101" // gRPC port
+		port := 50100 // Default gRPC port
+		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				port = p
+			}
+		}
+		return fmt.Sprintf("localhost:%d", port)
 	case "openusp-usp-service":
-		return "localhost:6401" // gRPC port
-	case "openusp-cwmp-service":
-		return "localhost:7548" // gRPC port
+		port := 50200 // Default gRPC port
+		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				port = p
+			}
+		}
+		return fmt.Sprintf("localhost:%d", port)
 	case "openusp-mtp-service":
-		return "localhost:8082" // gRPC port
+		port := 50300 // Default gRPC port
+		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_GRPC_PORT")); portStr != "" {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				port = p
+			}
+		}
+		return fmt.Sprintf("localhost:%d", port)
+	// Note: CWMP service is HTTP-only (TR-069) and does not provide gRPC
 	default:
 		return "" // Unknown service
 	}
@@ -394,8 +413,8 @@ func (cms *ConnectionManagerService) initializePool(pool *ServiceConnectionPool)
 
 // addConnectionToPool adds a new connection to the pool
 func (cms *ConnectionManagerService) addConnectionToPool(pool *ServiceConnectionPool) error {
-	// Static service discovery - get target from service name
-	target := cms.getStaticServiceTarget(pool.serviceName)
+	// Service discovery via configured target (no dynamic registry)
+	target := cms.getServiceTarget(pool.serviceName)
 	if target == "" {
 		return fmt.Errorf("unknown service: %s", pool.serviceName)
 	}
@@ -425,7 +444,7 @@ func (cms *ConnectionManagerService) addConnectionToPool(pool *ServiceConnection
 		metadata:  make(map[string]string),
 	}
 
-	// Add basic metadata for static configuration
+	// Add basic metadata for configured connection
 	managedConn.metadata["service_name"] = pool.serviceName
 	managedConn.metadata["target"] = target
 
@@ -636,10 +655,10 @@ func (cms *ConnectionManagerService) refreshServiceDiscovery() {
 
 // refreshServiceInfo refreshes service information for a specific service
 func (cms *ConnectionManagerService) refreshServiceInfo(serviceName string) {
-	// Static configuration - no refresh needed
-	target := cms.getStaticServiceTarget(serviceName)
+	// Ports are fixed - just log current target
+	target := cms.getServiceTarget(serviceName)
 	if target != "" {
-		log.Printf("🔄 Service info for %s: %s (static)", serviceName, target)
+		log.Printf("🔄 Service info for %s: %s", serviceName, target)
 	}
 }
 
@@ -684,9 +703,24 @@ func (cms *ConnectionManagerService) Shutdown() error {
 func main() {
 	log.Printf("🚀 Starting OpenUSP Connection Manager Service...")
 
-	// Command line flags
-	var port = flag.Int("port", 6201, "gRPC port")
-	var httpPort = flag.Int("http-port", 6200, "HTTP port for health/status")
+	// Environment-based default port configuration
+	defaultGRPCPort := 50400
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CONNECTION_MANAGER_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			defaultGRPCPort = p
+		}
+	}
+
+	defaultHTTPPort := 6200
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CONNECTION_MANAGER_HTTP_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			defaultHTTPPort = p
+		}
+	}
+
+	// Command line flags with environment-based defaults
+	var port = flag.Int("port", defaultGRPCPort, "gRPC port")
+	var httpPort = flag.Int("http-port", defaultHTTPPort, "HTTP port for health/status")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -712,7 +746,7 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Environment-based port configuration
 
 	// Create connection manager service
 	connectionManager := NewConnectionManagerService(DefaultConnectionManagerConfig())
@@ -734,7 +768,7 @@ func main() {
 	grpc_health_v1.RegisterHealthServer(grpcServer, health.NewServer())
 	reflection.Register(grpcServer)
 
-	// Determine HTTP port - static configuration
+	// Determine HTTP port (configured)
 	httpPortToUse := *httpPort
 
 	// Start HTTP server for health checks and status
@@ -788,7 +822,7 @@ func main() {
 		}
 	}()
 
-	// Start gRPC server - static port configuration
+	// Start gRPC server - environment-based port configuration
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		log.Fatalf("Failed to listen on gRPC port: %v", err)
@@ -800,7 +834,7 @@ func main() {
 	// Update connection manager with actual ports for status reporting
 	connectionManager.SetPorts(actualGRPCPort, httpPortToUse)
 
-	// Static port configuration - no service registration needed
+	// Environment-based port configuration - no service registration needed
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

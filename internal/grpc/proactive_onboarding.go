@@ -2,10 +2,14 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
+	"openusp/pkg/proto/mtpservice"
 	"openusp/pkg/proto/uspservice"
 	v1_3 "openusp/pkg/proto/v1_3"
 	v1_4 "openusp/pkg/proto/v1_4"
@@ -13,6 +17,15 @@ import (
 
 	"google.golang.org/protobuf/proto"
 )
+
+// getControllerID retrieves the controller ID from configuration
+func getControllerID() string {
+	if controllerID := strings.TrimSpace(os.Getenv("OPENUSP_USP_ENDPOINT_ID")); controllerID != "" {
+		return controllerID
+	}
+	// Default fallback for backward compatibility
+	return getControllerID()
+}
 
 // ProactiveOnboardingManager handles proactive device onboarding
 type ProactiveOnboardingManager struct {
@@ -241,7 +254,7 @@ func (pom *ProactiveOnboardingManager) createGetSupportedDM14Request(agentID str
 	record := &v1_4.Record{
 		Version:         "1.4",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_4.Record_PLAINTEXT,
 		RecordType: &v1_4.Record_NoSessionContext{
 			NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -288,7 +301,7 @@ func (pom *ProactiveOnboardingManager) createGetSupportedDM13Request(agentID str
 	record := &v1_3.Record{
 		Version:         "1.3",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_3.Record_PLAINTEXT,
 		RecordType: &v1_3.Record_NoSessionContext{
 			NoSessionContext: &v1_3.NoSessionContextRecord{
@@ -391,7 +404,7 @@ func (pom *ProactiveOnboardingManager) createBootSubscription14Request(agentID s
 	record := &v1_4.Record{
 		Version:         "1.4",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_4.Record_PLAINTEXT,
 		RecordType: &v1_4.Record_NoSessionContext{
 			NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -457,7 +470,7 @@ func (pom *ProactiveOnboardingManager) createBootSubscription13Request(agentID s
 	record := &v1_3.Record{
 		Version:         "1.3",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_3.Record_PLAINTEXT,
 		RecordType: &v1_3.Record_NoSessionContext{
 			NoSessionContext: &v1_3.NoSessionContextRecord{
@@ -527,7 +540,7 @@ func (pom *ProactiveOnboardingManager) createGetRequest14(agentID string, paths 
 	record := &v1_4.Record{
 		Version:         "1.4",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_4.Record_PLAINTEXT,
 		RecordType: &v1_4.Record_NoSessionContext{
 			NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -567,7 +580,7 @@ func (pom *ProactiveOnboardingManager) createGetRequest13(agentID string, paths 
 	record := &v1_3.Record{
 		Version:         "1.3",
 		ToId:            agentID,
-		FromId:          "openusp-controller",
+		FromId:          getControllerID(),
 		PayloadSecurity: v1_3.Record_PLAINTEXT,
 		RecordType: &v1_3.Record_NoSessionContext{
 			NoSessionContext: &v1_3.NoSessionContextRecord{
@@ -742,12 +755,41 @@ func (pom *ProactiveOnboardingManager) sendMessageToAgent(agentID string, messag
 		return fmt.Errorf("connection client not available")
 	}
 
-	log.Printf("📤 ProactiveOnboarding: Sending message to agent %s (would use MTP service via connection manager)", agentID)
+	log.Printf("📤 ProactiveOnboarding: Sending message to agent %s via MTP service", agentID)
 
-	// For now, just log the intent - actual implementation would use the connection manager
-	// to route the message through the appropriate MTP service
-	log.Printf("   Message size: %d bytes", len(messageData))
-	log.Printf("   This would be sent via WebSocket MTP to agent %s", agentID)
+	// Get MTP client via connection manager
+	mtpClient, err := pom.connectionClient.GetMTPServiceClient()
+	if err != nil {
+		log.Printf("❌ ProactiveOnboarding: Failed to get MTP client for agent %s: %v", agentID, err)
+		return fmt.Errorf("failed to get MTP client: %w", err)
+	}
+
+	// Send message via MTP service
+	req := &mtpservice.SendMessageRequest{
+		AgentId:       agentID,
+		UspMessage:    messageData,
+		TransportType: "WebSocket",
+		Metadata: map[string]string{
+			"message_type":  "ProactiveOnboarding",
+			"controller_id": getControllerID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := mtpClient.SendMessageToAgent(ctx, req)
+	if err != nil {
+		log.Printf("❌ ProactiveOnboarding: Failed to send message to agent %s: %v", agentID, err)
+		return fmt.Errorf("failed to send message via MTP: %w", err)
+	}
+
+	if resp.Success {
+		log.Printf("✅ ProactiveOnboarding: Message sent to agent %s (size: %d bytes)", agentID, len(messageData))
+	} else {
+		log.Printf("❌ ProactiveOnboarding: Failed to send message to agent %s: %s", agentID, resp.ErrorMessage)
+		return fmt.Errorf("MTP service error: %s", resp.ErrorMessage)
+	}
 
 	return nil
 }

@@ -1,0 +1,412 @@
+# OpenUSP Platform Configuration
+# This file contains all non-sensitive configuration parameters
+# Credentials (usernames, passwords) remain in openusp.env for security
+
+# =============================================================================
+# SERVICE PORTS CONFIGURATION
+# =============================================================================
+ports:
+  # HTTP/REST Service Ports
+  http:
+    api_gateway: 6500          # API Gateway HTTP + Swagger UI
+    mtp_service: 8081          # MTP Service HTTP + WebSocket  
+    usp_service: 6250          # USP Service HTTP endpoints
+    cwmp_service: 7547         # CWMP Service HTTP
+    data_service: 6400         # Data Service HTTP for metrics
+  
+  # gRPC Service Ports (5xxxx series - Static Configuration)
+  grpc:
+    data_service: 50100        # Data Service gRPC
+    usp_service: 50200         # USP Service gRPC
+    mtp_service: 50300         # MTP Service gRPC
+    connection_manager: 50400  # Connection Manager gRPC
+    cwmp_service: 50500        # CWMP Service gRPC
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  host: localhost
+  port: 5433
+  name: openusp_db
+  sslmode: disable
+
+# =============================================================================
+# INFRASTRUCTURE SERVICES
+# =============================================================================
+infrastructure:
+  # PostgreSQL (exposed from Docker)
+  postgres:
+    host: localhost
+    port: 5433
+    database: openusp_db
+  
+  # RabbitMQ (STOMP/AMQP)
+  rabbitmq:
+    host: localhost
+    port: 5672
+    mgmt_port: 15672
+    stomp_port: 61613
+  
+  # Mosquitto (MQTT)
+  mosquitto:
+    host: localhost
+    port: 1883
+    websocket_port: 9001
+  
+  # Monitoring
+  prometheus:
+    port: 9090
+  
+  grafana:
+    port: 3000
+  
+  # Adminer
+  adminer:
+    port: 8080
+
+# =============================================================================
+# SERVICE INTER-COMMUNICATION URLS
+# =============================================================================
+services:
+  data_service:
+    addr: "localhost:56400"
+  api_gateway:
+    url: "http://localhost:6500"
+  mtp_service:
+    url: "http://localhost:6100"
+  cwmp_service:
+    url: "http://localhost:6300"
+  usp_service:
+    url: "http://localhost:6250"
+
+# =============================================================================
+# PROTOCOL CLIENT CONFIGURATION
+# =============================================================================
+protocols:
+  usp:
+    websocket_url: "ws://localhost:8081/ws"
+  cwmp:
+    acs_url: "http://localhost:7547"
+
+# =============================================================================
+# DEVELOPMENT/DEBUG CONFIGURATION
+# =============================================================================
+development:
+  log_level: info
+  log_dir: logs
+  enable_debug: false
+  enable_metrics: true
+
+# =============================================================================
+# DOCKER NETWORK CONFIGURATION
+# =============================================================================
+docker:
+  network: openusp-dev
+
+# =============================================================================
+# MTP (MESSAGE TRANSPORT PROTOCOL) CONFIGURATION
+# =============================================================================
+mtp:
+  # Transport enablement flags
+  transports:
+    websocket_enabled: true
+    mqtt_enabled: true
+    stomp_enabled: true
+    uds_enabled: true
+  
+  # Transport-specific configuration
+  websocket:
+    subprotocol: v1.usp
+  
+  mqtt:
+    broker_url: "tcp://localhost:1883"
+  
+  stomp:
+    broker_url: "tcp://localhost:61613"
+    # STOMP destination/queue configuration
+    destinations:
+      controller: "/topic/usp.controller"
+      agent: "/queue/usp.agent"
+      broadcast: "/topic/usp.broadcast"
+  
+  uds:
+    socket_path: "/tmp/openusp.sock"
+
+# =============================================================================
+# USP PROTOCOL CONFIGURATION
+# =============================================================================
+usp:
+  version_support: "1.3,1.4"
+  endpoint_id: "proto::openusp.controller"
+  default_timeout: 30
+
+# =============================================================================
+# TR-181 DATA MODEL CONFIGURATION
+# =============================================================================
+tr181:
+  schema_path: "pkg/datamodel/tr-181-2-19-1-usp-full.xml"
+  types_path: "pkg/datamodel/tr-106-types.xml"
+  validation_enabled: false
+
+# =============================================================================
+# SECURITY CONFIGURATION
+# =============================================================================
+security:
+  api:
+    cors_enabled: true
+    cors_origins: "*"
+  cwmp:
+    basic_auth_enabled: true
+
+# =============================================================================
+# USP AGENT CONFIGURATION (TR-369)
+# =============================================================================
+usp_agent:
+  # Device Information
+  device:
+    endpoint_id: "proto::usp.agent.001"
+    product_class: "HomeGateway"
+    manufacturer: "Plume Design"
+    model_name: "USP-PlumeDevice-v10000"
+    serial_number: "Plume-USP-SER001"
+    software_version: "1.0.0"
+    hardware_version: "1.0"
+    device_type: "gateway"
+    oui: "233343"
+  
+  # Protocol Configuration
+  protocol:
+    version: "1.3"
+    supported_versions: "1.3,1.4"
+    role: "device"
+    command_key: "usp-agent-001"
+  
+  # MTP Configuration
+  mtp:
+    type: "stomp"
+    
+    # WebSocket Configuration
+    websocket:
+      url: "ws://localhost:8081/ws"
+      subprotocol: "v1.usp"
+      ping_interval: "30s"
+      pong_timeout: "10s"
+      reconnect_interval: "5s"
+      max_reconnect_attempts: 10
+    
+    # MQTT Configuration
+    mqtt:
+      broker_url: "tcp://localhost:1883"
+      client_id: "usp-agent-001"
+      username: "usp"
+      password: "openusp123"
+      topic_request: "usp/agent/request"
+      topic_response: "usp/agent/response"
+      qos: 1
+      retain: false
+      clean_session: true
+      keep_alive: "60s"
+    
+    # STOMP Configuration
+    stomp:
+      broker_url: "tcp://localhost:61613"
+      username: "openusp"
+      password: "openusp123"
+      destinations:
+        request: "/queue/usp.agent.request"
+        response: "/queue/usp.agent.response"
+        controller: "/queue/usp.controller"
+        agent: "/queue/usp.agent"
+        broadcast: "/topic/usp.broadcast"
+      heartbeat:
+        send: "30s"
+        receive: "30s"
+    
+    # UDS Configuration
+    uds:
+      socket_path: "/tmp/usp-agent.sock"
+      socket_mode: "0666"
+  
+  # Behavior Configuration
+  behavior:
+    auto_register: true
+    periodic_inform_enabled: true
+    periodic_inform_interval: "300s"
+    parameter_update_notification: true
+    event_notification: true
+    diagnostic_mode: false
+  
+  # Security Configuration
+  security:
+    tls_enabled: false
+    tls_cert_file: ""
+    tls_key_file: ""
+    tls_ca_file: ""
+    tls_skip_verify: true
+  
+  # Logging Configuration
+  logging:
+    level: "info"
+    format: "json"
+    output: "stdout"
+    file: "logs/tr369-agent.log"
+  
+  # Performance Configuration
+  performance:
+    buffer_size: 4096
+    max_message_size: 1048576
+    connection_timeout: "30s"
+    read_timeout: "60s"
+    write_timeout: "60s"
+    idle_timeout: "300s"
+
+# =============================================================================
+# CWMP AGENT CONFIGURATION (TR-069)
+# =============================================================================
+cwmp_agent:
+  # Device Information
+  device:
+    endpoint_id: "cwmp:Plume-003"
+    product_class: "HomeGateway"
+    manufacturer: "Plume Design"
+    model_name: "CWMP-PlumeDevice-v10000"
+    serial_number: "Plume-CWMP-SER02"
+    software_version: "1.1.0"
+    hardware_version: "1.0"
+    device_type: "gateway"
+    oui: "00D04F"
+  
+  # Protocol Configuration
+  protocol:
+    version: "1.2"
+    supported_versions: "1.0,1.1,1.2,1.3,1.4"
+    role: "cpe"
+    connection_request_auth: "digest"
+    parameter_key: "cwmp-agent-001"
+  
+  # ACS Configuration
+  acs:
+    url: "http://localhost:7547"
+    username: "acs"
+    password: "acs123"
+    periodic_inform_enabled: true
+    periodic_inform_interval: "300s"
+  
+  # Connection Request Configuration
+  connection_request:
+    url: "http://localhost:9999/cr"
+    path: "/cr"
+    port: 9999
+    username: "cr"
+    password: "cr123"
+  
+  # SOAP Configuration
+  soap:
+    version: "1.1"
+  
+  # HTTP Configuration
+  http:
+    timeout: "60s"
+    keep_alive: true
+    max_idle_connections: 10
+    idle_timeout: "90s"
+    tls_handshake_timeout: "10s"
+    expect_continue_timeout: "1s"
+  
+  # Behavior Configuration
+  behavior:
+    auto_register: true
+    inform_on_boot: true
+    inform_on_periodic: true
+    inform_on_value_change: true
+    inform_on_connection_request: true
+    max_envelopes: 1
+    retry_min_wait_interval: "5s"
+    retry_interval_multiplier: 2000
+  
+  # TR-181 Configuration
+  tr181:
+    root_object: "Device."
+    device_type: "InternetGatewayDevice"
+    spec_version: "2.19.1"
+    parameter_notifications: true
+    object_notifications: true
+  
+  # Session Management
+  session:
+    timeout: "300s"
+    max_concurrent: 5
+    keep_alive: true
+    cookie_enabled: false
+  
+  # Security Configuration
+  security:
+    tls_enabled: false
+    tls_cert_file: ""
+    tls_key_file: ""
+    tls_ca_file: ""
+    tls_skip_verify: true
+    certificate_auth_enabled: false
+    digest_auth_enabled: true
+    basic_auth_enabled: true
+  
+  # Authentication Configuration
+  auth:
+    realm: "CWMP"
+    algorithm: "MD5"
+    qop: "auth"
+    nonce_timeout: "300s"
+  
+  # Logging Configuration
+  logging:
+    level: "info"
+    format: "json"
+    output: "stdout"
+    file: "logs/tr069-agent.log"
+    soap_messages: false
+    http_requests: false
+  
+  # Performance Configuration
+  performance:
+    buffer_size: 4096
+    max_message_size: 1048576
+    connection_timeout: "30s"
+    read_timeout: "60s"
+    write_timeout: "60s"
+    idle_timeout: "300s"
+    max_connections: 100
+  
+  # RPC Methods Configuration
+  rpc_methods:
+    get_rpc_methods: true
+    set_parameter_values: true
+    get_parameter_values: true
+    get_parameter_names: true
+    set_parameter_attributes: true
+    get_parameter_attributes: true
+    add_object: true
+    delete_object: true
+    reboot: true
+    factory_reset: false
+    download: true
+    upload: false
+  
+  # Events Configuration
+  events:
+    bootstrap: true
+    boot: true
+    periodic: true
+    value_change: true
+    connection_request: true
+    transfer_complete: true
+    diagnostics_complete: false
+    request_download: false
+    autonomous_transfer_complete: false
+  
+  # Fault Management
+  fault_management:
+    tolerance_enabled: true
+    max_retry_count: 3
+    retry_interval: "10s"
+    detailed_reporting: true

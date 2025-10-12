@@ -69,8 +69,8 @@ func NewAPIGateway() (*APIGateway, error) {
 		metrics:    metrics.NewOpenUSPMetrics("api-gateway"),
 	}
 
-	// Static port configuration - no service discovery needed
-	log.Printf("🎯 Service starting: %s at localhost:%d (static port configuration)",
+	// Fixed ports – no service discovery needed
+	log.Printf("🎯 Service starting: %s at localhost:%d (fixed port)",
 		gateway.config.ServiceName, gateway.config.ServicePort)
 
 	// Get data service address from static configuration
@@ -93,8 +93,14 @@ func NewAPIGateway() (*APIGateway, error) {
 }
 
 func (gw *APIGateway) getDataServiceAddress() (string, error) {
-	// Static port configuration for data service
-	return "localhost:6101", nil // Data service gRPC port from configs/services.yaml
+	// Environment-based port configuration for data service (5xxxx series)
+	dataServicePort := 50100 // Default gRPC port (matches openusp.env)
+	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			dataServicePort = p
+		}
+	}
+	return fmt.Sprintf("localhost:%d", dataServicePort), nil
 }
 
 func (gw *APIGateway) getHTTPPort() int {
@@ -252,7 +258,7 @@ func (gw *APIGateway) Start() error {
 func (gw *APIGateway) Stop() error {
 	log.Printf("🛑 Shutting down API Gateway...")
 
-	// Static port configuration - no service deregistration needed
+	// Fixed ports – no service deregistration needed
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1822,7 +1828,7 @@ func main() {
 		fmt.Println("Environment Variables:")
 		fmt.Println("  OPENUSP_API_GATEWAY_PORT  - HTTPS server port (default: 6500)")
 		fmt.Println("  OPENUSP_HTTP_REDIRECT_PORT - HTTP redirect server port (default: 6501)")
-		fmt.Println("  DATA_SERVICE_ADDR         - Data service gRPC address (default: localhost:6101)")
+		fmt.Println("  OPENUSP_DATA_SERVICE_GRPC_PORT - Data service gRPC port (default: 50100)")
 		fmt.Println("  OPENUSP_TLS_ENABLED       - Enable TLS/HTTPS (default: false)")
 		fmt.Println("  OPENUSP_TLS_CERT_PATH     - TLS certificate file path (default: certs/server.crt)")
 		fmt.Println("  OPENUSP_TLS_KEY_PATH      - TLS private key file path (default: certs/server.key)")
@@ -1833,7 +1839,7 @@ func main() {
 		return
 	}
 
-	// Static port configuration - no environment overrides needed
+	// Fixed ports – no environment overrides needed
 	if *port != 6500 {
 		os.Setenv("OPENUSP_API_GATEWAY_PORT", fmt.Sprintf("%d", *port))
 	}
@@ -1855,7 +1861,7 @@ func main() {
 
 	log.Printf("🚀 API Gateway started successfully")
 	log.Printf("   └── Protocol: HTTP (port %d)", httpPort)
-	log.Printf("   └── Service Discovery: Static port configuration")
+	log.Printf("   └── Service Discovery: fixed ports")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 	log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", httpPort)

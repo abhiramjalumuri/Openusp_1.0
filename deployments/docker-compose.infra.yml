@@ -1,4 +1,7 @@
-# Static Port Infrastructure - No Consul Service Discovery
+# OpenUSP Unified Infrastructure
+# Cross-platform Docker Compose configuration for macOS and Linux
+# Static port configuration - no service discovery
+
 services:
   # PostgreSQL Database
   postgres:
@@ -11,53 +14,62 @@ services:
       POSTGRES_USER: openusp
       POSTGRES_PASSWORD: openusp123
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - openusp_postgres_data:/var/lib/postgresql/data
       - ../configs/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - openusp-dev
     restart: unless-stopped
 
-  # Prometheus Monitoring (Static targets) - Host network mode for cross-platform compatibility
+  # Prometheus Monitoring
   prometheus-dev:
     image: prom/prometheus:v2.45.0
     container_name: openusp-prometheus-dev
-    network_mode: "host"
+    ports:
+      - "9090:9090"
     volumes:
-      - ../configs/prometheus-static-host.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_dev_data:/prometheus
+      - ../configs/prometheus-static.yml:/etc/prometheus/prometheus.yml:ro
+      - openusp_prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
       - '--web.enable-lifecycle'
-      - '--web.listen-address=0.0.0.0:9090'
+    networks:
+      - openusp-dev
     restart: unless-stopped
 
-  # Grafana Dashboards - Host network mode for easy Prometheus access
+  # Grafana Dashboard
   grafana-dev:
     image: grafana/grafana:10.0.0
     container_name: openusp-grafana-dev
-    network_mode: "host"
+    ports:
+      - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=openusp123
-      - GF_SERVER_HTTP_PORT=3000
+      GF_SECURITY_ADMIN_PASSWORD: openusp123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
-      - grafana_dev_data:/var/lib/grafana
-      - ../configs/grafana-dashboards:/var/lib/grafana/dashboards:ro
-      - ../configs/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
-      - ../configs/grafana-datasources-host.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - openusp_grafana_data:/var/lib/grafana
+    networks:
+      - openusp-dev
     restart: unless-stopped
 
-  # RabbitMQ Message Broker
+  # RabbitMQ Message Broker with STOMP Support
   rabbitmq-dev:
     image: rabbitmq:3.13-management-alpine
     container_name: openusp-rabbitmq-dev
     ports:
-      - "5672:5672"
-      - "15672:15672"
-      - "61613:61613"
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+      - "61613:61613"  # STOMP port
     environment:
       RABBITMQ_DEFAULT_USER: openusp
       RABBITMQ_DEFAULT_PASS: openusp123
+    volumes:
+      - openusp_rabbitmq_data:/var/lib/rabbitmq
+      - ../configs/rabbitmq-plugins:/etc/rabbitmq/enabled_plugins:ro
     networks:
       - openusp-dev
     restart: unless-stopped
@@ -75,17 +87,14 @@ services:
       - openusp-dev
     restart: unless-stopped
 
-volumes:
-  postgres_data:
-    external: true
-    name: openusp-postgres-data
-  prometheus_dev_data:
-    external: true
-    name: openusp-prometheus-dev-data
-  grafana_dev_data:
-    external: true
-    name: openusp-grafana-dev-data
-
+# Networks
 networks:
   openusp-dev:
-    name: openusp-dev
+    driver: bridge
+
+# Volumes
+volumes:
+  openusp_postgres_data:
+  openusp_prometheus_data:
+  openusp_rabbitmq_data:
+  openusp_grafana_data:

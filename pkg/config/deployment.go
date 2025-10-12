@@ -54,7 +54,7 @@ func LoadDeploymentConfigWithPortEnv(serviceName, serviceType string, defaultPor
 		DatabasePort:     getEnvInt("OPENUSP_DB_PORT", 5433),
 		DatabaseName:     getEnvString("OPENUSP_DB_NAME", "openusp_db"),
 		DatabaseUser:     getEnvString("OPENUSP_DB_USER", "openusp"),
-		DatabasePassword: getEnvString("OPENUSP_DB_PASSWORD", "openusp123"),
+		DatabasePassword: getEnvString("OPENUSP_DB_PASSWORD", ""),
 		DatabaseSSLMode:  getEnvString("OPENUSP_DB_SSLMODE", "disable"),
 
 		// Logging defaults
@@ -120,6 +120,9 @@ func LoadMTPConfig() *MTPConfig {
 		UnixSocketEnabled: getEnvBool("OPENUSP_MTP_UDS_ENABLED", true),
 
 		// Transport-specific Configuration
-		UnixSocketPath: getEnvString("OPENUSP_MTP_UDS_SOCKET_PATH", "/tmp/openusp.sock"),
+		UnixSocketPath:             getEnvString("OPENUSP_MTP_UDS_SOCKET_PATH", "/tmp/openusp.sock"),
+		STOMPDestinationController: getEnvString("OPENUSP_MTP_STOMP_DESTINATION_CONTROLLER", "/topic/usp.controller"),
+		STOMPDestinationAgent:      getEnvString("OPENUSP_MTP_STOMP_DESTINATION_AGENT", "/queue/usp.agent"),
+		STOMPDestinationBroadcast:  getEnvString("OPENUSP_MTP_STOMP_DESTINATION_BROADCAST", "/topic/usp.broadcast"),
 	}
 }

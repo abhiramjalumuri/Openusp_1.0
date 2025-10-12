@@ -8,9 +8,8 @@ This directory contains configuration files for OpenUSP services and protocol ag
 - `openusp.env` - Main environment configuration for all OpenUSP services
 - `version.env` - Version information and build metadata
 
-### Agent Configuration (YAML-based)
-- `usp-agent.yaml` - TR-369 USP agent configuration (replaces tr369-agent.env)
-- `cwmp-agent.yaml` - TR-069 CWMP agent configuration (replaces tr069-agent.env)
+### Agent Configuration (Unified YAML)
+Protocol agent configuration has been consolidated into `openusp.yml` under sections `usp_agent:` and `cwmp_agent:`. Legacy `usp-agent.yaml` and `cwmp-agent.yaml` have been removed.
 
 ### Infrastructure Configuration
 - `init-db.sql` - Database initialization script
@@ -20,40 +19,25 @@ This directory contains configuration files for OpenUSP services and protocol ag
 
 ## Quick Start
 
-### TR-369 USP Agent (YAML Configuration)
+### Protocol Agents
+
+Agents read configuration exclusively from `openusp.yml`; no per-agent YAML file or environment overrides are supported.
 
 ```bash
-# Use default configuration
+# Start USP Agent
 make start-usp-agent
 
-# Or customize and run manually
-cp configs/usp-agent.yaml configs/my-usp-agent.yaml
-# Edit device-specific settings
-nano configs/my-usp-agent.yaml
-# Run with custom config
-./build/usp-agent --config configs/my-usp-agent.yaml
-
-# Validate configuration only
-./build/usp-agent --config configs/my-usp-agent.yaml --validate-only
-```
-
-### TR-069 CWMP Agent (YAML Configuration)
-
-```bash
-# Use default configuration  
+# Start CWMP Agent
 make start-cwmp-agent
 
-# Or customize and run manually
-cp configs/cwmp-agent.yaml configs/my-cwmp-agent.yaml
-# Edit device-specific settings
-nano configs/my-cwmp-agent.yaml
-# Run with custom config
-./build/cwmp-agent --config configs/my-cwmp-agent.yaml
+# Manual run (auto-loads configs/openusp.yml)
+./build/usp-agent
+./build/cwmp-agent
 ```
 
 ## YAML Configuration Structure
 
-### USP Agent Configuration (`usp-agent.yaml`)
+### USP Agent Configuration (excerpt from `openusp.yml`)
 
 ```yaml
 # Device identification
@@ -116,7 +100,7 @@ logging:
   output: "stdout"                      # stdout, file
 ```
 
-### CWMP Agent Configuration (`cwmp-agent.yaml`)
+### CWMP Agent Configuration (excerpt from `openusp.yml`)
 
 ```yaml  
 # Device identification

@@ -1,17 +1,17 @@
 # TR-369 USP Agent Configuration
 # ================================
 
-# Agent Device Information
+# Agent Device Information (Override with environment variables)
 device_info:
-  endpoint_id: "os:OpenUSPTest:000028833"
-  product_class: "HomeGateway"
-  manufacturer: "Plume Design"
-  model_name: "USP-Gateway-v10000"
-  serial_number: "PLUME-USP-00abcd5"
-  software_version: "1.1.0"
-  hardware_version: "1.0"
-  device_type: "gateway"
-  oui: "00D04F"
+  endpoint_id: "${OPENUSP_USP_AGENT_ENDPOINT_ID}"
+  product_class: "${OPENUSP_USP_AGENT_PRODUCT_CLASS:-HomeGateway}"
+  manufacturer: "${OPENUSP_USP_AGENT_MANUFACTURER}"
+  model_name: "${OPENUSP_USP_AGENT_MODEL_NAME}"
+  serial_number: "${OPENUSP_USP_AGENT_SERIAL_NUMBER}"
+  software_version: "${OPENUSP_USP_AGENT_SOFTWARE_VERSION:-1.0.0}"
+  hardware_version: "${OPENUSP_USP_AGENT_HARDWARE_VERSION:-1.0}"
+  device_type: "${OPENUSP_USP_AGENT_DEVICE_TYPE:-gateway}"
+  oui: "${OPENUSP_USP_AGENT_OUI}"
 
 # USP Protocol Configuration
 usp_protocol:
@@ -22,7 +22,7 @@ usp_protocol:
 
 # Message Transport Protocol (MTP) Configuration
 mtp:
-  type: "websocket" # Supported: websocket, mqtt, stomp, uds
+  default_type: "stomp" # Supported: websocket, mqtt, stomp, uds
 
   # WebSocket MTP Configuration
   websocket:
@@ -49,10 +49,13 @@ mtp:
   # STOMP MTP Configuration
   stomp:
     broker_url: "tcp://localhost:61613"
-    username: "usp"
-    password: "usp123"
+    username: "openusp"
+    password: "openusp123"
     destination_request: "/queue/usp.agent.request"
     destination_response: "/queue/usp.agent.response"
+    destination_controller: "/queue/usp.controller"
+    destination_agent: "/queue/usp.agent"
+    destination_broadcast: "/topic/usp.broadcast"
     heartbeat_send: "30s"
     heartbeat_receive: "30s"
 

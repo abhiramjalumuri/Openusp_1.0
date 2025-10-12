@@ -20,14 +20,19 @@ type STOMPBroker struct {
 }
 
 // NewSTOMPBroker creates a new STOMP broker connection
-func NewSTOMPBroker(brokerURL string) (*STOMPBroker, error) {
-	broker := &STOMPBroker{
-		brokerURL: brokerURL,
-		destinations: []string{
+func NewSTOMPBroker(brokerURL string, destinations []string) (*STOMPBroker, error) {
+	// Use provided destinations or default ones
+	if len(destinations) == 0 {
+		destinations = []string{
 			"/queue/usp.controller",
 			"/queue/usp.agent",
 			"/topic/usp.broadcast",
-		},
+		}
+	}
+
+	broker := &STOMPBroker{
+		brokerURL:    brokerURL,
+		destinations: destinations,
 	}
 
 	return broker, nil

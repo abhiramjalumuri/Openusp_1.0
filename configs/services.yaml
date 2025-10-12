@@ -57,7 +57,7 @@ services:
     endpoints:
       - /health
       - /metrics
-      - /usp           # Demo UI
+      # Demo UI endpoint removed
       - /ws            # WebSocket endpoint
 
 # Infrastructure services (unchanged)

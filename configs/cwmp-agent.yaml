@@ -1,17 +1,17 @@
 # TR-069 CWMP Agent Configuration
 # =================================
 
-# Agent Device Information
+# Agent Device Information (Override with environment variables)
 device_info:
-  endpoint_id: "cwmp:Plume-003"
-  product_class: "HomeGateway"
-  manufacturer: "Plume Design"
-  model_name: "CWMP-PlumeDevice-v10000"
-  serial_number: "Plume-CWMP-SER02"
-  software_version: "1.1.0"
-  hardware_version: "1.0"
-  device_type: "gateway"
-  oui: "00D04F"
+  endpoint_id: "${CWMP_ENDPOINT_ID}"
+  product_class: "${CWMP_PRODUCT_CLASS:-HomeGateway}"
+  manufacturer: "${CWMP_MANUFACTURER}"
+  model_name: "${CWMP_MODEL_NAME}"
+  serial_number: "${CWMP_SERIAL_NUMBER}"
+  software_version: "${CWMP_SOFTWARE_VERSION:-1.0.0}"
+  hardware_version: "${CWMP_HARDWARE_VERSION:-1.0}"
+  device_type: "${CWMP_DEVICE_TYPE:-gateway}"
+  oui: "${CWMP_OUI}"
 
 # CWMP Protocol Configuration
 cwmp_protocol:
@@ -22,9 +22,9 @@ cwmp_protocol:
 
 # ACS (Auto Configuration Server) Configuration
 acs:
-  url: "http://localhost:7547" # Standard TR-069 CWMP port
-  username: "acs"
-  password: "acs123"
+  url: "${CWMP_ACS_URL:-http://localhost:7547}" # Standard TR-069 CWMP port
+  username: "${CWMP_ACS_USERNAME}"
+  password: "${CWMP_ACS_PASSWORD}"
   periodic_inform_enabled: true
   periodic_inform_interval: "300s"
   parameter_key: "cwmp-agent-001"

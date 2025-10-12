@@ -801,7 +801,7 @@ func (s *USPServiceServer) sendGetSupportedDMRequest(agentID, version string) {
 		TransportType: "WebSocket",
 		Metadata: map[string]string{
 			"message_type":  "GetSupportedDM",
-			"controller_id": "proto:usp.controller",
+			"controller_id": getControllerID(),
 		},
 	}
 
@@ -864,7 +864,7 @@ func (s *USPServiceServer) generateGetSupportedDMMessage(agentID, version string
 		record := &v1_4.Record{
 			Version:         "1.4",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_4.Record_PLAINTEXT,
 			RecordType: &v1_4.Record_NoSessionContext{
 				NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -914,7 +914,7 @@ func (s *USPServiceServer) generateGetSupportedDMMessage(agentID, version string
 		record := &v1_3.Record{
 			Version:         "1.3",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_3.Record_PLAINTEXT,
 			RecordType: &v1_3.Record_NoSessionContext{
 				NoSessionContext: &v1_3.NoSessionContextRecord{
@@ -952,7 +952,7 @@ func (s *USPServiceServer) sendGetInstancesRequest(agentID, version string) {
 		TransportType: "WebSocket",
 		Metadata: map[string]string{
 			"message_type":  "GetInstances",
-			"controller_id": "proto:usp.controller",
+			"controller_id": getControllerID(),
 		},
 	}
 
@@ -1012,7 +1012,7 @@ func (s *USPServiceServer) generateGetInstancesMessage(agentID, version string) 
 		record := &v1_4.Record{
 			Version:         "1.4",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_4.Record_PLAINTEXT,
 			RecordType: &v1_4.Record_NoSessionContext{
 				NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -1059,7 +1059,7 @@ func (s *USPServiceServer) generateGetInstancesMessage(agentID, version string) 
 		record := &v1_3.Record{
 			Version:         "1.3",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_3.Record_PLAINTEXT,
 			RecordType: &v1_3.Record_NoSessionContext{
 				NoSessionContext: &v1_3.NoSessionContextRecord{
@@ -1097,7 +1097,7 @@ func (s *USPServiceServer) sendGetDeviceInfoRequest(agentID, version string) {
 		TransportType: "WebSocket",
 		Metadata: map[string]string{
 			"message_type":  "Get",
-			"controller_id": "proto:usp.controller",
+			"controller_id": getControllerID(),
 		},
 	}
 
@@ -1166,7 +1166,7 @@ func (s *USPServiceServer) generateGetDeviceInfoMessage(agentID, version string)
 		record := &v1_4.Record{
 			Version:         "1.4",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_4.Record_PLAINTEXT,
 			RecordType: &v1_4.Record_NoSessionContext{
 				NoSessionContext: &v1_4.NoSessionContextRecord{
@@ -1212,7 +1212,7 @@ func (s *USPServiceServer) generateGetDeviceInfoMessage(agentID, version string)
 		record := &v1_3.Record{
 			Version:         "1.3",
 			ToId:            agentID,
-			FromId:          "proto:usp.controller",
+			FromId:          getControllerID(),
 			PayloadSecurity: v1_3.Record_PLAINTEXT,
 			RecordType: &v1_3.Record_NoSessionContext{
 				NoSessionContext: &v1_3.NoSessionContextRecord{
