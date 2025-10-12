@@ -269,8 +269,10 @@ func (f *tlsErrorFilter) Write(p []byte) (n int, err error) {
 	   (strings.Contains(msg, "remote error: tls: illegal parameter") ||
 		strings.Contains(msg, "client sent an HTTP request to an HTTPS server") ||
 		strings.Contains(msg, "remote error: tls: protocol version not supported") ||
-		strings.Contains(msg, "remote error: tls: handshake failure")) {
-		// Return without logging
+		strings.Contains(msg, "remote error: tls: handshake failure") ||
+		strings.Contains(msg, "connection timed out") ||
+		strings.Contains(msg, "remote error: tls: unknown certificate")) {
+		// Return without logging - these are common issues from external scanners/bots
 		return len(p), nil
 	}
 	
