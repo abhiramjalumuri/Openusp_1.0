@@ -21,11 +21,9 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -55,8 +53,6 @@ type APIGateway struct {
 	server     *http.Server
 	dataClient *grpcclient.DataServiceClient
 	metrics    *metrics.OpenUSPMetrics
-	certFile   string
-	keyFile    string
 }
 
 // NewAPIGateway creates a new API Gateway instance
@@ -67,23 +63,10 @@ func NewAPIGateway() (*APIGateway, error) {
 	// Load deployment configuration with service-specific port environment variable
 	deploymentConfig := config.LoadDeploymentConfigWithPortEnv("openusp-api-gateway", "api-gateway", 6500, "OPENUSP_API_GATEWAY_PORT")
 
-	// Set TLS certificate paths from config, with fallback to default paths
-	certFile := fullConfig.Security.TLSCertPath
-	if certFile == "" {
-		certFile = "certs/server.crt"
-	}
-
-	keyFile := fullConfig.Security.TLSKeyPath
-	if keyFile == "" {
-		keyFile = "certs/server.key"
-	}
-
 	gateway := &APIGateway{
 		config:     deploymentConfig,
 		fullConfig: fullConfig,
 		metrics:    metrics.NewOpenUSPMetrics("api-gateway"),
-		certFile:   certFile,
-		keyFile:    keyFile,
 	}
 
 	// Static port configuration - no service discovery needed
@@ -253,218 +236,20 @@ func (gw *APIGateway) metricsMiddleware() gin.HandlerFunc {
 	}
 }
 
-// createTLSErrorLogger creates a custom logger that suppresses common TLS handshake errors
-func (gw *APIGateway) createTLSErrorLogger() *log.Logger {
-	return log.New(&tlsErrorFilter{}, "", log.LstdFlags)
-}
 
-// tlsErrorFilter filters out common TLS handshake errors to reduce log noise
-type tlsErrorFilter struct{}
 
-func (f *tlsErrorFilter) Write(p []byte) (n int, err error) {
-	msg := string(p)
-	
-	// Suppress common TLS handshake errors
-	if strings.Contains(msg, "TLS handshake error") && 
-	   (strings.Contains(msg, "remote error: tls: illegal parameter") ||
-		strings.Contains(msg, "client sent an HTTP request to an HTTPS server") ||
-		strings.Contains(msg, "remote error: tls: protocol version not supported") ||
-		strings.Contains(msg, "remote error: tls: handshake failure") ||
-		strings.Contains(msg, "connection timed out") ||
-		strings.Contains(msg, "remote error: tls: unknown certificate")) {
-		// Return without logging - these are common issues from external scanners/bots
-		return len(p), nil
-	}
-	
-	// Log all other errors normally
-	return os.Stderr.Write(p)
-}
 
-// hasTLSCertificates checks if TLS certificate files are available and valid
-func (gw *APIGateway) hasTLSCertificates() bool {
-	if gw.certFile == "" || gw.keyFile == "" {
-		return false
-	}
 
-	// Check if both files exist
-	_, err1 := os.Stat(gw.certFile)
-	_, err2 := os.Stat(gw.keyFile)
-	return err1 == nil && err2 == nil
-}
-
-// createHTTPRedirectHandler creates a handler that redirects HTTP to HTTPS
-func (gw *APIGateway) createHTTPRedirectHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get hostname without port
-		host := r.Host
-		if strings.Contains(host, ":") {
-			host = strings.Split(host, ":")[0]
-		}
-
-		// Build HTTPS URL with correct HTTPS port
-		httpsURL := fmt.Sprintf("https://%s:%d%s", host, gw.getHTTPPort(), r.RequestURI)
-
-		log.Printf("🔄 HTTP→HTTPS redirect: %s → %s", r.URL.String(), httpsURL)
-
-		// Send redirect response
-		w.Header().Set("Location", httpsURL)
-		w.Header().Set("Connection", "close")
-		w.WriteHeader(http.StatusMovedPermanently)
-		fmt.Fprintf(w, "Redirecting to HTTPS: %s\n", httpsURL)
-	})
-}
-
-// dualProtocolListener creates a listener that handles both HTTP and HTTPS
-func (gw *APIGateway) dualProtocolListener() (net.Listener, error) {
-	addr := fmt.Sprintf(":%d", gw.getHTTPPort())
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load TLS certificate
-	cert, err := tls.LoadX509KeyPair(gw.certFile, gw.keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS certificate: %w", err)
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		// Minimum TLS version to avoid weak protocols
-		MinVersion: tls.VersionTLS12,
-		// Prefer server cipher suites for better security
-		PreferServerCipherSuites: true,
-		// Enable stronger cipher suites only
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-		},
-		// Reduce handshake errors by handling bad clients more gracefully
-		InsecureSkipVerify: false,
-	}
-
-	// Create custom listener that detects HTTP vs HTTPS
-	return &dualListener{
-		Listener:     ln,
-		tlsConfig:    tlsConfig,
-		httpsHandler: gw.router,
-		httpHandler:  gw.createHTTPRedirectHandler(),
-	}, nil
-}
-
-// dualListener handles both HTTP and HTTPS on the same port
-type dualListener struct {
-	net.Listener
-	tlsConfig    *tls.Config
-	httpsHandler http.Handler
-	httpHandler  http.Handler
-}
-
-func (l *dualListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-
-	// Wrap connection to detect protocol
-	return &protocolDetectConn{
-		Conn:         conn,
-		tlsConfig:    l.tlsConfig,
-		httpsHandler: l.httpsHandler,
-		httpHandler:  l.httpHandler,
-	}, nil
-}
-
-// protocolDetectConn detects HTTP vs HTTPS by peeking at first bytes
-type protocolDetectConn struct {
-	net.Conn
-	tlsConfig    *tls.Config
-	httpsHandler http.Handler
-	httpHandler  http.Handler
-	peeked       []byte
-	peekedOnce   bool
-}
-
-func (c *protocolDetectConn) Read(b []byte) (int, error) {
-	if !c.peekedOnce {
-		c.peekedOnce = true
-
-		// Peek at first few bytes to detect protocol
-		peek := make([]byte, 1)
-		n, err := c.Conn.Read(peek)
-		if err != nil {
-			return 0, err
-		}
-
-		c.peeked = make([]byte, n)
-		copy(c.peeked, peek[:n])
-
-		// Check if it's TLS (starts with 0x16 for TLS handshake)
-		if n > 0 && peek[0] == 0x16 {
-			// It's TLS/HTTPS - upgrade the connection
-			tlsConn := tls.Server(c, c.tlsConfig)
-			// Replace the underlying connection
-			c.Conn = tlsConn
-		}
-		// If not TLS, it's HTTP and will be handled by redirect
-	}
-
-	// Return peeked data first, then normal reads
-	if len(c.peeked) > 0 {
-		n := copy(b, c.peeked)
-		c.peeked = c.peeked[n:]
-		return n, nil
-	}
-
-	return c.Conn.Read(b)
-}
-
-// Start starts HTTP redirect server and HTTPS main server
+// Start starts the HTTP server
 func (gw *APIGateway) Start() error {
-	if gw.hasTLSCertificates() {
-		// Start HTTPS server on main port
-		gw.server = &http.Server{
-			Addr:     fmt.Sprintf(":%d", gw.getHTTPPort()),
-			Handler:  gw.router,
-			ErrorLog: gw.createTLSErrorLogger(),
-		}
-
-		// Start HTTP redirect server on configured port
-		httpRedirectPort := gw.fullConfig.Security.HTTPRedirectPort
-		httpServer := &http.Server{
-			Addr:    fmt.Sprintf(":%d", httpRedirectPort),
-			Handler: gw.createHTTPRedirectHandler(),
-		}
-
-		// Start HTTP redirect server in background
-		go func() {
-			log.Printf("🔄 Starting HTTP redirect server on port %d", httpRedirectPort)
-			log.Printf("   └── Redirecting http://localhost:%d → https://localhost:%d", httpRedirectPort, gw.getHTTPPort())
-			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("❌ HTTP redirect server error: %v", err)
-			}
-		}()
-
-		// Start HTTPS server on main port
-		log.Printf("🔐 API Gateway starting HTTPS server on port %d", gw.getHTTPPort())
-		log.Printf("   └── Certificate: %s", gw.certFile)
-		log.Printf("   └── Private Key: %s", gw.keyFile)
-		log.Printf("   └── HTTP redirect: port %d → HTTPS port %d", httpRedirectPort, gw.getHTTPPort())
-		log.Printf("   ✅ Access via: https://localhost:%d or http://localhost:%d (redirects)", gw.getHTTPPort(), httpRedirectPort)
-		return gw.server.ListenAndServeTLS(gw.certFile, gw.keyFile)
-	} else {
-		// Start HTTP server only
-		gw.server = &http.Server{
-			Addr:    fmt.Sprintf(":%d", gw.getHTTPPort()),
-			Handler: gw.router,
-		}
-		log.Printf("🚀 API Gateway starting HTTP server on port %d", gw.getHTTPPort())
-		log.Printf("   └── No TLS certificates found, using HTTP only")
-		return gw.server.ListenAndServe()
+	// Start HTTP server only
+	gw.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", gw.getHTTPPort()),
+		Handler: gw.router,
 	}
+	log.Printf("� API Gateway starting HTTP server on port %d", gw.getHTTPPort())
+	log.Printf("   └── HTTP server mode (no HTTPS/TLS)")
+	return gw.server.ListenAndServe()
 }
 
 // Stop gracefully stops the server
@@ -2071,17 +1856,13 @@ func main() {
 	}()
 
 	httpPort := gateway.getHTTPPort()
-	protocol := "http"
-	if gateway.hasTLSCertificates() {
-		protocol = "https"
-	}
 
 	log.Printf("🚀 API Gateway started successfully")
-	log.Printf("   └── Protocol: %s (port %d)", strings.ToUpper(protocol), httpPort)
+	log.Printf("   └── Protocol: HTTP (port %d)", httpPort)
 	log.Printf("   └── Service Discovery: Static port configuration")
-	log.Printf("   └── Health Check: %s://localhost:%d/health", protocol, httpPort)
-	log.Printf("   └── Status: %s://localhost:%d/status", protocol, httpPort)
-	log.Printf("   └── Swagger UI: %s://localhost:%d/swagger/index.html", protocol, httpPort)
+	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
+	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
+	log.Printf("   └── Swagger UI: http://localhost:%d/swagger/index.html", httpPort)
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
