@@ -885,12 +885,11 @@ logging.level: info
 # Allow SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
-# Allow HTTP/HTTPS
+# Allow HTTP (API Gateway runs HTTP-only)
 iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 
 # Allow OpenUSP services
-iptables -A INPUT -p tcp --dport 8080 -j ACCEPT  # API Gateway
+iptables -A INPUT -p tcp --dport 6500 -j ACCEPT  # API Gateway HTTP
 iptables -A INPUT -p tcp --dport 8081 -j ACCEPT  # MTP Service
 iptables -A INPUT -p tcp --dport 7547 -j ACCEPT  # CWMP Service
 
@@ -898,18 +897,27 @@ iptables -A INPUT -p tcp --dport 7547 -j ACCEPT  # CWMP Service
 iptables -A INPUT -j DROP
 ```
 
-### SSL/TLS Configuration
+### Reverse Proxy for TLS Termination
+
+Since the API Gateway now runs in HTTP-only mode, use a reverse proxy for TLS termination:
 
 ```bash
-# Generate certificates
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout openusp.key -out openusp.crt \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=api.openusp.local"
-
-# Configure environment
-export OPENUSP_TLS_ENABLED=true
-export OPENUSP_TLS_CERT_FILE=/etc/ssl/certs/openusp.crt
-export OPENUSP_TLS_KEY_FILE=/etc/ssl/private/openusp.key
+# nginx configuration for TLS termination
+server {
+    listen 443 ssl;
+    server_name api.openusp.local;
+    
+    ssl_certificate /etc/ssl/certs/openusp.crt;
+    ssl_private_key /etc/ssl/private/openusp.key;
+    
+    location / {
+        proxy_pass http://127.0.0.1:6500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
 ### Secrets Management

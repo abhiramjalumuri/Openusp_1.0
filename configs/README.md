@@ -184,11 +184,9 @@ ACS_URL=https://acs.company.com/cwmp
 
 ### 6. Security Configuration
 ```bash
-TLS_ENABLED=true                       # Enable TLS/SSL
-TLS_CERT_FILE=/path/to/cert.crt       # Client certificate file
-TLS_KEY_FILE=/path/to/key.key         # Private key file
-TLS_CA_FILE=/path/to/ca.crt           # Certificate Authority file
-TLS_SKIP_VERIFY=false                 # Skip certificate verification (dev only)
+# API Gateway runs in HTTP-only mode (TLS/HTTPS support removed)
+# For production, use reverse proxy for TLS termination
+OPENUSP_API_GATEWAY_PORT=6500
 ```
 
 ### 7. Authentication (TR-069)
@@ -224,7 +222,6 @@ DEVELOPMENT_MODE=true
 CONSUL_ENABLED=true
 LOG_LEVEL=debug
 VERBOSE_LOGGING=true
-TLS_SKIP_VERIFY=true
 ```
 
 ### Production Environment
@@ -233,8 +230,7 @@ DEVELOPMENT_MODE=false
 CONSUL_ENABLED=false  # or true depending on infrastructure
 LOG_LEVEL=warn
 VERBOSE_LOGGING=false
-TLS_ENABLED=true
-TLS_SKIP_VERIFY=false
+# Use reverse proxy for TLS termination in production
 ```
 
 ### Testing Environment

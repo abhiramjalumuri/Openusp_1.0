@@ -236,10 +236,6 @@ func (gw *APIGateway) metricsMiddleware() gin.HandlerFunc {
 	}
 }
 
-
-
-
-
 // Start starts the HTTP server
 func (gw *APIGateway) Start() error {
 	// Start HTTP server only

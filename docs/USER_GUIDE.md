@@ -319,7 +319,7 @@ curl http://localhost:6500/api/v1/discovery/devices
 ## Best Practices
 
 ### Security
-- Use HTTPS in production
+- Use reverse proxy with TLS termination in production (nginx, Apache, or cloud load balancer)
 - Implement proper authentication
 - Regularly update credentials
 - Monitor access logs

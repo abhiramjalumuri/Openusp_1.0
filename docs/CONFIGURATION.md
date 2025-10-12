@@ -321,10 +321,8 @@ type APIGatewayConfig struct {
 
 **Example configuration:**
 ```bash
-# Enable HTTPS
-OPENUSP_API_GATEWAY_TLS_ENABLED=true
-OPENUSP_API_GATEWAY_CERT_FILE=/path/to/cert.pem
-OPENUSP_API_GATEWAY_KEY_FILE=/path/to/key.pem
+# API Gateway runs in HTTP-only mode (HTTPS/TLS support removed)
+OPENUSP_API_GATEWAY_PORT=6500
 
 # Enable authentication
 OPENUSP_API_GATEWAY_AUTH_ENABLED=true
@@ -332,7 +330,7 @@ OPENUSP_API_GATEWAY_AUTH_TYPE=jwt
 OPENUSP_API_GATEWAY_JWT_SECRET=your-secret-key
 
 # CORS configuration
-OPENUSP_API_GATEWAY_CORS_ORIGINS=http://localhost:3000,https://app.example.com
+OPENUSP_API_GATEWAY_CORS_ORIGINS=http://localhost:3000,http://app.example.com
 OPENUSP_API_GATEWAY_CORS_METHODS=GET,POST,PUT,DELETE
 ```
 
@@ -573,19 +571,17 @@ OPENUSP_READINESS_CHECK_ENDPOINT=/ready
 
 ## Security Configuration
 
-### TLS/SSL Configuration
+### HTTP-Only Mode
+
+The API Gateway has been simplified to run in HTTP-only mode. HTTPS/TLS support has been removed for simplicity.
 
 ```bash
-# Enable TLS
-OPENUSP_TLS_ENABLED=true
-OPENUSP_TLS_CERT_FILE=/etc/ssl/certs/openusp.crt
-OPENUSP_TLS_KEY_FILE=/etc/ssl/private/openusp.key
-OPENUSP_TLS_CA_FILE=/etc/ssl/certs/ca.crt
+# API Gateway configuration (HTTP-only)
+OPENUSP_API_GATEWAY_PORT=6500
+OPENUSP_API_GATEWAY_URL=http://localhost:6500
 
-# TLS settings
-OPENUSP_TLS_MIN_VERSION=1.2
-OPENUSP_TLS_CIPHER_SUITES=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-OPENUSP_TLS_PREFER_SERVER_CIPHER_SUITES=true
+# For production deployments, consider using a reverse proxy 
+# (nginx, Apache, or cloud load balancer) for TLS termination
 ```
 
 ### Authentication Configuration
