@@ -236,42 +236,36 @@ func getMTPServiceURLWithConfig(agentConfig *config.TR369Config) string {
 }
 
 // getMTPTransportType determines the MTP transport type from configuration
-func getMTPTransportType() TransportType {
-	// Try to load configuration from YAML
-	configPath := "configs/usp-agent.yaml"
-	if _, err := os.Stat(configPath); err == nil {
-		tr369Config, err := config.LoadYAMLTR369Config(configPath)
-		if err == nil && tr369Config.MTPType != "" {
-			switch strings.ToLower(tr369Config.MTPType) {
-			case "stomp":
-				log.Printf("✅ Using STOMP transport from YAML config")
-				return TransportSTOMP
-			case "websocket", "ws":
-				log.Printf("✅ Using WebSocket transport from YAML config")
-				return TransportWebSocket
-			default:
-				log.Printf("⚠️ Unknown MTP transport type '%s' in config, defaulting to WebSocket", tr369Config.MTPType)
-			}
-		}
-	}
-
-	// Check environment variable fallback
-	mtpType := os.Getenv("MTP_TYPE")
-	if mtpType != "" {
-		switch strings.ToLower(mtpType) {
+func getMTPTransportType(agentConfig *config.TR369Config) TransportType {
+	// Prefer unified configuration if provided
+	if agentConfig != nil && agentConfig.MTPType != "" {
+		switch strings.ToLower(agentConfig.MTPType) {
 		case "stomp":
-			log.Printf("✅ Using STOMP transport from environment")
+			log.Printf("✅ Using STOMP transport from unified config (mtp.type=%s)", agentConfig.MTPType)
 			return TransportSTOMP
 		case "websocket", "ws":
-			log.Printf("✅ Using WebSocket transport from environment")
+			log.Printf("✅ Using WebSocket transport from unified config (mtp.type=%s)", agentConfig.MTPType)
 			return TransportWebSocket
 		default:
-			log.Printf("⚠️ Unknown MTP transport type '%s' in environment, defaulting to WebSocket", mtpType)
+			log.Printf("⚠️ Unknown mtp.type '%s' in unified config, defaulting to WebSocket", agentConfig.MTPType)
 		}
 	}
 
-	// Default to WebSocket
-	log.Printf("✅ Using default WebSocket transport")
+	// Environment variable override
+	if mtpType := os.Getenv("MTP_TYPE"); mtpType != "" {
+		switch strings.ToLower(mtpType) {
+		case "stomp":
+			log.Printf("✅ Using STOMP transport from environment (MTP_TYPE=%s)", mtpType)
+			return TransportSTOMP
+		case "websocket", "ws":
+			log.Printf("✅ Using WebSocket transport from environment (MTP_TYPE=%s)", mtpType)
+			return TransportWebSocket
+		default:
+			log.Printf("⚠️ Unknown MTP_TYPE '%s' in environment, defaulting to WebSocket", mtpType)
+		}
+	}
+
+	log.Printf("✅ Using default WebSocket transport (no mtp.type specified)")
 	return TransportWebSocket
 }
 
@@ -1047,8 +1041,8 @@ func main() {
 	log.Printf("Using endpoint ID: %s", endpointID)
 	log.Printf("")
 
-	// Determine transport type from configuration
-	transport := getMTPTransportType()
+	// Determine transport type from unified configuration
+	transport := getMTPTransportType(agentConfig)
 
 	// Create USP Client with selected version and transport
 	client := NewUSPClient(endpointID, getControllerID(), *version, transport, agentConfig)
