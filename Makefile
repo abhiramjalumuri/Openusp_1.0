@@ -41,6 +41,8 @@ LOG_DIR := logs
 OPENUSP_CORE_SERVICES := data-service connection-manager usp-service cwmp-service mtp-service
 OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES)
 OPENUSP_AGENTS := usp-agent cwmp-agent
+# Derived list excluding usp-agent for auto-generation of run targets
+OPENUSP_AGENTS_NO_USP := $(filter-out usp-agent,$(OPENUSP_AGENTS))
 
 
 
@@ -435,7 +437,7 @@ run-$(1): build-$(1)
 endef
 
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
-$(foreach agent,$(OPENUSP_AGENTS),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
+$(foreach agent,$(OPENUSP_AGENTS_NO_USP),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
 
 # Override for USP agent to use unified config
 run-usp-agent: build-usp-agent
