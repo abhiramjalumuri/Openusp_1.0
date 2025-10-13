@@ -8,19 +8,19 @@
 ports:
   # HTTP/REST Service Ports
   http:
-    api_gateway: 6500          # API Gateway HTTP + Swagger UI
-    mtp_service: 8081          # MTP Service HTTP + WebSocket  
-    usp_service: 6250          # USP Service HTTP endpoints
-    cwmp_service: 7547         # CWMP Service HTTP
-    data_service: 6400         # Data Service HTTP for metrics
-  
+    api_gateway: 6500 # API Gateway HTTP + Swagger UI
+    mtp_service: 8081 # MTP Service HTTP + WebSocket
+    usp_service: 6250 # USP Service HTTP endpoints
+    cwmp_service: 7547 # CWMP Service HTTP
+    data_service: 6400 # Data Service HTTP for metrics
+
   # gRPC Service Ports (5xxxx series - Static Configuration)
   grpc:
-    data_service: 50100        # Data Service gRPC
-    usp_service: 50200         # USP Service gRPC
-    mtp_service: 50300         # MTP Service gRPC
-    connection_manager: 50400  # Connection Manager gRPC
-    cwmp_service: 50500        # CWMP Service gRPC
+    data_service: 50100 # Data Service gRPC
+    usp_service: 50200 # USP Service gRPC
+    mtp_service: 50300 # MTP Service gRPC
+    connection_manager: 50400 # Connection Manager gRPC
+    cwmp_service: 50500 # CWMP Service gRPC
 
 # =============================================================================
 # DATABASE CONFIGURATION
@@ -40,27 +40,27 @@ infrastructure:
     host: localhost
     port: 5433
     database: openusp_db
-  
+
   # RabbitMQ (STOMP/AMQP)
   rabbitmq:
     host: localhost
     port: 5672
     mgmt_port: 15672
     stomp_port: 61613
-  
+
   # Mosquitto (MQTT)
   mosquitto:
     host: localhost
     port: 1883
     websocket_port: 9001
-  
+
   # Monitoring
   prometheus:
     port: 9090
-  
+
   grafana:
     port: 3000
-  
+
   # Adminer
   adminer:
     port: 8080
@@ -114,14 +114,14 @@ mtp:
     mqtt_enabled: true
     stomp_enabled: true
     uds_enabled: true
-  
+
   # Transport-specific configuration
   websocket:
     subprotocol: v1.usp
-  
+
   mqtt:
     broker_url: "tcp://localhost:1883"
-  
+
   stomp:
     broker_url: "tcp://localhost:61613"
     # STOMP destination/queue configuration
@@ -129,7 +129,7 @@ mtp:
       controller: "/topic/usp.controller"
       agent: "/queue/usp.agent"
       broadcast: "/topic/usp.broadcast"
-  
+
   uds:
     socket_path: "/tmp/openusp.sock"
 
@@ -174,18 +174,18 @@ usp_agent:
     hardware_version: "1.0"
     device_type: "gateway"
     oui: "233343"
-  
+
   # Protocol Configuration
   protocol:
     version: "1.3"
     supported_versions: "1.3,1.4"
     role: "device"
     command_key: "usp-agent-001"
-  
+
   # MTP Configuration
   mtp:
-    type: "stomp"
-    
+    type: "websocket"
+
     # WebSocket Configuration
     websocket:
       url: "ws://localhost:8081/ws"
@@ -194,7 +194,7 @@ usp_agent:
       pong_timeout: "10s"
       reconnect_interval: "5s"
       max_reconnect_attempts: 10
-    
+
     # MQTT Configuration
     mqtt:
       broker_url: "tcp://localhost:1883"
@@ -207,7 +207,7 @@ usp_agent:
       retain: false
       clean_session: true
       keep_alive: "60s"
-    
+
     # STOMP Configuration
     stomp:
       broker_url: "tcp://localhost:61613"
@@ -222,12 +222,12 @@ usp_agent:
       heartbeat:
         send: "30s"
         receive: "30s"
-    
+
     # UDS Configuration
     uds:
       socket_path: "/tmp/usp-agent.sock"
       socket_mode: "0666"
-  
+
   # Behavior Configuration
   behavior:
     auto_register: true
@@ -236,7 +236,7 @@ usp_agent:
     parameter_update_notification: true
     event_notification: true
     diagnostic_mode: false
-  
+
   # Security Configuration
   security:
     tls_enabled: false
@@ -244,14 +244,14 @@ usp_agent:
     tls_key_file: ""
     tls_ca_file: ""
     tls_skip_verify: true
-  
+
   # Logging Configuration
   logging:
     level: "info"
     format: "json"
     output: "stdout"
     file: "logs/tr369-agent.log"
-  
+
   # Performance Configuration
   performance:
     buffer_size: 4096
@@ -276,7 +276,7 @@ cwmp_agent:
     hardware_version: "1.0"
     device_type: "gateway"
     oui: "00D04F"
-  
+
   # Protocol Configuration
   protocol:
     version: "1.2"
@@ -284,7 +284,7 @@ cwmp_agent:
     role: "cpe"
     connection_request_auth: "digest"
     parameter_key: "cwmp-agent-001"
-  
+
   # ACS Configuration
   acs:
     url: "http://localhost:7547"
@@ -292,7 +292,7 @@ cwmp_agent:
     password: "acs123"
     periodic_inform_enabled: true
     periodic_inform_interval: "300s"
-  
+
   # Connection Request Configuration
   connection_request:
     url: "http://localhost:9999/cr"
@@ -300,11 +300,11 @@ cwmp_agent:
     port: 9999
     username: "cr"
     password: "cr123"
-  
+
   # SOAP Configuration
   soap:
     version: "1.1"
-  
+
   # HTTP Configuration
   http:
     timeout: "60s"
@@ -313,7 +313,7 @@ cwmp_agent:
     idle_timeout: "90s"
     tls_handshake_timeout: "10s"
     expect_continue_timeout: "1s"
-  
+
   # Behavior Configuration
   behavior:
     auto_register: true
@@ -324,7 +324,7 @@ cwmp_agent:
     max_envelopes: 1
     retry_min_wait_interval: "5s"
     retry_interval_multiplier: 2000
-  
+
   # TR-181 Configuration
   tr181:
     root_object: "Device."
@@ -332,14 +332,14 @@ cwmp_agent:
     spec_version: "2.19.1"
     parameter_notifications: true
     object_notifications: true
-  
+
   # Session Management
   session:
     timeout: "300s"
     max_concurrent: 5
     keep_alive: true
     cookie_enabled: false
-  
+
   # Security Configuration
   security:
     tls_enabled: false
@@ -350,14 +350,14 @@ cwmp_agent:
     certificate_auth_enabled: false
     digest_auth_enabled: true
     basic_auth_enabled: true
-  
+
   # Authentication Configuration
   auth:
     realm: "CWMP"
     algorithm: "MD5"
     qop: "auth"
     nonce_timeout: "300s"
-  
+
   # Logging Configuration
   logging:
     level: "info"
@@ -366,7 +366,7 @@ cwmp_agent:
     file: "logs/tr069-agent.log"
     soap_messages: false
     http_requests: false
-  
+
   # Performance Configuration
   performance:
     buffer_size: 4096
@@ -376,7 +376,7 @@ cwmp_agent:
     write_timeout: "60s"
     idle_timeout: "300s"
     max_connections: 100
-  
+
   # RPC Methods Configuration
   rpc_methods:
     get_rpc_methods: true
@@ -391,7 +391,7 @@ cwmp_agent:
     factory_reset: false
     download: true
     upload: false
-  
+
   # Events Configuration
   events:
     bootstrap: true
@@ -403,10 +403,11 @@ cwmp_agent:
     diagnostics_complete: false
     request_download: false
     autonomous_transfer_complete: false
-  
+
   # Fault Management
   fault_management:
     tolerance_enabled: true
     max_retry_count: 3
     retry_interval: "10s"
     detailed_reporting: true
+

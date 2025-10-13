@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -966,37 +965,22 @@ func main() {
 		return
 	}
 
-	// Load configuration if provided
-	var agentConfig *config.TR369Config
-	var err error
+	// Load configuration - require config file
+	if *configPath == "" {
+		log.Fatalf("Configuration file is required. Use --config to specify the path to openusp.yml")
+	}
 
-	if *configPath != "" {
-		// Load from specified YAML file
-		agentConfig, err = config.LoadYAMLTR369Config(*configPath)
-		if err != nil {
-			log.Fatalf("Failed to load configuration from %s: %v", *configPath, err)
-		}
-		log.Printf("Loaded configuration from: %s", *configPath)
+	// Load from unified YAML file
+	agentConfig, err := config.LoadUSPAgentUnified(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration from %s: %v", *configPath, err)
+	}
+	log.Printf("Loaded configuration from: %s", *configPath)
 
-		// Use configuration values
-		*version = agentConfig.USPVersion
-		if *version == "" {
-			*version = defaultUSPVersion
-		}
-	} else {
-		// Try to load from default locations
-		configDir := filepath.Join("configs")
-		configInterface, err := config.LoadConfigFromYAML("usp", configDir)
-		if err != nil {
-			log.Printf("No configuration file found, using defaults: %v", err)
-		} else {
-			agentConfig = configInterface.(*config.TR369Config)
-			*version = agentConfig.USPVersion
-			if *version == "" {
-				*version = defaultUSPVersion
-			}
-			log.Printf("Loaded configuration from default location")
-		}
+	// Use configuration values
+	*version = agentConfig.USPVersion
+	if *version == "" {
+		*version = defaultUSPVersion
 	}
 
 	// Validate configuration if requested

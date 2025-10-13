@@ -437,6 +437,13 @@ endef
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
 $(foreach agent,$(OPENUSP_AGENTS),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
 
+# Override for USP agent to use unified config
+run-usp-agent: build-usp-agent
+	@echo "🚀 Starting usp-agent (console application)..."
+	@echo "   Config: configs/openusp.yml"
+	@echo "   Press Ctrl+C to stop"
+	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/usp-agent --config configs/openusp.yml'
+
 # API Gateway targets
 run-api-gateway:
 	@echo "🚀 Starting API Gateway..."
