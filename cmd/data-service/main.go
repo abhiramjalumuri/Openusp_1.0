@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +30,8 @@ import (
 // DataService represents a modern unified data service
 type DataService struct {
 	config     *config.DeploymentConfig
+	httpPort   int
+	grpcPort   int
 	grpcServer *grpc.Server
 	httpServer *http.Server
 	healthSrv  *health.Server
@@ -70,11 +71,23 @@ func main() {
 
 func NewDataService() (*DataService, error) {
 	// Load configuration
-	config := config.LoadDeploymentConfigWithPortEnv("openusp-data-service", "data-service", 6100, "OPENUSP_DATA_SERVICE_HTTP_PORT")
+	fullConfig := config.Load()
+	grpcPort, _ := strconv.Atoi(fullConfig.DataServiceGRPCPort)
+	httpPortYAML, _ := strconv.Atoi(fullConfig.DataServiceHTTPPort)
+	if grpcPort == 0 || httpPortYAML == 0 {
+		return nil, fmt.Errorf("missing data service ports in YAML configuration")
+	}
+	deploymentConfig := &config.DeploymentConfig{
+		ServicePort: httpPortYAML,
+		ServiceName: "openusp-data-service",
+		ServiceType: "data-service",
+	}
 
 	service := &DataService{
-		config:  config,
-		metrics: metrics.NewOpenUSPMetrics("data-service"),
+		config:   deploymentConfig,
+		httpPort: httpPortYAML,
+		grpcPort: grpcPort,
+		metrics:  metrics.NewOpenUSPMetrics("data-service"),
 	}
 
 	// Fixed ports – no service discovery needed
@@ -184,29 +197,14 @@ func (ds *DataService) statusHandler(c *gin.Context) {
 	})
 }
 
-func (ds *DataService) getHTTPPort() int {
-	// Port configuration
-	return ds.config.ServicePort
-}
+func (ds *DataService) getHTTPPort() int { return ds.httpPort }
 
-func (ds *DataService) getgRPCPort() int {
-	// Use 5xxxx series gRPC port (convention)
-	grpcPort := 50100 // Default gRPC port (OPENUSP_DATA_SERVICE_GRPC_PORT)
-
-	// Check environment override for gRPC port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			grpcPort = p
-		}
-	}
-
-	return grpcPort
-}
+func (ds *DataService) getgRPCPort() int { return ds.grpcPort }
 
 func (ds *DataService) Start() error {
 	// Environment-based port configuration
 	log.Printf("🎯 Data Service starting with environment configuration:")
-	log.Printf("   └── HTTP Port: %d", ds.config.ServicePort)
+	log.Printf("   └── HTTP Port: %d", ds.getHTTPPort())
 	log.Printf("   └── gRPC Port: %d", ds.getgRPCPort())
 
 	// Start gRPC server

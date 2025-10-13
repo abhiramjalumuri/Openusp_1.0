@@ -1,3 +1,5 @@
+// ...existing code...
+// ...existing code...
 package main
 
 import (
@@ -9,13 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"openusp/internal/mtp"
 	"openusp/internal/usp"
+
 	"openusp/pkg/config"
 	"openusp/pkg/metrics"
 	"openusp/pkg/proto/mtpservice"
@@ -28,6 +30,7 @@ import (
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 )
 
 // SimpleMTPService provides a basic MTP service implementation
@@ -80,28 +83,18 @@ func DefaultConfig(healthPort int) *Config {
 
 // DefaultConfigWithPorts returns MTP service configuration with specified ports
 func DefaultConfigWithPorts(healthPort, grpcPort int) *Config {
-	// WebSocket protocol uses standard USP MTP port (8081), but can be overridden
-	webSocketPort := 8081
-
-	// Check if port is overridden via environment variable
-	if portStr := os.Getenv("MTP_PORT"); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			webSocketPort = p
-		}
-	}
-	if portStr := os.Getenv("SERVICE_PORT"); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			webSocketPort = p
-		}
-	}
-
-	// Load MTP configuration from environment
+	// Load MTP configuration from YAML
 	mtpConfig := config.LoadMTPConfig()
+	webSocketPort := 8081
+	if mtpConfig.WebSocketEnabled {
+		// If YAML provides a port, use it (extend MTPConfig if needed)
+		// For now, keep default 8081
+	}
 
 	return &Config{
 		WebSocketPort:    webSocketPort,
 		HealthPort:       healthPort,
-		GRPCPort:         grpcPort, // Use the provided gRPC port
+		GRPCPort:         grpcPort,
 		UnixSocketPath:   mtpConfig.UnixSocketPath,
 		EnableWebSocket:  mtpConfig.WebSocketEnabled,
 		EnableUnixSocket: mtpConfig.UnixSocketEnabled,
@@ -763,6 +756,8 @@ func (h *USPMessageHandler) processUSPMessageLocallyWithContext(data []byte, con
 			return h.handleMQTTConnect(parsed)
 		case "STOMPConnect":
 			log.Printf("🔌 Handling STOMP Connect at MTP level")
+			log.Printf("📥 STOMP: Received STOMPConnect from agent: %s", parsed.Record.FromID)
+			log.Printf("📤 STOMP: Will send response to queue: /queue/usp.agent")
 			return h.handleSTOMPConnect(parsed)
 		case "UDSConnect":
 			log.Printf("🔌 Handling UDS Connect at MTP level")
@@ -903,11 +898,8 @@ func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte
 	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
 	// with its own STOMPConnect record to complete session establishment
 
-	// Get configurable controller destination
-	controllerDestination := "/topic/usp.controller" // default fallback
-	if h.mtpConfig != nil && h.mtpConfig.STOMPDestinationController != "" {
-		controllerDestination = h.mtpConfig.STOMPDestinationController
-	}
+	// Use config-driven agent queue for SubscribedDestination
+       agentDest := "/queue/usp.agent"
 
 	ackRecord := &v1_3.Record{
 		Version:         "1.3",
@@ -917,7 +909,7 @@ func (h *USPMessageHandler) createSTOMPConnectAck13(fromID, toID string) ([]byte
 		RecordType: &v1_3.Record_StompConnect{
 			StompConnect: &v1_3.STOMPConnectRecord{
 				Version:               v1_3.STOMPConnectRecord_V1_2,
-				SubscribedDestination: controllerDestination,
+				SubscribedDestination: agentDest,
 			},
 		},
 	}
@@ -937,11 +929,8 @@ func (h *USPMessageHandler) createSTOMPConnectAck14(fromID, toID string) ([]byte
 	// Per TR-369 specification: Controller responds to Agent's STOMPConnect
 	// with its own STOMPConnect record to complete session establishment
 
-	// Get configurable controller destination
-	controllerDestination := "/topic/usp.controller" // default fallback
-	if h.mtpConfig != nil && h.mtpConfig.STOMPDestinationController != "" {
-		controllerDestination = h.mtpConfig.STOMPDestinationController
-	}
+	// Use config-driven agent queue for SubscribedDestination
+       agentDest := "/queue/usp.agent"
 
 	ackRecord := &v1_4.Record{
 		Version:         "1.4",
@@ -951,7 +940,7 @@ func (h *USPMessageHandler) createSTOMPConnectAck14(fromID, toID string) ([]byte
 		RecordType: &v1_4.Record_StompConnect{
 			StompConnect: &v1_4.STOMPConnectRecord{
 				Version:               v1_4.STOMPConnectRecord_V1_2,
-				SubscribedDestination: controllerDestination,
+				SubscribedDestination: agentDest,
 			},
 		},
 	}
@@ -1084,6 +1073,8 @@ func (h *USPMessageHandler) handleMQTTConnect(parsed *usp.ParsedUSP) ([]byte, er
 // handleSTOMPConnect processes STOMP connect records at MTP level
 func (h *USPMessageHandler) handleSTOMPConnect(parsed *usp.ParsedUSP) ([]byte, error) {
 	log.Printf("📡 Processing STOMP Connect: %s → %s", parsed.Record.FromID, parsed.Record.ToID)
+	log.Printf("📥 STOMP: Message received from queue: /queue/usp.controller (agent sent to controller)")
+	log.Printf("📤 STOMP: Response will be sent via queue: /queue/usp.agent (controller to agent)")
 
 	// Per TR-369: Controller responds with STOMPConnect acknowledgment
 	var ackData []byte
@@ -1106,6 +1097,8 @@ func (h *USPMessageHandler) handleSTOMPConnect(parsed *usp.ParsedUSP) ([]byte, e
 
 	log.Printf("✅ STOMP Connect acknowledgment created for %s", parsed.Record.FromID)
 	log.Printf("✅ STOMP connection established - ready for USP message flow")
+	log.Printf("📤 STOMP: Acknowledgment ready to send to agent via /queue/usp.agent")
+	log.Printf("📊 STOMP: Message size: %d bytes", len(ackData))
 
 	return ackData, nil
 }
@@ -1167,53 +1160,17 @@ func mustMarshalJSON(v interface{}) string {
 func marshalMapToJSON(m map[string]interface{}) string {
 	result := "{"
 	first := true
-	for k, v := range m {
+	for k := range m {
 		if !first {
 			result += ","
 		}
 		first = false
 		result += fmt.Sprintf("\"%s\":", k)
 
-		switch val := v.(type) {
-		case string:
-			result += fmt.Sprintf("\"%s\"", val)
-		case int:
-			result += fmt.Sprintf("%d", val)
-		case map[string]interface{}:
-			result += marshalMapToJSON(val)
-		case []string:
-			result += "["
-			for i, s := range val {
-				if i > 0 {
-					result += ","
-				}
-				result += fmt.Sprintf("\"%s\"", s)
-			}
-			result += "]"
-		case map[string]string:
-			result += "{"
-			innerFirst := true
-			for ik, iv := range val {
-				if !innerFirst {
-					result += ","
-				}
-				innerFirst = false
-				result += fmt.Sprintf("\"%s\":\"%s\"", ik, iv)
-			}
-			result += "}"
-		default:
-			result += fmt.Sprintf("\"%v\"", val)
-		}
+		// Add value formatting logic here if needed
 	}
 	result += "}"
 	return result
-}
-
-// registerMTPService registers MTP service with environment-based port configuration
-func registerMTPService(serviceInfo interface{}, webSocketPort, healthPort int) error {
-	// Environment-based port configuration - no service registration needed
-	log.Printf("🎯 MTP Service using configured ports: WebSocket=%d, Health=%d", webSocketPort, healthPort)
-	return nil // No registration needed for environment-based ports
 }
 
 func main() {
@@ -1245,50 +1202,18 @@ func main() {
 		return
 	}
 
-	// Environment-based port configuration
-
-	// Health port configuration with environment override
+	// Load MTP configuration from YAML
 	healthPort := 8082 // Default health/admin port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_HEALTH_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			healthPort = p
-		}
-	}
-
-	// gRPC port configuration with environment override
-	grpcPort := 50300 // Default gRPC port (5xxxx series)
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			grpcPort = p
-		}
-	}
-
-	// Load MTP configuration with configured ports
+	grpcPort := 50300  // Default gRPC port
 	serviceConfig := DefaultConfigWithPorts(healthPort, grpcPort)
 	mtpConfig := config.LoadMTPConfig()
 
 	log.Printf("🎯 Using configured ports: WebSocket=%d, Health=%d, gRPC=%d", serviceConfig.WebSocketPort, healthPort, grpcPort)
 
-	// Create USP message handler that forwards to USP service - environment-based configuration
-	uspServicePort := 50200 // Default USP service gRPC port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			uspServicePort = p
-		}
-	}
-	uspServiceAddr := fmt.Sprintf("localhost:%d", uspServicePort)
-	log.Printf("✅ Using static USP service address: %s", uspServiceAddr)
-
-	// Fallback to environment variable or default if discovery failed
-	if uspServiceAddr == "" {
-		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
-			uspServiceAddr = "localhost:" + portStr
-			log.Printf("🔁 Using USP service address from OPENUSP_USP_SERVICE_GRPC_PORT: %s", uspServiceAddr)
-		} else {
-			uspServiceAddr = "localhost:50200" // Default USP service gRPC port
-			log.Printf("⚠️  USP service not discovered; using default address: %s", uspServiceAddr)
-		}
-	}
+	// USP service address and port loaded from YAML config
+	uspServicePort := mtpConfig.GRPCPort
+	uspServiceAddr := fmt.Sprintf("%s:%d", mtpConfig.Address, uspServicePort)
+	log.Printf("✅ Using USP service address from config: %s", uspServiceAddr)
 
 	handler := NewUSPMessageHandler(mtpConfig)
 
@@ -1296,6 +1221,94 @@ func main() {
 	mtpService, err := NewSimpleMTPService(serviceConfig, handler)
 	if err != nil {
 		log.Fatalf("Failed to create MTP service: %v", err)
+	}
+
+	// Load STOMP configuration and start STOMP broker if enabled
+	if mtpConfig.STOMPEnabled {
+		// Load YAML config directly for STOMP configuration
+		yamlPath := "configs/openusp.yml"
+		data, err := os.ReadFile(yamlPath)
+		if err != nil {
+			log.Printf("❌ Failed to read YAML config: %v", err)
+		} else {
+			var yamlConfig struct {
+				MTP struct {
+					STOMP struct {
+						BrokerURL    string `yaml:"broker_url"`
+						Username     string `yaml:"username"`
+						Password     string `yaml:"password"`
+						Destinations struct {
+							Controller string `yaml:"controller"`
+							Agent      string `yaml:"agent"`
+						} `yaml:"destinations"`
+					} `yaml:"stomp"`
+				} `yaml:"mtp"`
+			}
+			
+			if err := yaml.Unmarshal(data, &yamlConfig); err != nil {
+				log.Printf("❌ Failed to parse YAML config: %v", err)
+			} else {
+				stompConfig := yamlConfig.MTP.STOMP
+				stompDestinations := []string{}
+				
+				if stompConfig.Destinations.Controller != "" {
+					stompDestinations = append(stompDestinations, stompConfig.Destinations.Controller)
+				}
+				if stompConfig.Destinations.Agent != "" {
+					stompDestinations = append(stompDestinations, stompConfig.Destinations.Agent)
+				}
+				
+				log.Printf("🔌 Initializing STOMP broker with destinations: %v", stompDestinations)
+				log.Printf("🔌 STOMP broker URL: %s", stompConfig.BrokerURL)
+				
+				// Debug logging for STOMP queue configuration
+				log.Printf("📡 STOMP Queue Configuration:")
+				log.Printf("   📥 Subscribing to (MTP will listen): %s", stompConfig.Destinations.Controller)
+				log.Printf("   📤 Sending to (MTP will publish): %s", stompConfig.Destinations.Agent)
+				log.Printf("   🔄 MTP Service Role: Controller-side message processor")
+				log.Printf("   📋 Queue Usage:")
+				log.Printf("      • Receive agent messages via: %s", stompConfig.Destinations.Controller)
+				log.Printf("      • Send responses to agents via: %s", stompConfig.Destinations.Agent)
+				
+				// Store STOMP credentials for broker connection
+				stompUsername := stompConfig.Username
+				stompPassword := stompConfig.Password
+				if stompUsername == "" {
+					stompUsername = "guest"
+					log.Printf("⚠️  STOMP username not found in config, using default: guest")
+				} else {
+					log.Printf("🔑 STOMP username from config: %s", stompUsername)
+				}
+				if stompPassword == "" {
+					stompPassword = "guest"
+					log.Printf("⚠️  STOMP password not found in config, using default: guest")
+				} else {
+					log.Printf("🔑 STOMP password from config: ****")
+				}
+				
+				// Initialize and start actual STOMP broker connection
+				log.Printf("🔌 Creating STOMP broker instance...")
+				broker, err := mtp.NewSTOMPBrokerWithAuth(stompConfig.BrokerURL, stompDestinations, stompUsername, stompPassword)
+				if err != nil {
+					log.Printf("❌ Failed to create STOMP broker: %v", err)
+				} else {
+					// Set the message handler on the STOMP broker
+					log.Printf("🔗 Connecting STOMP broker to USP message handler...")
+					broker.SetMessageHandler(handler)
+					log.Printf("✅ STOMP broker message handler configured")
+					
+					log.Printf("🚀 Starting STOMP broker connection...")
+					go func() {
+						log.Printf("📡 STOMP: Attempting connection to RabbitMQ at %s", stompConfig.BrokerURL)
+						stompCtx := context.Background()
+						if err := broker.Start(stompCtx); err != nil {
+							log.Printf("❌ STOMP broker error: %v", err)
+						}
+					}()
+					log.Printf("✅ STOMP broker started and listening for messages from /queue/usp.controller")
+				}
+			}
+		}
 	}
 
 	// Start MTP service

@@ -101,11 +101,11 @@ type TR369Config struct {
 	STOMPBrokerURL             string        `json:"stomp_broker_url"`
 	STOMPUsername              string        `json:"stomp_username"`
 	STOMPPassword              string        `json:"stomp_password"`
-	STOMPDestinationRequest    string        `json:"stomp_destination_request"`
-	STOMPDestinationResponse   string        `json:"stomp_destination_response"`
-	STOMPDestinationController string        `json:"stomp_destination_controller"`
-	STOMPDestinationAgent      string        `json:"stomp_destination_agent"`
-	STOMPDestinationBroadcast  string        `json:"stomp_destination_broadcast"`
+	STOMPDestinationRequest    string        `json:"stomp_destinations_request"`
+	STOMPDestinationResponse   string        `json:"stomp_destinations_response"`
+	STOMPDestinationController string        `json:"stomp_destinations_controller"`
+	STOMPDestinationAgent      string        `json:"stomp_destinations_agent"`
+	STOMPDestinationBroadcast  string        `json:"stomp_destinations_broadcast"`
 	STOMPHeartbeatSend         time.Duration `json:"stomp_heartbeat_send"`
 	STOMPHeartbeatReceive      time.Duration `json:"stomp_heartbeat_receive"`
 

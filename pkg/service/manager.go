@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"openusp/pkg/config"
@@ -89,57 +86,48 @@ type ServiceInfo struct {
 
 // getServiceInfo returns service info using environment-based configuration with defaults
 func (sm *ServiceManager) getServiceInfo(serviceName string) *ServiceInfo {
-	// Helper function to get port with environment override
-	getPortWithEnv := func(envVar string, defaultPort int) int {
-		if portStr := strings.TrimSpace(os.Getenv(envVar)); portStr != "" {
-			if p, err := strconv.Atoi(portStr); err == nil {
-				return p
-			}
-		}
-		return defaultPort
-	}
 
 	// Map service names to their environment-configurable ports
 	serviceMap := map[string]*ServiceInfo{
 		"openusp-data-service": {
 			Name:     "openusp-data-service",
 			Address:  "localhost",
-			Port:     getPortWithEnv("OPENUSP_DATA_SERVICE_HTTP_PORT", 6100),
-			GRPCPort: getPortWithEnv("OPENUSP_DATA_SERVICE_GRPC_PORT", 50100),
+			Port:     6400,
+			GRPCPort: 50100,
 			Health:   "passing",
 		},
 		"openusp-api-gateway": {
 			Name:    "openusp-api-gateway",
 			Address: "localhost",
-			Port:    getPortWithEnv("OPENUSP_API_GATEWAY_PORT", 6500),
+			Port:    6500,
 			Health:  "passing",
 		},
 		"openusp-mtp-service": {
 			Name:     "openusp-mtp-service",
 			Address:  "localhost",
-			Port:     getPortWithEnv("OPENUSP_MTP_SERVICE_PORT", 8081),
-			GRPCPort: getPortWithEnv("OPENUSP_MTP_SERVICE_GRPC_PORT", 50300),
+			Port:     8081,
+			GRPCPort: 50300,
 			Health:   "passing",
 		},
 		"openusp-cwmp-service": {
 			Name:     "openusp-cwmp-service",
 			Address:  "localhost",
-			Port:     getPortWithEnv("OPENUSP_CWMP_SERVICE_PORT", 7547),
+			Port:     7547,
 			GRPCPort: 0, // CWMP service doesn't provide gRPC
 			Health:   "passing",
 		},
 		"openusp-usp-service": {
 			Name:     "openusp-usp-service",
 			Address:  "localhost",
-			Port:     getPortWithEnv("OPENUSP_USP_SERVICE_PORT", 6400),
-			GRPCPort: getPortWithEnv("OPENUSP_USP_SERVICE_GRPC_PORT", 50200),
+			Port:     6250,
+			GRPCPort: 50200,
 			Health:   "passing",
 		},
 		"openusp-connection-manager": {
 			Name:     "openusp-connection-manager",
 			Address:  "localhost",
-			Port:     getPortWithEnv("OPENUSP_CONNECTION_MANAGER_HTTP_PORT", 6200),
-			GRPCPort: getPortWithEnv("OPENUSP_CONNECTION_MANAGER_GRPC_PORT", 50400),
+			Port:     6200,
+			GRPCPort: 50400,
 			Health:   "passing",
 		},
 	}

@@ -13,6 +13,7 @@ ports:
     usp_service: 6250 # USP Service HTTP endpoints
     cwmp_service: 7547 # CWMP Service HTTP
     data_service: 6400 # Data Service HTTP for metrics
+    connection_manager: 6200 # Connection Manager HTTP
 
   # gRPC Service Ports (5xxxx series - Static Configuration)
   grpc:
@@ -29,6 +30,8 @@ database:
   host: localhost
   port: 5433
   name: openusp_db
+  user: openusp
+  password: openusp123
   sslmode: disable
 
 # =============================================================================
@@ -70,15 +73,15 @@ infrastructure:
 # =============================================================================
 services:
   data_service:
-    addr: "localhost:56400"
+    addr: "localhost:50100" # gRPC data service address (matches ports.grpc.data_service)
   api_gateway:
-    url: "http://localhost:6500"
+    url: "http://localhost:6500" # HTTP API Gateway
   mtp_service:
-    url: "http://localhost:6100"
+    url: "http://localhost:8081" # MTP WebSocket/HTTP service
   cwmp_service:
-    url: "http://localhost:6300"
+    url: "http://localhost:7547" # CWMP service HTTP
   usp_service:
-    url: "http://localhost:6250"
+    url: "http://localhost:6250" # USP service HTTP
 
 # =============================================================================
 # PROTOCOL CLIENT CONFIGURATION
@@ -124,11 +127,13 @@ mtp:
 
   stomp:
     broker_url: "tcp://localhost:61613"
+    # STOMP credentials (use environment variables for production)
+    username: "openusp"
+    password: "openusp123"
     # STOMP destination/queue configuration
     destinations:
-      controller: "/topic/usp.controller"
-      agent: "/queue/usp.agent"
-      broadcast: "/topic/usp.broadcast"
+      controller: "/queue/usp.controller" # agent → controller
+      agent: "/queue/usp.agent" # controller → agent
 
   uds:
     socket_path: "/tmp/openusp.sock"
@@ -184,7 +189,7 @@ usp_agent:
 
   # MTP Configuration
   mtp:
-    type: "websocket"
+    type: "stomp"
 
     # WebSocket Configuration
     websocket:
@@ -214,11 +219,8 @@ usp_agent:
       username: "openusp"
       password: "openusp123"
       destinations:
-        request: "/queue/usp.agent.request"
-        response: "/queue/usp.agent.response"
-        controller: "/queue/usp.controller"
-        agent: "/queue/usp.agent"
-        broadcast: "/topic/usp.broadcast"
+        controller: "/queue/usp.controller" # agent → controller
+        agent: "/queue/usp.agent" # controller → agent
       heartbeat:
         send: "30s"
         receive: "30s"
@@ -410,4 +412,3 @@ cwmp_agent:
     max_retry_count: 3
     retry_interval: "10s"
     detailed_reporting: true
-

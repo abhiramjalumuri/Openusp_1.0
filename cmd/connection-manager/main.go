@@ -11,11 +11,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"openusp/pkg/config"
 	"openusp/pkg/metrics"
 	"openusp/pkg/proto/connectionservice"
 	"openusp/pkg/version"
@@ -159,35 +159,18 @@ func NewConnectionManagerService(config *ConnectionManagerConfig) *ConnectionMan
 
 // getServiceTarget returns the target address for a service using environment configuration
 func (cms *ConnectionManagerService) getServiceTarget(serviceName string) string {
-	// Environment-based port mappings using 5xxxx series for gRPC (consistent with openusp.env)
+	// Static mapping; in future read from unified YAML if needed.
 	switch serviceName {
 	case "openusp-data-service":
-		port := 50100 // Default gRPC port
-		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
-			if p, err := strconv.Atoi(portStr); err == nil {
-				port = p
-			}
-		}
-		return fmt.Sprintf("localhost:%d", port)
+		return "localhost:50100"
 	case "openusp-usp-service":
-		port := 50200 // Default gRPC port
-		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
-			if p, err := strconv.Atoi(portStr); err == nil {
-				port = p
-			}
-		}
-		return fmt.Sprintf("localhost:%d", port)
+		return "localhost:50200"
 	case "openusp-mtp-service":
-		port := 50300 // Default gRPC port
-		if portStr := strings.TrimSpace(os.Getenv("OPENUSP_MTP_SERVICE_GRPC_PORT")); portStr != "" {
-			if p, err := strconv.Atoi(portStr); err == nil {
-				port = p
-			}
-		}
-		return fmt.Sprintf("localhost:%d", port)
-	// Note: CWMP service is HTTP-only (TR-069) and does not provide gRPC
+		return "localhost:50300"
+	case "openusp-connection-manager":
+		return "localhost:50400"
 	default:
-		return "" // Unknown service
+		return ""
 	}
 }
 
@@ -703,24 +686,16 @@ func (cms *ConnectionManagerService) Shutdown() error {
 func main() {
 	log.Printf("🚀 Starting OpenUSP Connection Manager Service...")
 
-	// Environment-based default port configuration
-	defaultGRPCPort := 50400
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CONNECTION_MANAGER_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			defaultGRPCPort = p
-		}
+	cfg := config.Load()
+	grpcPort, _ := strconv.Atoi(cfg.ConnectionManagerGRPC)
+	httpPortCfg, _ := strconv.Atoi(cfg.ConnectionManagerHTTP)
+	if grpcPort == 0 || httpPortCfg == 0 {
+		log.Fatalf("missing connection manager ports in YAML configuration")
 	}
 
-	defaultHTTPPort := 6200
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CONNECTION_MANAGER_HTTP_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			defaultHTTPPort = p
-		}
-	}
-
-	// Command line flags with environment-based defaults
-	var port = flag.Int("port", defaultGRPCPort, "gRPC port")
-	var httpPort = flag.Int("http-port", defaultHTTPPort, "HTTP port for health/status")
+	// Command line flags (primarily for --help / --version); defaults from YAML
+	var port = flag.Int("port", grpcPort, "gRPC port (from YAML)")
+	var httpPort = flag.Int("http-port", httpPortCfg, "HTTP port for health/status (from YAML)")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -740,9 +715,7 @@ func main() {
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Environment Variables:")
-		fmt.Println("  OPENUSP_CONNECTION_MANAGER_PORT   - gRPC port")
-		fmt.Println("  OPENUSP_CONNECTION_MANAGER_HTTP_PORT - HTTP port")
+		fmt.Println("Ports sourced from configs/openusp.yml; environment overrides enforced.")
 		return
 	}
 

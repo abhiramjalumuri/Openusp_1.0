@@ -60,8 +60,15 @@ func NewAPIGateway() (*APIGateway, error) {
 	// Load full configuration including security settings
 	fullConfig := config.Load()
 
-	// Load deployment configuration with service-specific port environment variable
-	deploymentConfig := config.LoadDeploymentConfigWithPortEnv("openusp-api-gateway", "api-gateway", 6500, "OPENUSP_API_GATEWAY_PORT")
+	// Use fullConfig for all deployment settings
+	servicePort, _ := strconv.Atoi(fullConfig.APIGatewayPort)
+	log.Println("Configuration: ports sourced exclusively from configs/openusp.yml (env overrides disabled)")
+	deploymentConfig := &config.DeploymentConfig{
+		ServicePort: servicePort,
+		ServiceName: "openusp-api-gateway",
+		ServiceType: "api-gateway",
+		// Add other fields as needed from fullConfig
+	}
 
 	gateway := &APIGateway{
 		config:     deploymentConfig,
@@ -70,8 +77,7 @@ func NewAPIGateway() (*APIGateway, error) {
 	}
 
 	// Fixed ports – no service discovery needed
-	log.Printf("🎯 Service starting: %s at localhost:%d (fixed port)",
-		gateway.config.ServiceName, gateway.config.ServicePort)
+	log.Printf("🎯 Service starting: %s at localhost:%d (fixed port)", gateway.config.ServiceName, gateway.config.ServicePort)
 
 	// Get data service address from static configuration
 	dataServiceAddr, err := gateway.getDataServiceAddress()
@@ -93,14 +99,9 @@ func NewAPIGateway() (*APIGateway, error) {
 }
 
 func (gw *APIGateway) getDataServiceAddress() (string, error) {
-	// Environment-based port configuration for data service (5xxxx series)
-	dataServicePort := 50100 // Default gRPC port (matches openusp.env)
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			dataServicePort = p
-		}
-	}
-	return fmt.Sprintf("localhost:%d", dataServicePort), nil
+	// Use unified YAML configuration only
+	portStr := gw.fullConfig.DataServiceGRPCPort
+	return fmt.Sprintf("localhost:%s", portStr), nil
 }
 
 func (gw *APIGateway) getHTTPPort() int {
@@ -1805,7 +1806,6 @@ func main() {
 	log.Printf("🚀 Starting OpenUSP API Gateway...")
 
 	// Command line flags
-	var port = flag.Int("port", 6500, "HTTP/HTTPS port")
 	var showVersion = flag.Bool("version", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	flag.Parse()
@@ -1826,12 +1826,12 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("")
 		fmt.Println("Environment Variables:")
-		fmt.Println("  OPENUSP_API_GATEWAY_PORT  - HTTPS server port (default: 6500)")
-		fmt.Println("  OPENUSP_HTTP_REDIRECT_PORT - HTTP redirect server port (default: 6501)")
-		fmt.Println("  OPENUSP_DATA_SERVICE_GRPC_PORT - Data service gRPC port (default: 50100)")
 		fmt.Println("  OPENUSP_TLS_ENABLED       - Enable TLS/HTTPS (default: false)")
 		fmt.Println("  OPENUSP_TLS_CERT_PATH     - TLS certificate file path (default: certs/server.crt)")
 		fmt.Println("  OPENUSP_TLS_KEY_PATH      - TLS private key file path (default: certs/server.key)")
+		fmt.Println("")
+		fmt.Println("Port Configuration:")
+		fmt.Println("  All service ports are now configured in configs/openusp.yml file only.")
 		fmt.Println("")
 		fmt.Println("TLS Configuration:")
 		fmt.Println("  If both certificate and key files exist, HTTPS will be enabled automatically.")
@@ -1839,10 +1839,7 @@ func main() {
 		return
 	}
 
-	// Fixed ports – no environment overrides needed
-	if *port != 6500 {
-		os.Setenv("OPENUSP_API_GATEWAY_PORT", fmt.Sprintf("%d", *port))
-	}
+	// Port is now configured via YAML config, flag is for backward compatibility only
 
 	// Create API Gateway
 	gateway, err := NewAPIGateway()

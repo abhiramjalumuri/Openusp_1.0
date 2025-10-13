@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -477,22 +476,20 @@ func main() {
 		return
 	}
 
-	// Fixed ports – no environment overrides needed
-
 	// Load configuration
-	_ = config.LoadDeploymentConfigWithPortEnv("openusp-usp-service", "usp-service", 6400, "OPENUSP_USP_SERVICE_PORT")
+	fullConfig := config.Load()
+	grpcPort, _ := strconv.Atoi(fullConfig.USPServiceGRPCPort)
+	httpPort := 0
+	if fullConfig.USPServiceHTTPPort != "" {
+		httpPort, _ = strconv.Atoi(fullConfig.USPServiceHTTPPort)
+	}
+	if grpcPort == 0 || httpPort == 0 {
+		log.Fatalf("missing USP service ports in YAML configuration")
+	}
 
 	// Fixed ports – no service discovery needed
 
-	// Use 5xxxx series gRPC port (convention)
-	grpcPort := 50200 // Default gRPC port (5xxxx series)
-
-	// Check environment override for gRPC port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			grpcPort = p
-		}
-	}
+	// Ports already loaded above
 
 	fmt.Println("OpenUSP Core Service - Multi-Version TR-369 Protocol Engine")
 	fmt.Println("==========================================================")
@@ -526,13 +523,7 @@ func main() {
 	}
 	log.Printf("✅ Connected to Data Service via connection manager")
 
-	// Start HTTP server for health checks and metrics - environment-based configuration
-	httpPort := 6400 // Default HTTP port for USP Service
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_USP_SERVICE_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			httpPort = p
-		}
-	}
+	// HTTP port loaded from config
 
 	go func() {
 		mux := http.NewServeMux()
@@ -624,7 +615,7 @@ func main() {
 	fmt.Println("   🔧 USP protocol versions 1.3 and 1.4 supported")
 	fmt.Println("   🔧 Automatic version detection enabled")
 	fmt.Println("   🔧 Device onboarding and lifecycle management")
-	fmt.Printf("   🔧 Data Service: localhost:%s\n", cfg.DataServicePort)
+	fmt.Printf("   🔧 Data Service: localhost:%s\n", cfg.DataServiceGRPCPort)
 
 	// Handle graceful shutdown
 	fmt.Println("\n💡 Press Ctrl+C to exit...")

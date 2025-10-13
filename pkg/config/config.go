@@ -13,11 +13,12 @@ import (
 type YAMLConfig struct {
 	Ports struct {
 		HTTP struct {
-			APIGateway  int `yaml:"api_gateway"`
-			MTPService  int `yaml:"mtp_service"`
-			USPService  int `yaml:"usp_service"`
-			CWMPService int `yaml:"cwmp_service"`
-			DataService int `yaml:"data_service"`
+			APIGateway        int `yaml:"api_gateway"`
+			MTPService        int `yaml:"mtp_service"`
+			USPService        int `yaml:"usp_service"`
+			CWMPService       int `yaml:"cwmp_service"`
+			DataService       int `yaml:"data_service"`
+			ConnectionManager int `yaml:"connection_manager"`
 		} `yaml:"http"`
 		GRPC struct {
 			DataService       int `yaml:"data_service"`
@@ -29,10 +30,12 @@ type YAMLConfig struct {
 	} `yaml:"ports"`
 
 	Database struct {
-		Host    string `yaml:"host"`
-		Port    int    `yaml:"port"`
-		Name    string `yaml:"name"`
-		SSLMode string `yaml:"sslmode"`
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Name     string `yaml:"name"`
+		SSLMode  string `yaml:"sslmode"`
+		User     string `yaml:"user"`
+		Password string `yaml:"password"`
 	} `yaml:"database"`
 
 	Infrastructure struct {
@@ -116,6 +119,8 @@ type YAMLConfig struct {
 		} `yaml:"mqtt"`
 		STOMP struct {
 			BrokerURL    string `yaml:"broker_url"`
+			Username     string `yaml:"username"`
+			Password     string `yaml:"password"`
 			Destinations struct {
 				Controller string `yaml:"controller"`
 				Agent      string `yaml:"agent"`
@@ -182,11 +187,15 @@ type YAMLConfig struct {
 // Config holds all OpenUSP configuration
 type Config struct {
 	// Service Ports
-	APIGatewayPort  string
-	DataServicePort string
-	MTPServicePort  string
-	CWMPServicePort string
-	USPServicePort  string
+	APIGatewayPort        string
+	DataServiceGRPCPort   string
+	DataServiceHTTPPort   string
+	MTPServicePort        string
+	CWMPServicePort       string
+	USPServiceGRPCPort    string
+	USPServiceHTTPPort    string
+	ConnectionManagerGRPC string
+	ConnectionManagerHTTP string
 
 	// Database Configuration
 	Database DatabaseConfig
@@ -294,14 +303,14 @@ type InfraConfig struct {
 
 // MTPConfig holds MTP transport configuration
 type MTPConfig struct {
-	WebSocketEnabled           bool
-	MQTTEnabled                bool
-	STOMPEnabled               bool
-	UnixSocketEnabled          bool
-	UnixSocketPath             string
-	STOMPDestinationController string
-	STOMPDestinationAgent      string
-	STOMPDestinationBroadcast  string
+	WebSocketEnabled  bool
+	MQTTEnabled       bool
+	STOMPEnabled      bool
+	UnixSocketEnabled bool
+	UnixSocketPath    string
+	// Only /queue/usp.controller (Tx) and /queue/usp.agent (Rx) are used for STOMP agent-controller communication
+	GRPCPort int
+	Address  string
 }
 
 // USPConfig holds USP protocol configuration
@@ -370,28 +379,32 @@ func LoadWithPath(configPath string) *Config {
 
 	// Merge YAML config with environment variables (env vars take precedence)
 	cfg := &Config{
-		// Service Ports - Environment variables override YAML
-		APIGatewayPort:  getEnvWithYAMLFallback("OPENUSP_API_GATEWAY_PORT", fmt.Sprintf("%d", yamlConfig.Ports.HTTP.APIGateway), "6500"),
-		DataServicePort: getEnvWithYAMLFallback("OPENUSP_DATA_SERVICE_GRPC_PORT", fmt.Sprintf("%d", yamlConfig.Ports.GRPC.DataService), "50100"),
-		MTPServicePort:  getEnvWithYAMLFallback("OPENUSP_MTP_SERVICE_PORT", fmt.Sprintf("%d", yamlConfig.Ports.HTTP.MTPService), "8081"),
-		CWMPServicePort: getEnvWithYAMLFallback("OPENUSP_CWMP_SERVICE_PORT", fmt.Sprintf("%d", yamlConfig.Ports.HTTP.CWMPService), "7547"),
-		USPServicePort:  getEnvWithYAMLFallback("OPENUSP_USP_SERVICE_GRPC_PORT", fmt.Sprintf("%d", yamlConfig.Ports.GRPC.USPService), "50200"),
+		// Service Ports - YAML authoritative (error if missing)
+		APIGatewayPort:        intToStringOrError(yamlConfig.Ports.HTTP.APIGateway, "api_gateway http port"),
+		DataServiceGRPCPort:   intToStringOrError(yamlConfig.Ports.GRPC.DataService, "data_service grpc port"),
+		DataServiceHTTPPort:   intToStringOrError(yamlConfig.Ports.HTTP.DataService, "data_service http port"),
+		MTPServicePort:        intToStringOrError(yamlConfig.Ports.HTTP.MTPService, "mtp_service http port"),
+		CWMPServicePort:       intToStringOrError(yamlConfig.Ports.HTTP.CWMPService, "cwmp_service http port"),
+		USPServiceGRPCPort:    intToStringOrError(yamlConfig.Ports.GRPC.USPService, "usp_service grpc port"),
+		USPServiceHTTPPort:    intToStringOrError(yamlConfig.Ports.HTTP.USPService, "usp_service http port"),
+		ConnectionManagerGRPC: intToStringOrError(yamlConfig.Ports.GRPC.ConnectionManager, "connection_manager grpc port"),
+		ConnectionManagerHTTP: intToStringOrError(yamlConfig.Ports.HTTP.ConnectionManager, "connection_manager http port"),
 
 		// Database Configuration
 		Database: DatabaseConfig{
-			Host:     getEnvWithYAMLFallback("OPENUSP_DB_HOST", yamlConfig.Database.Host, "localhost"),
-			Port:     getEnvWithYAMLFallback("OPENUSP_DB_PORT", fmt.Sprintf("%d", yamlConfig.Database.Port), "5433"),
-			Name:     getEnvWithYAMLFallback("OPENUSP_DB_NAME", yamlConfig.Database.Name, "openusp_db"),
-			User:     getEnv("OPENUSP_DB_USER", "openusp"),        // Credentials stay in env only
-			Password: getEnv("OPENUSP_DB_PASSWORD", "openusp123"), // Credentials stay in env only
-			SSLMode:  getEnvWithYAMLFallback("OPENUSP_DB_SSLMODE", yamlConfig.Database.SSLMode, "disable"),
+			Host:     yamlConfig.Database.Host,
+			Port:     fmt.Sprintf("%d", yamlConfig.Database.Port),
+			Name:     yamlConfig.Database.Name,
+			User:     yamlConfig.Database.User,
+			Password: yamlConfig.Database.Password,
+			SSLMode:  yamlConfig.Database.SSLMode,
 		},
 
-		// Service Inter-communication
-		DataServiceAddr: getEnvWithYAMLFallback("OPENUSP_DATA_SERVICE_ADDR", yamlConfig.Services.DataService.Addr, "localhost:50100"),
-		APIGatewayURL:   getEnvWithYAMLFallback("OPENUSP_API_GATEWAY_URL", yamlConfig.Services.APIGateway.URL, "http://localhost:6500"),
-		MTPServiceURL:   getEnvWithYAMLFallback("OPENUSP_MTP_SERVICE_URL", yamlConfig.Services.MTPService.URL, "http://localhost:8081"),
-		CWMPServiceURL:  getEnvWithYAMLFallback("OPENUSP_CWMP_SERVICE_URL", yamlConfig.Services.CWMPService.URL, "http://localhost:7547"),
+		// Service Inter-communication - YAML authoritative
+		DataServiceAddr: validateYAMLOrError(yamlConfig.Services.DataService.Addr, "services.data_service.addr"),
+		APIGatewayURL:   validateYAMLOrError(yamlConfig.Services.APIGateway.URL, "services.api_gateway.url"),
+		MTPServiceURL:   validateYAMLOrError(yamlConfig.Services.MTPService.URL, "services.mtp_service.url"),
+		CWMPServiceURL:  validateYAMLOrError(yamlConfig.Services.CWMPService.URL, "services.cwmp_service.url"),
 
 		// Protocol Clients
 		USPWebSocketURL: getEnvWithYAMLFallback("OPENUSP_USP_WS_URL", yamlConfig.Protocols.USP.WebsocketURL, "ws://localhost:8081/ws"),
@@ -429,14 +442,11 @@ func LoadWithPath(configPath string) *Config {
 
 		// MTP Transport
 		MTP: MTPConfig{
-			WebSocketEnabled:           getBoolEnvWithYAMLFallback("OPENUSP_MTP_WEBSOCKET_ENABLED", yamlConfig.MTP.Transports.WebsocketEnabled, true),
-			MQTTEnabled:                getBoolEnvWithYAMLFallback("OPENUSP_MTP_MQTT_ENABLED", yamlConfig.MTP.Transports.MQTTEnabled, true),
-			STOMPEnabled:               getBoolEnvWithYAMLFallback("OPENUSP_MTP_STOMP_ENABLED", yamlConfig.MTP.Transports.STOMPEnabled, true),
-			UnixSocketEnabled:          getBoolEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_ENABLED", yamlConfig.MTP.Transports.UDSEnabled, true),
-			UnixSocketPath:             getEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_PATH", yamlConfig.MTP.UDS.SocketPath, "/tmp/usp-agent.sock"),
-			STOMPDestinationController: getEnvWithYAMLFallback("OPENUSP_MTP_STOMP_DESTINATION_CONTROLLER", yamlConfig.MTP.STOMP.Destinations.Controller, "/topic/usp.controller"),
-			STOMPDestinationAgent:      getEnvWithYAMLFallback("OPENUSP_MTP_STOMP_DESTINATION_AGENT", yamlConfig.MTP.STOMP.Destinations.Agent, "/queue/usp.agent"),
-			STOMPDestinationBroadcast:  getEnvWithYAMLFallback("OPENUSP_MTP_STOMP_DESTINATION_BROADCAST", yamlConfig.MTP.STOMP.Destinations.Broadcast, "/topic/usp.broadcast"),
+			WebSocketEnabled:  getBoolEnvWithYAMLFallback("OPENUSP_MTP_WEBSOCKET_ENABLED", yamlConfig.MTP.Transports.WebsocketEnabled, true),
+			MQTTEnabled:       getBoolEnvWithYAMLFallback("OPENUSP_MTP_MQTT_ENABLED", yamlConfig.MTP.Transports.MQTTEnabled, true),
+			STOMPEnabled:      getBoolEnvWithYAMLFallback("OPENUSP_MTP_STOMP_ENABLED", yamlConfig.MTP.Transports.STOMPEnabled, true),
+			UnixSocketEnabled: getBoolEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_ENABLED", yamlConfig.MTP.Transports.UDSEnabled, true),
+			UnixSocketPath:    getEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_PATH", yamlConfig.MTP.UDS.SocketPath, "/tmp/usp-agent.sock"),
 		},
 
 		// USP Protocol
@@ -494,7 +504,50 @@ func LoadWithPath(configPath string) *Config {
 	return cfg
 }
 
-// GetDSN returns database connection string
+// Validate validates that all critical configuration values are present
+func (c *Config) Validate() error {
+	if c.APIGatewayPort == "" || c.APIGatewayPort == "0" {
+		return fmt.Errorf("missing api_gateway http port in openusp.yml")
+	}
+	if c.DataServiceGRPCPort == "" || c.DataServiceGRPCPort == "0" {
+		return fmt.Errorf("missing data_service grpc port in openusp.yml")
+	}
+	if c.DataServiceHTTPPort == "" || c.DataServiceHTTPPort == "0" {
+		return fmt.Errorf("missing data_service http port in openusp.yml")
+	}
+	if c.Database.Host == "" {
+		return fmt.Errorf("missing database.host in openusp.yml")
+	}
+	if c.Database.Name == "" {
+		return fmt.Errorf("missing database.name in openusp.yml")
+	}
+	if c.Database.User == "" {
+		return fmt.Errorf("missing database.user in openusp.yml")
+	}
+	if c.Database.Password == "" {
+		return fmt.Errorf("missing database.password in openusp.yml")
+	}
+	if c.DataServiceAddr == "" {
+		return fmt.Errorf("missing services.data_service.addr in openusp.yml")
+	}
+	return nil
+}
+
+// intToStringOrError converts a port int to string, panicking if zero (indicating missing YAML value)
+func intToStringOrError(v int, label string) string {
+	if v == 0 {
+		panic(fmt.Sprintf("configuration error: missing %s in openusp.yml", label))
+	}
+	return fmt.Sprintf("%d", v)
+}
+
+// validateYAMLOrError returns the YAML value, panicking if empty (indicating missing YAML value)
+func validateYAMLOrError(v, label string) string {
+	if v == "" {
+		panic(fmt.Sprintf("configuration error: missing %s in openusp.yml", label))
+	}
+	return v
+} // GetDSN returns database connection string
 func (c *Config) GetDSN() string {
 	return "host=" + c.Database.Host +
 		" port=" + c.Database.Port +

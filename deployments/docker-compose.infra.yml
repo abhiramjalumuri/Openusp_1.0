@@ -52,6 +52,7 @@ services:
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - openusp_grafana_data:/var/lib/grafana
+      - ../configs/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - openusp-dev
     restart: unless-stopped

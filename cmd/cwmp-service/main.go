@@ -204,16 +204,14 @@ func (s *CWMPService) Start(ctx context.Context) error {
 	return s.Stop()
 }
 
-// getDataServiceAddress returns the data service address using environment configuration
+// getDataServiceAddress returns the data service address using YAML configuration
 func (s *CWMPService) getDataServiceAddress() (string, error) {
-	// Environment-based port configuration - data service gRPC port (5xxxx series)
-	dataServicePort := 50100 // Default data service gRPC port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_DATA_SERVICE_GRPC_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			dataServicePort = p
-		}
+	cfg := config.Load()
+	portStr := cfg.DataServiceGRPCPort
+	if portStr == "" {
+		return "", fmt.Errorf("data service gRPC port not configured in YAML")
 	}
-	dataServiceAddr := fmt.Sprintf("localhost:%d", dataServicePort)
+	dataServiceAddr := fmt.Sprintf("localhost:%s", portStr)
 	return dataServiceAddr, nil
 }
 
@@ -437,17 +435,11 @@ func main() {
 	// Fixed ports – no environment overrides needed
 
 	// Load configuration
-	deployConfig := config.LoadDeploymentConfigWithPortEnv("openusp-cwmp-service", "cwmp-service", 7547, "OPENUSP_CWMP_SERVICE_PORT")
-
-	// Use configured port directly
-	httpPort := deployConfig.ServicePort
-
-	fmt.Println()
-
-	// Load configuration with static ports
-	// CWMP protocol uses standard port 7547, health API uses port 7548
-	healthPort := deployConfig.ServicePort + 1 // Health port is CWMP port + 1
+	fullConfig := config.Load()
+	servicePort, _ := strconv.Atoi(fullConfig.CWMPServicePort)
+	healthPort := servicePort + 1
 	config := DefaultConfig(healthPort)
+	_ = servicePort // Remove unused deployConfig and httpPort
 
 	// Create CWMP service
 	cwmpService, err := NewCWMPService(config)
@@ -473,10 +465,9 @@ func main() {
 
 	// Start CWMP service and show status
 	log.Printf("🚀 CWMP Service started successfully")
-	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Environment Configuration: ✅ Enabled")
-	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
+	log.Printf("   └── HTTP Port: %d", servicePort)
+	log.Printf("   └── Health Check: http://localhost:%d/health", healthPort)
+	log.Printf("   └── Status: http://localhost:%d/status", healthPort)
 
 	if err := cwmpService.Start(ctx); err != nil {
 		log.Fatalf("CWMP service error: %v", err)
