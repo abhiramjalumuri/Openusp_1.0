@@ -523,6 +523,7 @@ type USPMessageHandler struct {
 	parser           *usp.USPParser
 	connectionClient *client.OpenUSPConnectionClient
 	mtpConfig        *config.MTPConfig
+	stompBroker      *mtp.STOMPBroker // For sending messages via STOMP
 
 	// Agent connection tracking
 	connectedAgents map[string]*ConnectedAgent // agentID -> connection info
@@ -552,6 +553,12 @@ func NewUSPMessageHandler(mtpConfig *config.MTPConfig) *USPMessageHandler {
 		mtpConfig:        mtpConfig,
 		connectedAgents:  make(map[string]*ConnectedAgent),
 	}
+}
+
+// SetSTOMPBroker sets the STOMP broker for sending messages to agents
+func (h *USPMessageHandler) SetSTOMPBroker(broker *mtp.STOMPBroker) {
+	h.stompBroker = broker
+	log.Printf("✅ STOMP broker attached to message handler")
 }
 
 // getUSPServiceClient gets a USP service client via connection manager
@@ -1076,6 +1083,19 @@ func (h *USPMessageHandler) handleSTOMPConnect(parsed *usp.ParsedUSP) ([]byte, e
 	log.Printf("📥 STOMP: Message received from queue: /queue/usp.controller (agent sent to controller)")
 	log.Printf("📤 STOMP: Response will be sent via queue: /queue/usp.agent (controller to agent)")
 
+	// Register the STOMP agent as connected
+	agentID := parsed.Record.FromID
+	h.agentsMutex.Lock()
+	h.connectedAgents[agentID] = &ConnectedAgent{
+		AgentID:       agentID,
+		ClientID:      agentID, // For STOMP, agent ID is the client ID
+		TransportType: "STOMP",
+		ConnectedAt:   time.Now(),
+		WebSocketConn: nil, // No WebSocket for STOMP
+	}
+	h.agentsMutex.Unlock()
+	log.Printf("🔗 Registered STOMP agent %s in connected agents map", agentID)
+
 	// Per TR-369: Controller responds with STOMPConnect acknowledgment
 	var ackData []byte
 	var err error
@@ -1295,6 +1315,7 @@ func main() {
 					// Set the message handler on the STOMP broker
 					log.Printf("🔗 Connecting STOMP broker to USP message handler...")
 					broker.SetMessageHandler(handler)
+					handler.SetSTOMPBroker(broker) // Allow handler to send via STOMP
 					log.Printf("✅ STOMP broker message handler configured")
 					
 					log.Printf("🚀 Starting STOMP broker connection...")
@@ -1428,7 +1449,30 @@ func (h *USPMessageHandler) SendMessageToAgent(ctx context.Context, req *mtpserv
 			}, nil
 		}
 
-		log.Printf("✅ Successfully sent message to agent %s", req.AgentId)
+		log.Printf("✅ Successfully sent message to agent %s via WebSocket", req.AgentId)
+		return &mtpservice.SendMessageResponse{
+			Success: true,
+		}, nil
+
+	case "STOMP":
+		if h.stompBroker == nil {
+			return &mtpservice.SendMessageResponse{
+				Success:      false,
+				ErrorMessage: "STOMP broker not available",
+			}, nil
+		}
+
+		// Send via STOMP broker to /queue/usp.agent
+		destination := "/queue/usp.agent"
+		if err := h.stompBroker.Send(destination, req.UspMessage); err != nil {
+			log.Printf("❌ Failed to send message to agent %s via STOMP: %v", req.AgentId, err)
+			return &mtpservice.SendMessageResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("Failed to send via STOMP: %v", err),
+			}, nil
+		}
+
+		log.Printf("✅ Successfully sent message to agent %s via STOMP (/queue/usp.agent)", req.AgentId)
 		return &mtpservice.SendMessageResponse{
 			Success: true,
 		}, nil
