@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"openusp/pkg/config"
 	"openusp/pkg/proto/mtpservice"
 	"openusp/pkg/proto/uspservice"
 	v1_3 "openusp/pkg/proto/v1_3"
@@ -18,13 +20,32 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	controllerIDOnce   sync.Once
+	cachedControllerID string
+)
+
 // getControllerID retrieves the controller ID from configuration
 func getControllerID() string {
-	if controllerID := strings.TrimSpace(os.Getenv("OPENUSP_USP_ENDPOINT_ID")); controllerID != "" {
-		return controllerID
-	}
-	// Default fallback for backward compatibility
-	return getControllerID()
+	controllerIDOnce.Do(func() {
+		// First try environment variable (for runtime override)
+		if controllerID := strings.TrimSpace(os.Getenv("OPENUSP_USP_ENDPOINT_ID")); controllerID != "" {
+			cachedControllerID = controllerID
+			return
+		}
+
+		// Then try loading from YAML config
+		cfg := config.Load()
+		if cfg != nil && cfg.USP.EndpointID != "" {
+			cachedControllerID = cfg.USP.EndpointID
+			return
+		}
+
+		// Default fallback
+		cachedControllerID = "proto::openusp.controller"
+	})
+
+	return cachedControllerID
 }
 
 // ProactiveOnboardingManager handles proactive device onboarding

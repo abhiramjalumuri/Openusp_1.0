@@ -133,7 +133,7 @@ func (s *USPServiceServer) ProcessUSPMessage(ctx context.Context, req *uspservic
 		recordType := parsed.Record.RecordType
 
 		switch recordType {
-		case "WebSocketConnect", "MQTTConnect", "STOMPConnect", "UDSConnect":
+		case "WebSocketConnect", "MQTTConnect", "StompConnect", "UDSConnect":
 			log.Printf("🔗 Processing %s record from agent %s", recordType, parsed.Record.FromID)
 
 			// Generate connect acknowledgment
@@ -1289,6 +1289,21 @@ func (s *USPServiceServer) generateConnectAck14(recordType, agentID, controllerI
 
 		return proto.Marshal(record)
 
+	case "StompConnect":
+		// Create StompConnect acknowledgment record
+		record := &v1_4.Record{
+			Version: "1.4",
+			ToId:    agentID,
+			FromId:  controllerID,
+			RecordType: &v1_4.Record_StompConnect{
+				StompConnect: &v1_4.STOMPConnectRecord{
+					Version: v1_4.STOMPConnectRecord_V1_2,
+				},
+			},
+		}
+
+		return proto.Marshal(record)
+
 	default:
 		return nil, fmt.Errorf("unsupported connect record type for USP 1.4: %s", recordType)
 	}
@@ -1305,6 +1320,21 @@ func (s *USPServiceServer) generateConnectAck13(recordType, agentID, controllerI
 			FromId:  controllerID,
 			RecordType: &v1_3.Record_WebsocketConnect{
 				WebsocketConnect: &v1_3.WebSocketConnectRecord{},
+			},
+		}
+
+		return proto.Marshal(record)
+
+	case "StompConnect":
+		// Create StompConnect acknowledgment record
+		record := &v1_3.Record{
+			Version: "1.3",
+			ToId:    agentID,
+			FromId:  controllerID,
+			RecordType: &v1_3.Record_StompConnect{
+				StompConnect: &v1_3.STOMPConnectRecord{
+					Version: v1_3.STOMPConnectRecord_V1_2,
+				},
 			},
 		}
 

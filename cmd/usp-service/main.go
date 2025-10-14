@@ -90,13 +90,32 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 
 	log.Printf("USP 1.4 message from %s to %s", record.FromId, record.ToId)
 
-	// Extract payload
+	// Handle MTP-layer connection records (no payload, no response needed)
+	switch recordType := record.RecordType.(type) {
+	case *v1_4.Record_StompConnect:
+		log.Printf("✅ STOMP connection established for agent %s (version %v)", record.FromId, recordType.StompConnect.Version)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_4.Record_WebsocketConnect:
+		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_4.Record_MqttConnect:
+		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_4.Record_UdsConnect:
+		log.Printf("✅ UDS connection established for agent %s", record.FromId)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_4.Record_Disconnect:
+		log.Printf("👋 Agent %s disconnected", record.FromId)
+		return nil, nil // No response needed for disconnect
+	}
+
+	// Extract payload for application-layer messages
 	var payload []byte
 	switch recordType := record.RecordType.(type) {
 	case *v1_4.Record_NoSessionContext:
 		payload = recordType.NoSessionContext.Payload
 	default:
-		return nil, fmt.Errorf("unsupported USP 1.4 record type")
+		return nil, fmt.Errorf("unsupported USP 1.4 record type: %T", recordType)
 	}
 
 	// Parse the USP message
@@ -137,13 +156,32 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 
 	log.Printf("USP 1.3 message from %s to %s", record.FromId, record.ToId)
 
-	// Extract payload
+	// Handle MTP-layer connection records (no payload, no response needed)
+	switch recordType := record.RecordType.(type) {
+	case *v1_3.Record_StompConnect:
+		log.Printf("✅ STOMP connection established for agent %s (version %v)", record.FromId, recordType.StompConnect.Version)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_3.Record_WebsocketConnect:
+		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_3.Record_MqttConnect:
+		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_3.Record_UdsConnect:
+		log.Printf("✅ UDS connection established for agent %s", record.FromId)
+		return nil, nil // No response needed for MTP-layer connect
+	case *v1_3.Record_Disconnect:
+		log.Printf("👋 Agent %s disconnected", record.FromId)
+		return nil, nil // No response needed for disconnect
+	}
+
+	// Extract payload for application-layer messages
 	var payload []byte
 	switch recordType := record.RecordType.(type) {
 	case *v1_3.Record_NoSessionContext:
 		payload = recordType.NoSessionContext.Payload
 	default:
-		return nil, fmt.Errorf("unsupported USP 1.3 record type")
+		return nil, fmt.Errorf("unsupported USP 1.3 record type: %T", recordType)
 	}
 
 	// Parse the USP message
