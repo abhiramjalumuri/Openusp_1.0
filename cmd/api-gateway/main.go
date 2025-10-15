@@ -1,4 +1,26 @@
 // Package main implements the OpenUSP API Gateway service
+//
+//	@title						OpenUSP API Gateway
+//	@version					1.0
+//	@description				OpenUSP API Gateway provides RESTful APIs for managing TR-369 USP and TR-069 CWMP devices
+//	@termsOfService				http://swagger.io/terms/
+//
+//	@contact.name				OpenUSP Support
+//	@contact.url				https://github.com/plume-design-inc/openusp
+//	@contact.email				support@openusp.io
+//
+//	@license.name				Apache 2.0
+//	@license.url				http://www.apache.org/licenses/LICENSE-2.0.html
+//
+//	@host						localhost:8080
+//	@BasePath					/api/v1
+//
+//	@schemes					http https
+//
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						Authorization
+//	@description				API key authentication. Use "Bearer <token>" format.
 package main
 
 import (
