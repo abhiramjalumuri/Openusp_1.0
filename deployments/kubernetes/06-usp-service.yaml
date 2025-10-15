@@ -29,8 +29,6 @@ spec:
           value: "9093"
         - name: DATA_SERVICE_ADDR
           value: "data-service:9092"
-        - name: MTP_SERVICE_ADDR
-          value: "mtp-service:8081"
         envFrom:
         - configMapRef:
             name: openusp-config

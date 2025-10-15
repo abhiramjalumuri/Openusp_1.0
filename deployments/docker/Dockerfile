@@ -37,7 +37,6 @@ ARG LDFLAGS='-X "openusp/pkg/version.Version='${VERSION}'" \
 # Build all services
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "${LDFLAGS}" -o build/api-gateway cmd/api-gateway/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "${LDFLAGS}" -o build/data-service cmd/data-service/main.go
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "${LDFLAGS}" -o build/mtp-service cmd/mtp-service/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "${LDFLAGS}" -o build/usp-service cmd/usp-service/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "${LDFLAGS}" -o build/cwmp-service cmd/cwmp-service/main.go
 

@@ -54,7 +54,6 @@ check_images() {
     local images=(
         "openusp/api-gateway:latest"
         "openusp/data-service:latest"
-        "openusp/mtp-service:latest"
         "openusp/cwmp-service:latest"
         "openusp/usp-service:latest"
     )
@@ -107,16 +106,6 @@ deploy_api_gateway() {
     print_status "Waiting for API Gateway to be ready..."
     kubectl wait --for=condition=available deployment/api-gateway -n "$NAMESPACE" --timeout=300s
     print_success "API Gateway deployed successfully"
-}
-
-# Function to deploy MTP Service
-deploy_mtp_service() {
-    print_status "Deploying MTP Service..."
-    kubectl apply -f "${KUBE_DIR}/04-mtp-service.yaml"
-    
-    print_status "Waiting for MTP Service to be ready..."
-    kubectl wait --for=condition=available deployment/mtp-service -n "$NAMESPACE" --timeout=300s
-    print_success "MTP Service deployed successfully"
 }
 
 # Function to deploy CWMP Service
@@ -198,7 +187,6 @@ show_endpoints() {
     
     echo "Internal Services (kubectl port-forward):"
     echo "  kubectl port-forward -n $NAMESPACE svc/api-gateway 8080:8080"
-    echo "  kubectl port-forward -n $NAMESPACE svc/mtp-service 8081:8081"
     echo "  kubectl port-forward -n $NAMESPACE svc/cwmp-service 7547:7547"
     echo "  kubectl port-forward -n $NAMESPACE svc/grafana 3000:3000"
     echo "  kubectl port-forward -n $NAMESPACE svc/prometheus 9090:9090"
@@ -207,7 +195,6 @@ show_endpoints() {
     
     echo "Health Check URLs (after port-forward):"
     echo "  API Gateway:     http://localhost:8080/health"
-    echo "  MTP Service:     http://localhost:8081/health"
     echo "  CWMP Service:    http://localhost:7547/health"
     echo "  Grafana:         http://localhost:3000 (admin/admin)"
     echo "  Prometheus:      http://localhost:9090"
@@ -225,7 +212,6 @@ cleanup() {
     kubectl delete -f "${KUBE_DIR}/07-rabbitmq.yaml" --ignore-not-found=true
     kubectl delete -f "${KUBE_DIR}/06-usp-service.yaml" --ignore-not-found=true
     kubectl delete -f "${KUBE_DIR}/05-cwmp-service.yaml" --ignore-not-found=true
-    kubectl delete -f "${KUBE_DIR}/04-mtp-service.yaml" --ignore-not-found=true
     kubectl delete -f "${KUBE_DIR}/03-api-gateway.yaml" --ignore-not-found=true
     kubectl delete -f "${KUBE_DIR}/02-data-service.yaml" --ignore-not-found=true
     kubectl delete -f "${KUBE_DIR}/01-postgres.yaml" --ignore-not-found=true
@@ -272,7 +258,6 @@ deploy_all() {
     
     # Deploy OpenUSP services
     deploy_api_gateway
-    deploy_mtp_service
     deploy_cwmp_service
     deploy_usp_service
     

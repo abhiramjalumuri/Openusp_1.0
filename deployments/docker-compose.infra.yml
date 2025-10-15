@@ -88,6 +88,58 @@ services:
       - openusp-dev
     restart: unless-stopped
 
+  # Kafka Message Broker (KRaft mode - no Zookeeper)
+  kafka-dev:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: openusp-kafka-dev
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - openusp_kafka_data:/var/lib/kafka/data
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Kafka UI for monitoring and management
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: openusp-kafka-ui
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: openusp-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-dev:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    depends_on:
+      kafka-dev:
+        condition: service_healthy
+
 # Networks
 networks:
   openusp-dev:
@@ -99,3 +151,4 @@ volumes:
   openusp_prometheus_data:
   openusp_rabbitmq_data:
   openusp_grafana_data:
+  openusp_kafka_data:

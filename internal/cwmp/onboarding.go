@@ -1,25 +1,23 @@
 package cwmp
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
-	grpcClient "openusp/internal/grpc"
 	"openusp/internal/tr181"
-	"openusp/pkg/proto/dataservice"
-
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"openusp/pkg/config"
+	"openusp/pkg/kafka"
 )
 
 // OnboardingManager handles TR-069 device onboarding process
 type OnboardingManager struct {
-	dataServiceClient *grpcClient.DataServiceClient
-	tr181Manager      *tr181.DeviceManager
-	mu                sync.RWMutex
-	onboardedDevices  map[string]*OnboardedDevice
+	kafkaProducer    *kafka.Producer
+	kafkaTopics      *config.KafkaTopics
+	tr181Manager     *tr181.DeviceManager
+	mu               sync.RWMutex
+	onboardedDevices map[string]*OnboardedDevice
 }
 
 // OnboardedDevice represents a device that has completed onboarding
@@ -57,16 +55,20 @@ type OnboardingProcess struct {
 }
 
 // NewOnboardingManager creates a new onboarding manager
-func NewOnboardingManager(dataServiceAddr string, tr181Mgr *tr181.DeviceManager) (*OnboardingManager, error) {
-	client, err := grpcClient.NewDataServiceClient(dataServiceAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create data service client: %w", err)
+func NewOnboardingManager(kafkaProducer *kafka.Producer, tr181Mgr *tr181.DeviceManager, kafkaTopics *config.KafkaTopics) (*OnboardingManager, error) {
+	if kafkaProducer == nil {
+		return nil, fmt.Errorf("kafka producer cannot be nil")
+	}
+
+	if kafkaTopics == nil {
+		return nil, fmt.Errorf("kafka topics cannot be nil")
 	}
 
 	return &OnboardingManager{
-		dataServiceClient: client,
-		tr181Manager:      tr181Mgr,
-		onboardedDevices:  make(map[string]*OnboardedDevice),
+		kafkaProducer:    kafkaProducer,
+		kafkaTopics:      kafkaTopics,
+		tr181Manager:     tr181Mgr,
+		onboardedDevices: make(map[string]*OnboardedDevice),
 	}, nil
 }
 
@@ -181,32 +183,30 @@ func (om *OnboardingManager) performParameterExtraction(inform *Inform, process 
 func (om *OnboardingManager) performDatabaseRegistration(inform *Inform, process *OnboardingProcess) error {
 	step := om.getStep(process, "database_registration")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Create device registration request
-	device := &dataservice.Device{
-		EndpointId:   process.DeviceID,
-		Manufacturer: inform.DeviceId.Manufacturer,
-		ProductClass: inform.DeviceId.ProductClass,
-		SerialNumber: inform.DeviceId.SerialNumber,
-		Status:       "online",
-		CreatedAt:    timestamppb.New(time.Now()),
-		UpdatedAt:    timestamppb.New(time.Now()),
-	}
-
-	// Register device in database
-	resp, err := om.dataServiceClient.CreateDevice(ctx, device)
-	if err != nil {
-		step.Error = fmt.Errorf("failed to register device in database: %w", err)
+	// Publish device created event to Kafka
+	if err := om.kafkaProducer.PublishDeviceEvent(
+		om.kafkaTopics.DataDeviceCreated,
+		kafka.EventDeviceCreated,
+		process.DeviceID,
+		process.DeviceID,
+		"CWMP", // Protocol
+		map[string]interface{}{
+			"manufacturer":  inform.DeviceId.Manufacturer,
+			"product_class": inform.DeviceId.ProductClass,
+			"serial_number": inform.DeviceId.SerialNumber,
+			"oui":           inform.DeviceId.OUI,
+			"status":        "online",
+		},
+	); err != nil {
+		step.Error = fmt.Errorf("failed to publish device created event: %w", err)
 		return step.Error
 	}
 
-	log.Printf("   ✅ Device registered in database with ID: %s", resp.Device.EndpointId)
+	log.Printf("   ✅ Device created event published to Kafka topic: %s", om.kafkaTopics.DataDeviceCreated)
 
-	// Register parameters
-	if err := om.registerDeviceParameters(ctx, inform, resp.Device); err != nil {
-		step.Error = fmt.Errorf("failed to register device parameters: %w", err)
+	// Register parameters via Kafka events
+	if err := om.registerDeviceParameters(inform, process.DeviceID); err != nil {
+		step.Error = fmt.Errorf("failed to publish device parameters: %w", err)
 		return step.Error
 	}
 
@@ -244,27 +244,23 @@ func (om *OnboardingManager) performConnectionVerification(inform *Inform, proce
 	}
 }
 
-// registerDeviceParameters registers device parameters in the database
-func (om *OnboardingManager) registerDeviceParameters(ctx context.Context, inform *Inform, device *dataservice.Device) error {
+// registerDeviceParameters registers device parameters via Kafka events
+func (om *OnboardingManager) registerDeviceParameters(inform *Inform, deviceID string) error {
 	for _, param := range inform.ParameterList {
-		parameter := &dataservice.Parameter{
-			DeviceId:  device.Id,
-			Path:      param.Name,
-			Value:     param.Value,
-			Type:      param.Type,
-			Writable:  false, // Default to read-only
-			CreatedAt: timestamppb.New(time.Now()),
-			UpdatedAt: timestamppb.New(time.Now()),
-		}
-
-		_, err := om.dataServiceClient.CreateParameter(ctx, parameter)
-		if err != nil {
-			log.Printf("   ⚠️  Failed to register parameter %s: %v", param.Name, err)
+		if err := om.kafkaProducer.PublishParameterUpdate(
+			om.kafkaTopics.DataParameterUpdated,
+			deviceID,
+			deviceID, // endpointID = deviceID
+			param.Name,
+			nil,         // oldValue (new parameter)
+			param.Value, // newValue
+		); err != nil {
+			log.Printf("   ⚠️  Failed to publish parameter %s: %v", param.Name, err)
 			continue
 		}
 	}
 
-	log.Printf("   ✅ Device parameters registered in database")
+	log.Printf("   ✅ Device parameters published to Kafka")
 	return nil
 }
 
@@ -380,25 +376,24 @@ func (om *OnboardingManager) UpdateDeviceStatus(deviceID, status string) error {
 	device.Status = status
 	device.LastInform = time.Now()
 
-	// Update in database
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Get current device first
-	deviceResp, err := om.dataServiceClient.GetDeviceByEndpoint(ctx, deviceID)
-	if err != nil {
-		log.Printf("Failed to get device for update: %v", err)
+	// Publish device updated event to Kafka
+	if err := om.kafkaProducer.PublishDeviceEvent(
+		om.kafkaTopics.DataDeviceUpdated,
+		kafka.EventDeviceUpdated,
+		deviceID,
+		deviceID,
+		"CWMP", // Protocol
+		map[string]interface{}{
+			"manufacturer":  device.Manufacturer,
+			"product_class": device.ProductClass,
+			"serial_number": device.SerialNumber,
+			"oui":           device.OUI,
+			"status":        status,
+			"last_inform":   device.LastInform,
+		},
+	); err != nil {
+		log.Printf("Failed to publish device updated event: %v", err)
 		return err
-	}
-
-	// Update device fields
-	dbDevice := deviceResp.Device
-	dbDevice.Status = status
-	dbDevice.UpdatedAt = timestamppb.New(time.Now())
-
-	_, err = om.dataServiceClient.UpdateDevice(ctx, dbDevice)
-	if err != nil {
-		log.Printf("Failed to update device status in database: %v", err)
 	}
 
 	return nil
@@ -406,8 +401,8 @@ func (om *OnboardingManager) UpdateDeviceStatus(deviceID, status string) error {
 
 // Close closes the onboarding manager
 func (om *OnboardingManager) Close() error {
-	if om.dataServiceClient != nil {
-		return om.dataServiceClient.Close()
-	}
+	// Nothing to close for Kafka-based onboarding manager
+	// Kafka producer is managed by the main service
+	log.Printf("✅ Onboarding manager closed")
 	return nil
 }

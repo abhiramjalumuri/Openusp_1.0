@@ -110,8 +110,8 @@ type YAMLTR369Config struct {
 			Password              string `yaml:"password"`
 			DestinationRequest    string `yaml:"destination_request"`
 			DestinationResponse   string `yaml:"destination_response"`
-			DestinationController string `yaml:"destination_controller"`
-			DestinationAgent      string `yaml:"destination_agent"`
+			DestinationOutbound   string `yaml:"destination_outbound"`
+			DestinationInbound    string `yaml:"destination_inbound"`
 			DestinationBroadcast  string `yaml:"destination_broadcast"`
 			HeartbeatSend         string `yaml:"heartbeat_send"`
 			HeartbeatReceive      string `yaml:"heartbeat_receive"`
@@ -342,8 +342,8 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 	config.STOMPPassword = yamlConfig.MTP.STOMP.Password
 	config.STOMPDestinationRequest = yamlConfig.MTP.STOMP.DestinationRequest
 	config.STOMPDestinationResponse = yamlConfig.MTP.STOMP.DestinationResponse
-	config.STOMPDestinationController = yamlConfig.MTP.STOMP.DestinationController
-	config.STOMPDestinationAgent = yamlConfig.MTP.STOMP.DestinationAgent
+	config.STOMPDestinationOutbound = yamlConfig.MTP.STOMP.DestinationOutbound
+	config.STOMPDestinationInbound = yamlConfig.MTP.STOMP.DestinationInbound
 	config.STOMPDestinationBroadcast = yamlConfig.MTP.STOMP.DestinationBroadcast
 	if yamlConfig.MTP.STOMP.HeartbeatSend != "" {
 		if duration, err := time.ParseDuration(yamlConfig.MTP.STOMP.HeartbeatSend); err == nil {

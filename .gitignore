@@ -76,6 +76,7 @@ coverage.html
 coverage.txt
 dist/
 docker-compose.override.yml
+docs/
 ehthumbs.db
 go.work
 k8s/secrets/

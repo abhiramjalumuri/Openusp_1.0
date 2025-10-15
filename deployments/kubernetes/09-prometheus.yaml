@@ -158,12 +158,6 @@ data:
         metrics_path: '/metrics'
         scrape_interval: 30s
       
-      - job_name: 'mtp-service'
-        static_configs:
-        - targets: ['mtp-service:8081']
-        metrics_path: '/metrics'
-        scrape_interval: 30s
-      
       - job_name: 'cwmp-service'
         static_configs:
         - targets: ['cwmp-service:7547']

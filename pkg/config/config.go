@@ -13,21 +13,89 @@ import (
 type YAMLConfig struct {
 	Ports struct {
 		HTTP struct {
-			APIGateway        int `yaml:"api_gateway"`
-			MTPService        int `yaml:"mtp_service"`
-			USPService        int `yaml:"usp_service"`
-			CWMPService       int `yaml:"cwmp_service"`
-			DataService       int `yaml:"data_service"`
-			ConnectionManager int `yaml:"connection_manager"`
+			APIGateway  int `yaml:"api_gateway"`
+			USPService  int `yaml:"usp_service"`
+			DataService int `yaml:"data_service"`
+			// NOTE: cwmp_service HTTP port removed - TR-069 handled by mtp-http on port 7547
 		} `yaml:"http"`
-		GRPC struct {
-			DataService       int `yaml:"data_service"`
-			USPService        int `yaml:"usp_service"`
-			MTPService        int `yaml:"mtp_service"`
-			ConnectionManager int `yaml:"connection_manager"`
-			CWMPService       int `yaml:"cwmp_service"`
-		} `yaml:"grpc"`
+		Health struct {
+			APIGateway  int `yaml:"api_gateway"`
+			DataService int `yaml:"data_service"`
+			USPService  int `yaml:"usp_service"`
+			CWMPService int `yaml:"cwmp_service"`
+			MTPStomp     int `yaml:"mtp_stomp"`
+			MTPMqtt      int `yaml:"mtp_mqtt"`
+			MTPWebsocket int `yaml:"mtp_websocket"`
+			MTPHttp      int `yaml:"mtp_http"`
+		} `yaml:"health"`
+		Metrics struct {
+			APIGateway   int `yaml:"api_gateway"`
+			DataService  int `yaml:"data_service"`
+			USPService   int `yaml:"usp_service"`
+			CWMPService  int `yaml:"cwmp_service"`
+			MTPStomp     int `yaml:"mtp_stomp"`
+			MTPMqtt      int `yaml:"mtp_mqtt"`
+			MTPWebsocket int `yaml:"mtp_websocket"`
+			MTPHttp      int `yaml:"mtp_http"`
+		} `yaml:"metrics"`
 	} `yaml:"ports"`
+
+	Kafka struct {
+		Brokers  []string `yaml:"brokers"`
+		Producer struct {
+			Acks           string `yaml:"acks"`
+			Compression    string `yaml:"compression"`
+			MaxRetries     int    `yaml:"max_retries"`
+			RetryBackoffMs int    `yaml:"retry_backoff_ms"`
+			BatchSize      int    `yaml:"batch_size"`
+			LingerMs       int    `yaml:"linger_ms"`
+			BufferMemory   int    `yaml:"buffer_memory"`
+		} `yaml:"producer"`
+		Consumer struct {
+			GroupIDPrefix        string `yaml:"group_id_prefix"`
+			AutoOffsetReset      string `yaml:"auto_offset_reset"`
+			EnableAutoCommit     bool   `yaml:"enable_auto_commit"`
+			AutoCommitIntervalMs int    `yaml:"auto_commit_interval_ms"`
+			SessionTimeoutMs     int    `yaml:"session_timeout_ms"`
+			MaxPollRecords       int    `yaml:"max_poll_records"`
+		} `yaml:"consumer"`
+		Topics struct {
+			USPMessagesInbound       string `yaml:"usp_messages_inbound"`
+			USPMessagesOutbound      string `yaml:"usp_messages_outbound"`
+			USPRecordsParsed         string `yaml:"usp_records_parsed"`
+			USPDataRequest           string `yaml:"usp_data_request"`
+			USPDataResponse          string `yaml:"usp_data_response"`
+			USPAPIRequest            string `yaml:"usp_api_request"`
+			USPAPIResponse           string `yaml:"usp_api_response"`
+			DataDeviceCreated        string `yaml:"data_device_created"`
+			DataDeviceUpdated        string `yaml:"data_device_updated"`
+			DataDeviceDeleted        string `yaml:"data_device_deleted"`
+			DataParameterUpdated     string `yaml:"data_parameter_updated"`
+			DataObjectCreated        string `yaml:"data_object_created"`
+			DataAlertCreated         string `yaml:"data_alert_created"`
+			CWMPMessagesInbound      string `yaml:"cwmp_messages_inbound"`
+			CWMPMessagesOutbound     string `yaml:"cwmp_messages_outbound"`
+			CWMPDataRequest          string `yaml:"cwmp_data_request"`
+			CWMPDataResponse         string `yaml:"cwmp_data_response"`
+			CWMPAPIRequest           string `yaml:"cwmp_api_request"`
+			CWMPAPIResponse          string `yaml:"cwmp_api_response"`
+			AgentStatusUpdated       string `yaml:"agent_status_updated"`
+			AgentOnboardingStarted   string `yaml:"agent_onboarding_started"`
+			AgentOnboardingCompleted string `yaml:"agent_onboarding_completed"`
+			MTPConnectionEstablished string `yaml:"mtp_connection_established"`
+			MTPConnectionClosed      string `yaml:"mtp_connection_closed"`
+			MTPStompEvents           string `yaml:"mtp_stomp_events"`
+			MTPMqttEvents            string `yaml:"mtp_mqtt_events"`
+			MTPWebsocketEvents       string `yaml:"mtp_websocket_events"`
+			APIRequest               string `yaml:"api_request"`
+			APIResponse              string `yaml:"api_response"`
+		} `yaml:"topics"`
+		Admin struct {
+			TimeoutMs         int `yaml:"timeout_ms"`
+			NumPartitions     int `yaml:"num_partitions"`
+			ReplicationFactor int `yaml:"replication_factor"`
+		} `yaml:"admin"`
+	} `yaml:"kafka"`
 
 	Database struct {
 		Host     string `yaml:"host"`
@@ -39,6 +107,11 @@ type YAMLConfig struct {
 	} `yaml:"database"`
 
 	Infrastructure struct {
+		Kafka struct {
+			Host   string `yaml:"host"`
+			Port   int    `yaml:"port"`
+			UIPort int    `yaml:"ui_port"`
+		} `yaml:"kafka"`
 		Postgres struct {
 			Host     string `yaml:"host"`
 			Port     int    `yaml:"port"`
@@ -68,14 +141,11 @@ type YAMLConfig struct {
 
 	Services struct {
 		DataService struct {
-			Addr string `yaml:"addr"`
+			URL string `yaml:"url"`
 		} `yaml:"data_service"`
 		APIGateway struct {
 			URL string `yaml:"url"`
 		} `yaml:"api_gateway"`
-		MTPService struct {
-			URL string `yaml:"url"`
-		} `yaml:"mtp_service"`
 		CWMPService struct {
 			URL string `yaml:"url"`
 		} `yaml:"cwmp_service"`
@@ -109,9 +179,9 @@ type YAMLConfig struct {
 			WebsocketEnabled bool `yaml:"websocket_enabled"`
 			MQTTEnabled      bool `yaml:"mqtt_enabled"`
 			STOMPEnabled     bool `yaml:"stomp_enabled"`
-			UDSEnabled       bool `yaml:"uds_enabled"`
 		} `yaml:"transports"`
 		Websocket struct {
+			ServerPort  int    `yaml:"server_port"`
 			Subprotocol string `yaml:"subprotocol"`
 		} `yaml:"websocket"`
 		MQTT struct {
@@ -122,14 +192,23 @@ type YAMLConfig struct {
 			Username     string `yaml:"username"`
 			Password     string `yaml:"password"`
 			Destinations struct {
-				Controller string `yaml:"controller"`
-				Agent      string `yaml:"agent"`
-				Broadcast  string `yaml:"broadcast"`
+				Inbound   string `yaml:"inbound"`
+				Outbound  string `yaml:"outbound"`
+				Broadcast string `yaml:"broadcast"`
 			} `yaml:"destinations"`
 		} `yaml:"stomp"`
 		UDS struct {
 			SocketPath string `yaml:"socket_path"`
 		} `yaml:"uds"`
+		HTTP struct {
+			ServerURL          string `yaml:"server_url"`
+			Timeout            string `yaml:"timeout"`
+			MaxIdleConnections int    `yaml:"max_idle_connections"`
+			IdleTimeout        string `yaml:"idle_timeout"`
+			TLSEnabled         bool   `yaml:"tls_enabled"`
+			Username           string `yaml:"username"`
+			Password           string `yaml:"password"`
+		} `yaml:"http"`
 	} `yaml:"mtp"`
 
 	USP struct {
@@ -138,11 +217,44 @@ type YAMLConfig struct {
 		DefaultTimeout int    `yaml:"default_timeout"`
 	} `yaml:"usp"`
 
+	USPService struct {
+		Kafka struct {
+			ConsumerGroup string `yaml:"consumer_group"`
+		} `yaml:"kafka"`
+		Timeouts struct {
+			Shutdown string `yaml:"shutdown"`
+		} `yaml:"timeouts"`
+		HTTP struct {
+			ReadTimeout  string `yaml:"read_timeout"`
+			WriteTimeout string `yaml:"write_timeout"`
+			IdleTimeout  string `yaml:"idle_timeout"`
+		} `yaml:"http"`
+	} `yaml:"usp_service"`
+
 	TR181 struct {
 		SchemaPath        string `yaml:"schema_path"`
 		TypesPath         string `yaml:"types_path"`
 		ValidationEnabled bool   `yaml:"validation_enabled"`
 	} `yaml:"tr181"`
+
+	CWMPService struct {
+		Authentication struct {
+			Enabled  bool   `yaml:"enabled"`
+			Username string `yaml:"username"`
+			Password string `yaml:"password"`
+		} `yaml:"authentication"`
+		Timeouts struct {
+			Connection string `yaml:"connection"`
+			Session    string `yaml:"session"`
+			Shutdown   string `yaml:"shutdown"`
+		} `yaml:"timeouts"`
+		Sessions struct {
+			MaxConcurrent int `yaml:"max_concurrent"`
+		} `yaml:"sessions"`
+		Kafka struct {
+			ConsumerGroup string `yaml:"consumer_group"`
+		} `yaml:"kafka"`
+	} `yaml:"cwmp_service"`
 
 	Security struct {
 		API struct {
@@ -186,25 +298,43 @@ type YAMLConfig struct {
 
 // Config holds all OpenUSP configuration
 type Config struct {
-	// Service Ports
-	APIGatewayPort        string
-	DataServiceGRPCPort   string
-	DataServiceHTTPPort   string
-	MTPServicePort        string
-	CWMPServicePort       string
-	USPServiceGRPCPort    string
-	USPServiceHTTPPort    string
-	ConnectionManagerGRPC string
-	ConnectionManagerHTTP string
+	// HTTP Service Ports (external API access)
+	APIGatewayPort      string
+	DataServiceHTTPPort string
+	USPServiceHTTPPort  string
+	// Note: CWMP service no longer uses HTTP port - TR-069 handled by mtp-http on port 7547
+
+	// Health Check Ports
+	APIGatewayHealthPort  int
+	DataServiceHealthPort int
+	USPServiceHealthPort  int
+	CWMPServiceHealthPort int
+	MTPStompHealthPort     int
+	MTPMqttHealthPort      int
+	MTPWebsocketHealthPort int
+	MTPHttpHealthPort      int
+
+	// Metrics Ports
+	APIGatewayMetricsPort   int
+	DataServiceMetricsPort  int
+	USPServiceMetricsPort   int
+	CWMPServiceMetricsPort  int
+	MTPStompMetricsPort     int
+	MTPMqttMetricsPort      int
+	MTPWebsocketMetricsPort int
+	MTPHttpMetricsPort      int
+
+	// Kafka Configuration
+	Kafka KafkaConfig
 
 	// Database Configuration
 	Database DatabaseConfig
 
-	// Service Inter-communication
-	DataServiceAddr string
-	APIGatewayURL   string
-	MTPServiceURL   string
-	CWMPServiceURL  string
+	// Service URLs (HTTP/REST only)
+	DataServiceURL string
+	APIGatewayURL  string
+	CWMPServiceURL string
+	USPServiceURL  string
 
 	// Protocol Clients
 	USPWebSocketURL string
@@ -225,8 +355,14 @@ type Config struct {
 	// USP Protocol
 	USP USPConfig
 
+	// USP Service Configuration
+	USPService USPServiceConfig
+
 	// TR-181 Data Model
 	TR181 TR181Config
+
+	// CWMP Service Configuration
+	CWMPService CWMPServiceConfig
 
 	// Security
 	Security SecurityConfig
@@ -236,6 +372,76 @@ type Config struct {
 
 	// USP Agent Device Metadata
 	USPAgentDevice USPAgentDeviceConfig
+}
+
+// KafkaConfig holds Kafka broker and messaging configuration
+type KafkaConfig struct {
+	Brokers        []string
+	ProducerConfig KafkaProducerConfig
+	ConsumerConfig KafkaConsumerConfig
+	Topics         KafkaTopics
+	AdminConfig    KafkaAdminConfig
+}
+
+// KafkaProducerConfig holds Kafka producer settings
+type KafkaProducerConfig struct {
+	Acks           string
+	Compression    string
+	MaxRetries     int
+	RetryBackoffMs int
+	BatchSize      int
+	LingerMs       int
+	BufferMemory   int
+}
+
+// KafkaConsumerConfig holds Kafka consumer settings
+type KafkaConsumerConfig struct {
+	GroupIDPrefix        string
+	AutoOffsetReset      string
+	EnableAutoCommit     bool
+	AutoCommitIntervalMs int
+	SessionTimeoutMs     int
+	MaxPollRecords       int
+}
+
+// KafkaTopics holds all Kafka topic names
+type KafkaTopics struct {
+	USPMessagesInbound       string
+	USPMessagesOutbound      string
+	USPRecordsParsed         string
+	USPDataRequest           string
+	USPDataResponse          string
+	USPAPIRequest            string
+	USPAPIResponse           string
+	DataDeviceCreated        string
+	DataDeviceUpdated        string
+	DataDeviceDeleted        string
+	DataParameterUpdated     string
+	DataObjectCreated        string
+	DataAlertCreated         string
+	CWMPMessagesInbound      string
+	CWMPMessagesOutbound     string
+	CWMPDataRequest          string
+	CWMPDataResponse         string
+	CWMPAPIRequest           string
+	CWMPAPIResponse          string
+	AgentStatusUpdated       string
+	AgentOnboardingStarted   string
+	AgentOnboardingCompleted string
+	MTPConnectionEstablished string
+	MTPConnectionClosed      string
+	MTPStompEvents           string
+	MTPMqttEvents            string
+	MTPWebsocketEvents       string
+	APIRequest               string
+	APIResponse              string
+}
+
+// KafkaAdminConfig holds Kafka admin/management settings
+type KafkaAdminConfig struct {
+	TimeoutMs         int
+	NumPartitions     int
+	ReplicationFactor int
 }
 
 // CWMPAgentDeviceConfig holds CWMP agent device identity fields
@@ -299,6 +505,9 @@ type InfraConfig struct {
 	GrafanaUser       string
 	GrafanaPassword   string
 	AdminerPort       string
+	KafkaHost         string
+	KafkaPort         string
+	KafkaUIPort       string
 }
 
 // MTPConfig holds MTP transport configuration
@@ -306,11 +515,54 @@ type MTPConfig struct {
 	WebSocketEnabled  bool
 	MQTTEnabled       bool
 	STOMPEnabled      bool
-	UnixSocketEnabled bool
-	UnixSocketPath    string
-	// Only /queue/usp.controller (Tx) and /queue/usp.agent (Rx) are used for STOMP agent-controller communication
+	HTTPEnabled       bool
+	// Transport-specific configurations
+	STOMP     STOMPTransportConfig
+	MQTT      MQTTTransportConfig
+	Websocket WebsocketTransportConfig
+	UDS       UDSTransportConfig
+	HTTP      HTTPTransportConfig
 	GRPCPort int
 	Address  string
+}
+
+// STOMPTransportConfig holds STOMP-specific configuration
+type STOMPTransportConfig struct {
+	BrokerURL    string
+	Username     string
+	Password     string
+	Destinations struct {
+		Inbound  string // messages from agents (inbound to controller)
+		Outbound string // messages to agents (outbound from controller)
+		Broadcast  string
+	}
+}
+
+// MQTTTransportConfig holds MQTT-specific configuration
+type MQTTTransportConfig struct {
+	BrokerURL string
+}
+
+// WebsocketTransportConfig holds WebSocket-specific configuration
+type WebsocketTransportConfig struct {
+	ServerPort  int
+	Subprotocol string
+}
+
+// UDSTransportConfig holds Unix Domain Socket-specific configuration
+type UDSTransportConfig struct {
+	SocketPath string
+}
+
+// HTTPTransportConfig holds HTTP/HTTPS-specific configuration
+type HTTPTransportConfig struct {
+	ServerURL          string
+	Timeout            string
+	MaxIdleConnections int
+	IdleTimeout        string
+	TLSEnabled         bool
+	Username           string
+	Password           string
 }
 
 // USPConfig holds USP protocol configuration
@@ -320,11 +572,32 @@ type USPConfig struct {
 	DefaultTimeout int
 }
 
+// USPServiceConfig holds USP service configuration
+type USPServiceConfig struct {
+	ConsumerGroup   string
+	ShutdownTimeout string
+	ReadTimeout     string
+	WriteTimeout    string
+	IdleTimeout     string
+}
+
 // TR181Config holds TR-181 data model configuration
 type TR181Config struct {
 	SchemaPath        string
 	TypesPath         string
 	ValidationEnabled bool
+}
+
+// CWMPServiceConfig holds CWMP service configuration
+type CWMPServiceConfig struct {
+	AuthenticationEnabled bool
+	Username              string
+	Password              string
+	ConnectionTimeout     string
+	SessionTimeout        string
+	ShutdownTimeout       string
+	MaxConcurrentSessions int
+	ConsumerGroup         string
 }
 
 // SecurityConfig holds security configuration
@@ -380,17 +653,30 @@ func LoadWithPath(configPath string) *Config {
 	// Merge YAML config with environment variables (env vars take precedence)
 	cfg := &Config{
 		// Service Ports - YAML authoritative (error if missing)
-		APIGatewayPort:        intToStringOrError(yamlConfig.Ports.HTTP.APIGateway, "api_gateway http port"),
-		DataServiceGRPCPort:   intToStringOrError(yamlConfig.Ports.GRPC.DataService, "data_service grpc port"),
-		DataServiceHTTPPort:   intToStringOrError(yamlConfig.Ports.HTTP.DataService, "data_service http port"),
-		MTPServicePort:        intToStringOrError(yamlConfig.Ports.HTTP.MTPService, "mtp_service http port"),
-		CWMPServicePort:       intToStringOrError(yamlConfig.Ports.HTTP.CWMPService, "cwmp_service http port"),
-		USPServiceGRPCPort:    intToStringOrError(yamlConfig.Ports.GRPC.USPService, "usp_service grpc port"),
-		USPServiceHTTPPort:    intToStringOrError(yamlConfig.Ports.HTTP.USPService, "usp_service http port"),
-		ConnectionManagerGRPC: intToStringOrError(yamlConfig.Ports.GRPC.ConnectionManager, "connection_manager grpc port"),
-		ConnectionManagerHTTP: intToStringOrError(yamlConfig.Ports.HTTP.ConnectionManager, "connection_manager http port"),
+		APIGatewayPort:      intToStringOrError(yamlConfig.Ports.HTTP.APIGateway, "api_gateway http port"),
+		DataServiceHTTPPort: intToStringOrError(yamlConfig.Ports.HTTP.DataService, "data_service http port"),
+		USPServiceHTTPPort:  intToStringOrError(yamlConfig.Ports.HTTP.USPService, "usp_service http port"),
+		// NOTE: CWMP service no longer uses HTTP port - TR-069 handled by mtp-http on port 7547
 
-		// Database Configuration
+		// Health Ports - direct from YAML, no defaults
+		DataServiceHealthPort: yamlConfig.Ports.Health.DataService,
+		USPServiceHealthPort:  yamlConfig.Ports.Health.USPService,
+		CWMPServiceHealthPort: yamlConfig.Ports.Health.CWMPService,
+		APIGatewayHealthPort:  yamlConfig.Ports.Health.APIGateway,
+		MTPStompHealthPort:    yamlConfig.Ports.Health.MTPStomp,
+		MTPMqttHealthPort:     yamlConfig.Ports.Health.MTPMqtt,
+		MTPWebsocketHealthPort: yamlConfig.Ports.Health.MTPWebsocket,
+		MTPHttpHealthPort:           yamlConfig.Ports.Health.MTPHttp,
+
+	// Metrics Ports - direct from YAML, no defaults
+	DataServiceMetricsPort:  yamlConfig.Ports.Metrics.DataService,
+	USPServiceMetricsPort:   yamlConfig.Ports.Metrics.USPService,
+	CWMPServiceMetricsPort:  yamlConfig.Ports.Metrics.CWMPService,
+	APIGatewayMetricsPort:   yamlConfig.Ports.Metrics.APIGateway,
+	MTPStompMetricsPort:     yamlConfig.Ports.Metrics.MTPStomp,
+	MTPMqttMetricsPort:      yamlConfig.Ports.Metrics.MTPMqtt,
+	MTPWebsocketMetricsPort: yamlConfig.Ports.Metrics.MTPWebsocket,
+	MTPHttpMetricsPort:      yamlConfig.Ports.Metrics.MTPHttp,		// Database Configuration
 		Database: DatabaseConfig{
 			Host:     yamlConfig.Database.Host,
 			Port:     fmt.Sprintf("%d", yamlConfig.Database.Port),
@@ -400,11 +686,68 @@ func LoadWithPath(configPath string) *Config {
 			SSLMode:  yamlConfig.Database.SSLMode,
 		},
 
+		// Kafka Configuration
+		Kafka: KafkaConfig{
+			Brokers: yamlConfig.Kafka.Brokers,
+			ProducerConfig: KafkaProducerConfig{
+				Acks:           yamlConfig.Kafka.Producer.Acks,
+				Compression:    yamlConfig.Kafka.Producer.Compression,
+				MaxRetries:     yamlConfig.Kafka.Producer.MaxRetries,
+				RetryBackoffMs: yamlConfig.Kafka.Producer.RetryBackoffMs,
+				BatchSize:      yamlConfig.Kafka.Producer.BatchSize,
+				LingerMs:       yamlConfig.Kafka.Producer.LingerMs,
+				BufferMemory:   yamlConfig.Kafka.Producer.BufferMemory,
+			},
+			ConsumerConfig: KafkaConsumerConfig{
+				GroupIDPrefix:        yamlConfig.Kafka.Consumer.GroupIDPrefix,
+				AutoOffsetReset:      yamlConfig.Kafka.Consumer.AutoOffsetReset,
+				EnableAutoCommit:     yamlConfig.Kafka.Consumer.EnableAutoCommit,
+				AutoCommitIntervalMs: yamlConfig.Kafka.Consumer.AutoCommitIntervalMs,
+				SessionTimeoutMs:     yamlConfig.Kafka.Consumer.SessionTimeoutMs,
+				MaxPollRecords:       yamlConfig.Kafka.Consumer.MaxPollRecords,
+			},
+			Topics: KafkaTopics{
+				USPMessagesInbound:       yamlConfig.Kafka.Topics.USPMessagesInbound,
+				USPMessagesOutbound:      yamlConfig.Kafka.Topics.USPMessagesOutbound,
+				USPRecordsParsed:         yamlConfig.Kafka.Topics.USPRecordsParsed,
+				USPDataRequest:           yamlConfig.Kafka.Topics.USPDataRequest,
+				USPDataResponse:          yamlConfig.Kafka.Topics.USPDataResponse,
+				USPAPIRequest:            yamlConfig.Kafka.Topics.USPAPIRequest,
+				USPAPIResponse:           yamlConfig.Kafka.Topics.USPAPIResponse,
+				DataDeviceCreated:        yamlConfig.Kafka.Topics.DataDeviceCreated,
+				DataDeviceUpdated:        yamlConfig.Kafka.Topics.DataDeviceUpdated,
+				DataDeviceDeleted:        yamlConfig.Kafka.Topics.DataDeviceDeleted,
+				DataParameterUpdated:     yamlConfig.Kafka.Topics.DataParameterUpdated,
+				DataObjectCreated:        yamlConfig.Kafka.Topics.DataObjectCreated,
+				DataAlertCreated:         yamlConfig.Kafka.Topics.DataAlertCreated,
+				CWMPMessagesInbound:      yamlConfig.Kafka.Topics.CWMPMessagesInbound,
+				CWMPMessagesOutbound:     yamlConfig.Kafka.Topics.CWMPMessagesOutbound,
+				CWMPDataRequest:          yamlConfig.Kafka.Topics.CWMPDataRequest,
+				CWMPDataResponse:         yamlConfig.Kafka.Topics.CWMPDataResponse,
+				CWMPAPIRequest:           yamlConfig.Kafka.Topics.CWMPAPIRequest,
+				CWMPAPIResponse:          yamlConfig.Kafka.Topics.CWMPAPIResponse,
+				AgentStatusUpdated:       yamlConfig.Kafka.Topics.AgentStatusUpdated,
+				AgentOnboardingStarted:   yamlConfig.Kafka.Topics.AgentOnboardingStarted,
+				AgentOnboardingCompleted: yamlConfig.Kafka.Topics.AgentOnboardingCompleted,
+				MTPConnectionEstablished: yamlConfig.Kafka.Topics.MTPConnectionEstablished,
+				MTPConnectionClosed:      yamlConfig.Kafka.Topics.MTPConnectionClosed,
+				MTPStompEvents:           yamlConfig.Kafka.Topics.MTPStompEvents,
+				MTPMqttEvents:            yamlConfig.Kafka.Topics.MTPMqttEvents,
+				MTPWebsocketEvents:       yamlConfig.Kafka.Topics.MTPWebsocketEvents,
+				APIRequest:               yamlConfig.Kafka.Topics.APIRequest,
+				APIResponse:              yamlConfig.Kafka.Topics.APIResponse,
+			},
+			AdminConfig: KafkaAdminConfig{
+				TimeoutMs:         yamlConfig.Kafka.Admin.TimeoutMs,
+				NumPartitions:     yamlConfig.Kafka.Admin.NumPartitions,
+				ReplicationFactor: yamlConfig.Kafka.Admin.ReplicationFactor,
+			},
+		},
+
 		// Service Inter-communication - YAML authoritative
-		DataServiceAddr: validateYAMLOrError(yamlConfig.Services.DataService.Addr, "services.data_service.addr"),
-		APIGatewayURL:   validateYAMLOrError(yamlConfig.Services.APIGateway.URL, "services.api_gateway.url"),
-		MTPServiceURL:   validateYAMLOrError(yamlConfig.Services.MTPService.URL, "services.mtp_service.url"),
-		CWMPServiceURL:  validateYAMLOrError(yamlConfig.Services.CWMPService.URL, "services.cwmp_service.url"),
+		DataServiceURL: validateYAMLOrError(yamlConfig.Services.DataService.URL, "services.data_service.url"),
+		APIGatewayURL:  validateYAMLOrError(yamlConfig.Services.APIGateway.URL, "services.api_gateway.url"),
+		CWMPServiceURL: validateYAMLOrError(yamlConfig.Services.CWMPService.URL, "services.cwmp_service.url"),
 
 		// Protocol Clients
 		USPWebSocketURL: getEnvWithYAMLFallback("OPENUSP_USP_WS_URL", yamlConfig.Protocols.USP.WebsocketURL, "ws://localhost:8081/ws"),
@@ -432,6 +775,9 @@ func LoadWithPath(configPath string) *Config {
 			GrafanaUser:       getEnv("OPENUSP_GRAFANA_USER", "openusp"),        // Credentials stay in env only
 			GrafanaPassword:   getEnv("OPENUSP_GRAFANA_PASSWORD", "openusp123"), // Credentials stay in env only
 			AdminerPort:       getEnvWithYAMLFallback("OPENUSP_ADMINER_PORT", fmt.Sprintf("%d", yamlConfig.Infrastructure.Adminer.Port), "8080"),
+			KafkaHost:         getEnvWithYAMLFallback("OPENUSP_KAFKA_HOST", yamlConfig.Infrastructure.Kafka.Host, "localhost"),
+			KafkaPort:         getEnvWithYAMLFallback("OPENUSP_KAFKA_PORT", fmt.Sprintf("%d", yamlConfig.Infrastructure.Kafka.Port), "9092"),
+			KafkaUIPort:       getEnvWithYAMLFallback("OPENUSP_KAFKA_UI_PORT", fmt.Sprintf("%d", yamlConfig.Infrastructure.Kafka.UIPort), "8082"),
 		},
 
 		// Development/Debug
@@ -445,8 +791,44 @@ func LoadWithPath(configPath string) *Config {
 			WebSocketEnabled:  getBoolEnvWithYAMLFallback("OPENUSP_MTP_WEBSOCKET_ENABLED", yamlConfig.MTP.Transports.WebsocketEnabled, true),
 			MQTTEnabled:       getBoolEnvWithYAMLFallback("OPENUSP_MTP_MQTT_ENABLED", yamlConfig.MTP.Transports.MQTTEnabled, true),
 			STOMPEnabled:      getBoolEnvWithYAMLFallback("OPENUSP_MTP_STOMP_ENABLED", yamlConfig.MTP.Transports.STOMPEnabled, true),
-			UnixSocketEnabled: getBoolEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_ENABLED", yamlConfig.MTP.Transports.UDSEnabled, true),
-			UnixSocketPath:    getEnvWithYAMLFallback("OPENUSP_MTP_UNIX_SOCKET_PATH", yamlConfig.MTP.UDS.SocketPath, "/tmp/usp-agent.sock"),
+			// STOMP configuration from YAML
+			STOMP: STOMPTransportConfig{
+				BrokerURL: yamlConfig.MTP.STOMP.BrokerURL,
+				Username:  yamlConfig.MTP.STOMP.Username,
+				Password:  yamlConfig.MTP.STOMP.Password,
+				Destinations: struct {
+					Inbound  string
+					Outbound string
+					Broadcast  string
+				}{
+					Inbound:   yamlConfig.MTP.STOMP.Destinations.Inbound,
+					Outbound:  yamlConfig.MTP.STOMP.Destinations.Outbound,
+					Broadcast: yamlConfig.MTP.STOMP.Destinations.Broadcast,
+				},
+			},
+			// MQTT configuration from YAML
+			MQTT: MQTTTransportConfig{
+				BrokerURL: yamlConfig.MTP.MQTT.BrokerURL,
+			},
+			// WebSocket configuration from YAML
+			Websocket: WebsocketTransportConfig{
+				ServerPort:  yamlConfig.MTP.Websocket.ServerPort,
+				Subprotocol: yamlConfig.MTP.Websocket.Subprotocol,
+			},
+			// UDS configuration from YAML
+			UDS: UDSTransportConfig{
+				SocketPath: yamlConfig.MTP.UDS.SocketPath,
+			},
+			// HTTP configuration from YAML
+			HTTP: HTTPTransportConfig{
+				ServerURL:          yamlConfig.MTP.HTTP.ServerURL,
+				Timeout:            yamlConfig.MTP.HTTP.Timeout,
+				MaxIdleConnections: yamlConfig.MTP.HTTP.MaxIdleConnections,
+				IdleTimeout:        yamlConfig.MTP.HTTP.IdleTimeout,
+				TLSEnabled:         yamlConfig.MTP.HTTP.TLSEnabled,
+				Username:           yamlConfig.MTP.HTTP.Username,
+				Password:           yamlConfig.MTP.HTTP.Password,
+			},
 		},
 
 		// USP Protocol
@@ -456,11 +838,32 @@ func LoadWithPath(configPath string) *Config {
 			DefaultTimeout: getIntEnvWithYAMLFallback("OPENUSP_USP_DEFAULT_TIMEOUT", yamlConfig.USP.DefaultTimeout, 30),
 		},
 
+		// USP Service Configuration
+		USPService: USPServiceConfig{
+			ConsumerGroup:   getEnvWithYAMLFallback("OPENUSP_USP_CONSUMER_GROUP", yamlConfig.USPService.Kafka.ConsumerGroup, "usp-service"),
+			ShutdownTimeout: getEnvWithYAMLFallback("OPENUSP_USP_SHUTDOWN_TIMEOUT", yamlConfig.USPService.Timeouts.Shutdown, "30s"),
+			ReadTimeout:     getEnvWithYAMLFallback("OPENUSP_USP_READ_TIMEOUT", yamlConfig.USPService.HTTP.ReadTimeout, "30s"),
+			WriteTimeout:    getEnvWithYAMLFallback("OPENUSP_USP_WRITE_TIMEOUT", yamlConfig.USPService.HTTP.WriteTimeout, "30s"),
+			IdleTimeout:     getEnvWithYAMLFallback("OPENUSP_USP_IDLE_TIMEOUT", yamlConfig.USPService.HTTP.IdleTimeout, "120s"),
+		},
+
 		// TR-181 Data Model
 		TR181: TR181Config{
 			SchemaPath:        getEnvWithYAMLFallback("OPENUSP_TR181_SCHEMA_PATH", yamlConfig.TR181.SchemaPath, "pkg/datamodel/tr-181-2-19-1-usp-full.xml"),
 			TypesPath:         getEnvWithYAMLFallback("OPENUSP_TR181_TYPES_PATH", yamlConfig.TR181.TypesPath, "pkg/datamodel/tr-106-types.xml"),
 			ValidationEnabled: getBoolEnvWithYAMLFallback("OPENUSP_TR181_VALIDATION_ENABLED", yamlConfig.TR181.ValidationEnabled, false),
+		},
+
+		// CWMP Service Configuration
+		CWMPService: CWMPServiceConfig{
+			AuthenticationEnabled: getBoolEnvWithYAMLFallback("OPENUSP_CWMP_AUTH_ENABLED", yamlConfig.CWMPService.Authentication.Enabled, true),
+			Username:              getEnvWithYAMLFallback("OPENUSP_CWMP_USERNAME", yamlConfig.CWMPService.Authentication.Username, "acs"),
+			Password:              getEnvWithYAMLFallback("OPENUSP_CWMP_PASSWORD", yamlConfig.CWMPService.Authentication.Password, "acs123"),
+			ConnectionTimeout:     getEnvWithYAMLFallback("OPENUSP_CWMP_CONNECTION_TIMEOUT", yamlConfig.CWMPService.Timeouts.Connection, "30s"),
+			SessionTimeout:        getEnvWithYAMLFallback("OPENUSP_CWMP_SESSION_TIMEOUT", yamlConfig.CWMPService.Timeouts.Session, "300s"),
+			ShutdownTimeout:       getEnvWithYAMLFallback("OPENUSP_CWMP_SHUTDOWN_TIMEOUT", yamlConfig.CWMPService.Timeouts.Shutdown, "30s"),
+			MaxConcurrentSessions: getIntEnvWithYAMLFallback("OPENUSP_CWMP_MAX_SESSIONS", yamlConfig.CWMPService.Sessions.MaxConcurrent, 100),
+			ConsumerGroup:         getEnvWithYAMLFallback("OPENUSP_CWMP_CONSUMER_GROUP", yamlConfig.CWMPService.Kafka.ConsumerGroup, "openusp-cwmp-service-group"),
 		},
 
 		// Security
@@ -509,9 +912,6 @@ func (c *Config) Validate() error {
 	if c.APIGatewayPort == "" || c.APIGatewayPort == "0" {
 		return fmt.Errorf("missing api_gateway http port in openusp.yml")
 	}
-	if c.DataServiceGRPCPort == "" || c.DataServiceGRPCPort == "0" {
-		return fmt.Errorf("missing data_service grpc port in openusp.yml")
-	}
 	if c.DataServiceHTTPPort == "" || c.DataServiceHTTPPort == "0" {
 		return fmt.Errorf("missing data_service http port in openusp.yml")
 	}
@@ -527,9 +927,21 @@ func (c *Config) Validate() error {
 	if c.Database.Password == "" {
 		return fmt.Errorf("missing database.password in openusp.yml")
 	}
-	if c.DataServiceAddr == "" {
-		return fmt.Errorf("missing services.data_service.addr in openusp.yml")
+	if c.DataServiceURL == "" {
+		return fmt.Errorf("missing services.data_service.url in openusp.yml")
 	}
+
+	// Validate Kafka configuration
+	if len(c.Kafka.Brokers) == 0 {
+		return fmt.Errorf("missing kafka.brokers in openusp.yml")
+	}
+	if c.Kafka.Topics.USPMessagesInbound == "" {
+		return fmt.Errorf("missing kafka.topics.usp_messages_inbound in openusp.yml")
+	}
+	if c.Kafka.Topics.USPMessagesOutbound == "" {
+		return fmt.Errorf("missing kafka.topics.usp_messages_outbound in openusp.yml")
+	}
+
 	return nil
 }
 

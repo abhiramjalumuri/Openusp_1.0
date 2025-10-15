@@ -13,31 +13,27 @@ import (
 	"syscall"
 	"time"
 
-	"openusp/internal/database"
-	grpcserver "openusp/internal/grpc"
-	"openusp/pkg/config"
-	"openusp/pkg/metrics"
-	pb "openusp/pkg/proto/dataservice"
-	"openusp/pkg/version"
-
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/keepalive"
+
+	"openusp/internal/database"
+	"openusp/pkg/config"
+	"openusp/pkg/kafka"
+	"openusp/pkg/metrics"
+	"openusp/pkg/version"
 )
 
 // DataService represents a modern unified data service
 type DataService struct {
-	config     *config.DeploymentConfig
-	httpPort   int
-	grpcPort   int
-	grpcServer *grpc.Server
-	httpServer *http.Server
-	healthSrv  *health.Server
-	database   *database.Database
-	repos      *database.Repositories
-	metrics    *metrics.OpenUSPMetrics
+	config        *config.Config
+	httpPort      int
+	httpServer    *http.Server
+	database      *database.Database
+	repos         *database.Repositories
+	metrics       *metrics.OpenUSPMetrics
+	kafkaClient   *kafka.Client
+	kafkaConsumer *kafka.Consumer
+	kafkaProducer *kafka.Producer
 }
 
 func main() {
@@ -71,26 +67,47 @@ func main() {
 
 func NewDataService() (*DataService, error) {
 	// Load configuration
-	fullConfig := config.Load()
-	grpcPort, _ := strconv.Atoi(fullConfig.DataServiceGRPCPort)
-	httpPortYAML, _ := strconv.Atoi(fullConfig.DataServiceHTTPPort)
-	if grpcPort == 0 || httpPortYAML == 0 {
-		return nil, fmt.Errorf("missing data service ports in YAML configuration")
-	}
-	deploymentConfig := &config.DeploymentConfig{
-		ServicePort: httpPortYAML,
-		ServiceName: "openusp-data-service",
-		ServiceType: "data-service",
+	cfg := config.Load()
+
+	// Convert HTTP port from string to int
+	httpPort, err := strconv.Atoi(cfg.DataServiceHTTPPort)
+	if err != nil || httpPort == 0 {
+		return nil, fmt.Errorf("invalid data service HTTP port: %s", cfg.DataServiceHTTPPort)
 	}
 
 	service := &DataService{
-		config:   deploymentConfig,
-		httpPort: httpPortYAML,
-		grpcPort: grpcPort,
+		config:   cfg,
+		httpPort: httpPort,
 		metrics:  metrics.NewOpenUSPMetrics("data-service"),
 	}
 
-	// Fixed ports – no service discovery needed
+	// Initialize Kafka client
+	kafkaClient, err := kafka.NewClient(&cfg.Kafka)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka client: %w", err)
+	}
+	service.kafkaClient = kafkaClient
+
+	// Ensure Kafka topics exist
+	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
+	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
+		return nil, fmt.Errorf("failed to create Kafka topics: %w", err)
+	}
+	log.Printf("✅ Kafka topics validated/created")
+
+	// Initialize Kafka producer
+	kafkaProducer, err := kafka.NewProducer(kafkaClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka producer: %w", err)
+	}
+	service.kafkaProducer = kafkaProducer
+
+	// Initialize Kafka consumer
+	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, "data-service")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka consumer: %w", err)
+	}
+	service.kafkaConsumer = kafkaConsumer
 
 	// Initialize database
 	db, err := database.NewDatabase(nil) // Use default config with environment variables
@@ -106,38 +123,147 @@ func NewDataService() (*DataService, error) {
 
 	service.repos = database.NewRepositories(db.DB)
 
-	// Setup servers
-	service.setupgRPCServer()
+	// Setup HTTP server
 	service.setupHTTPServer()
+
+	// Setup Kafka event handlers
+	service.setupKafkaConsumers()
 
 	return service, nil
 }
 
-// Service registration removed - using fixed ports
+// setupKafkaConsumers configures Kafka topic subscriptions and handlers
+func (ds *DataService) setupKafkaConsumers() {
+	// Subscribe to data topics for consuming events
+	topics := []string{
+		ds.config.Kafka.Topics.DataDeviceCreated,
+		ds.config.Kafka.Topics.DataDeviceUpdated,
+		ds.config.Kafka.Topics.DataDeviceDeleted,
+		ds.config.Kafka.Topics.DataParameterUpdated,
+		ds.config.Kafka.Topics.DataObjectCreated,
+		ds.config.Kafka.Topics.DataAlertCreated,
+		ds.config.Kafka.Topics.APIRequest, // Handle API requests from API Gateway
+	}
 
-func (ds *DataService) setupgRPCServer() {
-	// Configure gRPC server with keepalive enforcement to prevent ENHANCE_YOUR_CALM errors
-	ds.grpcServer = grpc.NewServer(
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    60 * time.Second, // Send keepalive pings every 60 seconds
-			Timeout: 10 * time.Second, // Wait 10 seconds for keepalive ping ack
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             30 * time.Second, // Minimum allowed time between client pings
-			PermitWithoutStream: true,             // Allow pings even when no streams are active
-		}),
-	)
-	ds.healthSrv = health.NewServer()
+	// Define message handler - takes *confluentkafka.Message
+	handler := func(msg *confluentkafka.Message) error {
+		topic := *msg.TopicPartition.Topic
+		log.Printf("📨 Received message on topic %s: %d bytes", topic, len(msg.Value))
 
-	// Register health service
-	grpc_health_v1.RegisterHealthServer(ds.grpcServer, ds.healthSrv)
+		switch topic {
+		case ds.config.Kafka.Topics.DataDeviceCreated:
+			return ds.handleDeviceCreatedEvent(msg)
+		case ds.config.Kafka.Topics.DataDeviceUpdated:
+			return ds.handleDeviceUpdatedEvent(msg)
+		case ds.config.Kafka.Topics.DataDeviceDeleted:
+			return ds.handleDeviceDeletedEvent(msg)
+		case ds.config.Kafka.Topics.DataParameterUpdated:
+			return ds.handleParameterUpdatedEvent(msg)
+		case ds.config.Kafka.Topics.DataObjectCreated:
+			return ds.handleObjectCreatedEvent(msg)
+		case ds.config.Kafka.Topics.DataAlertCreated:
+			return ds.handleAlertCreatedEvent(msg)
+		case ds.config.Kafka.Topics.APIRequest:
+			return ds.handleAPIRequest(msg)
+		default:
+			log.Printf("⚠️  Unknown topic: %s", topic)
+			return nil
+		}
+	}
 
-	// Register data service
-	dataServiceServer := grpcserver.NewDataServiceServer(ds.database, ds.repos)
-	pb.RegisterDataServiceServer(ds.grpcServer, dataServiceServer)
+	// Subscribe to topics
+	if err := ds.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		log.Printf("❌ Failed to subscribe to Kafka topics: %v", err)
+	} else {
+		log.Printf("✅ Subscribed to %d Kafka topics", len(topics))
+	}
+}
 
-	// Set healthy status
-	ds.healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+// Event handlers for different data topics
+func (ds *DataService) handleDeviceCreatedEvent(msg *confluentkafka.Message) error {
+	event, err := kafka.ConsumeDeviceEvent(msg)
+	if err != nil {
+		return fmt.Errorf("failed to parse device created event: %w", err)
+	}
+
+	log.Printf("📱 Device created event received: %s (endpoint: %s)", event.DeviceID, event.EndpointID)
+
+	// Extract device data from event
+	device := &database.Device{
+		EndpointID:      event.EndpointID,
+		Manufacturer:    event.Manufacturer,
+		ModelName:       event.ModelName,
+		SerialNumber:    event.SerialNumber,
+		ProductClass:    event.ProductClass,
+		Status:          event.Status,
+		ConnectionType:  event.Protocol, // USP protocol type
+	}
+
+	// Extract additional fields from Data map if available
+	if event.Data != nil {
+		if sv, ok := event.Data["software_version"].(string); ok {
+			device.SoftwareVersion = sv
+		}
+		if hv, ok := event.Data["hardware_version"].(string); ok {
+			device.HardwareVersion = hv
+		}
+		if ip, ok := event.Data["ip_address"].(string); ok {
+			device.IPAddress = ip
+		}
+	}
+
+	// Use CreateOrUpdate to handle both new devices and onboarding updates
+	if err := ds.repos.Device.CreateOrUpdate(device); err != nil {
+		log.Printf("❌ Failed to persist device %s to database: %v", event.EndpointID, err)
+		return fmt.Errorf("failed to persist device to database: %w", err)
+	}
+
+	log.Printf("✅ Device persisted to database: %s (manufacturer: %s, model: %s, serial: %s)", 
+		event.EndpointID, event.Manufacturer, event.ModelName, event.SerialNumber)
+
+	return nil
+}
+
+func (ds *DataService) handleDeviceUpdatedEvent(msg *confluentkafka.Message) error {
+	event, err := kafka.ConsumeDeviceEvent(msg)
+	if err != nil {
+		return fmt.Errorf("failed to parse device updated event: %w", err)
+	}
+
+	log.Printf("🔄 Device updated: %s", event.DeviceID)
+	return nil
+}
+
+func (ds *DataService) handleDeviceDeletedEvent(msg *confluentkafka.Message) error {
+	event, err := kafka.ConsumeDeviceEvent(msg)
+	if err != nil {
+		return fmt.Errorf("failed to parse device deleted event: %w", err)
+	}
+
+	log.Printf("🗑️  Device deleted: %s", event.DeviceID)
+	return nil
+}
+
+func (ds *DataService) handleParameterUpdatedEvent(msg *confluentkafka.Message) error {
+	event, err := kafka.ConsumeParameterEvent(msg)
+	if err != nil {
+		return fmt.Errorf("failed to parse parameter updated event: %w", err)
+	}
+
+	log.Printf("⚙️  Parameter updated: %s = %v", event.ParameterPath, event.NewValue)
+	return nil
+}
+
+func (ds *DataService) handleObjectCreatedEvent(msg *confluentkafka.Message) error {
+	log.Printf("📦 Object created event received")
+	// TODO: Parse and handle object created event
+	return nil
+}
+
+func (ds *DataService) handleAlertCreatedEvent(msg *confluentkafka.Message) error {
+	log.Printf("🚨 Alert created event received")
+	// TODO: Parse and handle alert created event
+	return nil
 }
 
 func (ds *DataService) setupHTTPServer() {
@@ -165,13 +291,19 @@ func (ds *DataService) healthHandler(c *gin.Context) {
 		dbStatus = "disconnected"
 	}
 
+	// Test Kafka connection
+	kafkaStatus := "connected"
+	if err := ds.kafkaClient.Ping(); err != nil {
+		kafkaStatus = "disconnected"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"service":   "openusp-data-service",
 		"status":    "healthy",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"http_port": ds.getHTTPPort(),
-		"grpc_port": ds.getgRPCPort(),
 		"database":  dbStatus,
+		"kafka":     kafkaStatus,
 	})
 }
 
@@ -183,67 +315,41 @@ func (ds *DataService) statusHandler(c *gin.Context) {
 		"status":         "running",
 		"timestamp":      time.Now().UTC().Format(time.RFC3339),
 		"http_port":      ds.getHTTPPort(),
-		"grpc_port":      ds.getgRPCPort(),
 		"database_stats": ds.database.GetStats(),
-		"service_discovery": gin.H{
-			"enabled":      false,
-			"type":         "static_ports",
-			"service_name": ds.config.ServiceName,
-			"address":      "localhost",
-			"port":         ds.config.ServicePort,
-			"grpc_port":    ds.config.ServicePort + 1,
-			"health":       "running",
+		"kafka_brokers":  ds.config.Kafka.Brokers,
+		"kafka_topics": gin.H{
+			"device_created":    ds.config.Kafka.Topics.DataDeviceCreated,
+			"device_updated":    ds.config.Kafka.Topics.DataDeviceUpdated,
+			"parameter_updated": ds.config.Kafka.Topics.DataParameterUpdated,
 		},
 	})
 }
 
 func (ds *DataService) getHTTPPort() int { return ds.httpPort }
 
-func (ds *DataService) getgRPCPort() int { return ds.grpcPort }
-
 func (ds *DataService) Start() error {
-	// Environment-based port configuration
-	log.Printf("🎯 Data Service starting with environment configuration:")
+	log.Printf("🎯 Data Service starting with Kafka configuration:")
 	log.Printf("   └── HTTP Port: %d", ds.getHTTPPort())
-	log.Printf("   └── gRPC Port: %d", ds.getgRPCPort())
+	log.Printf("   └── Kafka Brokers: %v", ds.config.Kafka.Brokers)
 
-	// Start gRPC server
-	go ds.startgRPCServer()
+	// Start Kafka consumer
+	go ds.kafkaConsumer.Start()
 
 	// Start HTTP server
 	go ds.startHTTPServer()
 
-	// Wait for servers to set their ports
+	// Wait for servers to initialize
 	time.Sleep(2 * time.Second)
-
-	// No service registration needed with environment configuration
-	log.Printf("✅ Data Service servers started with environment configuration")
 
 	log.Printf("🚀 Data Service started successfully")
 	httpPort := ds.getHTTPPort()
-	grpcPort := ds.getgRPCPort()
-	log.Printf("   └── gRPC Port: %d", grpcPort)
 	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Service Discovery: Environment configuration")
+	log.Printf("   └── Kafka Consumer Group: data-service")
+	log.Printf("   └── Subscribed Topics: 6 data topics")
 	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
 	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
 
 	return nil
-}
-
-func (ds *DataService) startgRPCServer() {
-	// Listen on fixed port
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", ds.getgRPCPort()))
-	if err != nil {
-		log.Fatalf("Failed to create gRPC listener: %v", err)
-	}
-
-	actualPort := lis.Addr().(*net.TCPAddr).Port
-	log.Printf("🔌 Starting gRPC server on port %d", actualPort)
-
-	if err := ds.grpcServer.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve gRPC: %v", err)
-	}
 }
 
 func (ds *DataService) startHTTPServer() {
@@ -264,11 +370,22 @@ func (ds *DataService) startHTTPServer() {
 func (ds *DataService) Stop() error {
 	log.Printf("🛑 Shutting down Data Service...")
 
-	// Fixed ports – no service deregistration needed
+	// Stop Kafka consumer
+	if ds.kafkaConsumer != nil {
+		log.Printf("⏹️  Stopping Kafka consumer...")
+		ds.kafkaConsumer.Close()
+	}
 
-	// Stop gRPC server
-	if ds.grpcServer != nil {
-		ds.grpcServer.GracefulStop()
+	// Stop Kafka producer
+	if ds.kafkaProducer != nil {
+		log.Printf("⏹️  Flushing and closing Kafka producer...")
+		ds.kafkaProducer.Close()
+	}
+
+	// Close Kafka client
+	if ds.kafkaClient != nil {
+		log.Printf("⏹️  Closing Kafka client...")
+		ds.kafkaClient.Close()
 	}
 
 	// Stop HTTP server

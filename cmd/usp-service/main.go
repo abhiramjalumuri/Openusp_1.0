@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,54 +12,250 @@ import (
 	"syscall"
 	"time"
 
-	grpcImpl "openusp/internal/grpc"
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	"google.golang.org/protobuf/proto"
+
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
+	"openusp/pkg/kafka"
 	"openusp/pkg/metrics"
-	"openusp/pkg/proto/uspservice"
 	v1_3 "openusp/pkg/proto/v1_3"
 	v1_4 "openusp/pkg/proto/v1_4"
-	"openusp/pkg/service/client"
 	"openusp/pkg/version"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
-	"google.golang.org/protobuf/proto"
 )
 
 type USPCoreService struct {
 	deviceManager *tr181.DeviceManager
+	kafkaClient   *kafka.Client
+	kafkaConsumer *kafka.Consumer
+	kafkaProducer *kafka.Producer
+	config        *config.Config
+	httpServer    *http.Server
+	metrics       *metrics.OpenUSPMetrics
 }
 
-func NewUSPCoreService() (*USPCoreService, error) {
+func NewUSPCoreService(cfg *config.Config) (*USPCoreService, error) {
 	dm, err := tr181.LoadDefaultDataModel()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load TR-181 data model: %w", err)
 	}
 
+	// Initialize Kafka client
+	kafkaClient, err := kafka.NewClient(&cfg.Kafka)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka client: %w", err)
+	}
+
+	// Ensure Kafka topics exist
+	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
+	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
+		return nil, fmt.Errorf("failed to create Kafka topics: %w", err)
+	}
+	log.Printf("✅ Kafka topics validated/created")
+
+	// Initialize Kafka producer
+	kafkaProducer, err := kafka.NewProducer(kafkaClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka producer: %w", err)
+	}
+
+	// Initialize Kafka consumer
+	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, cfg.USPService.ConsumerGroup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka consumer: %w", err)
+	}
+
 	return &USPCoreService{
 		deviceManager: dm,
+		kafkaClient:   kafkaClient,
+		kafkaConsumer: kafkaConsumer,
+		kafkaProducer: kafkaProducer,
+		config:        cfg,
+		metrics:       metrics.NewOpenUSPMetrics("usp-service"),
 	}, nil
+}
+
+// setupKafkaConsumers configures Kafka subscriptions and message handlers
+func (s *USPCoreService) setupKafkaConsumers() error {
+	// Subscribe to all relevant topics for duplex communication
+	topics := []string{
+		s.config.Kafka.Topics.USPMessagesInbound,   // From MTP services (STOMP, MQTT, WebSocket)
+		s.config.Kafka.Topics.USPAPIRequest,        // From API Gateway
+		s.config.Kafka.Topics.USPDataRequest,       // From Data Service
+		s.config.Kafka.Topics.DataDeviceCreated,    // Data events from Data Service
+		s.config.Kafka.Topics.DataDeviceUpdated,    // Data events from Data Service
+		s.config.Kafka.Topics.DataParameterUpdated, // Data events from Data Service
+		s.config.Kafka.Topics.MTPConnectionEstablished, // MTP connection events
+		s.config.Kafka.Topics.MTPConnectionClosed,      // MTP connection events
+	}
+
+	// Define message handler
+	handler := func(msg *confluentkafka.Message) error {
+		topic := *msg.TopicPartition.Topic
+		log.Printf("📨 Received message on topic %s: %d bytes", topic, len(msg.Value))
+
+		// Route to appropriate handler based on topic
+		switch topic {
+		case s.config.Kafka.Topics.USPMessagesInbound:
+			return s.handleUSPMessage(msg)
+		case s.config.Kafka.Topics.USPAPIRequest:
+			return s.handleAPIRequest(msg)
+		case s.config.Kafka.Topics.USPDataRequest:
+			return s.handleDataRequest(msg)
+		case s.config.Kafka.Topics.DataDeviceCreated,
+			s.config.Kafka.Topics.DataDeviceUpdated,
+			s.config.Kafka.Topics.DataParameterUpdated:
+			return s.handleDataEvent(msg)
+		case s.config.Kafka.Topics.MTPConnectionEstablished,
+			s.config.Kafka.Topics.MTPConnectionClosed:
+			return s.handleMTPEvent(msg)
+		default:
+			log.Printf("⚠️  Unknown topic: %s", topic)
+			return nil
+		}
+	}
+
+	// Subscribe to topics
+	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to Kafka topics: %w", err)
+	}
+
+	log.Printf("✅ Subscribed to %d Kafka topics for duplex communication", len(topics))
+	for _, topic := range topics {
+		log.Printf("   └── %s", topic)
+	}
+	return nil
+}
+
+// handleUSPMessage processes incoming USP messages from MTP services
+func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
+	log.Printf("📨 Received USP TR-369 protobuf message: %d bytes", len(msg.Value))
+
+	// Process the raw TR-369 protobuf Record directly
+	response, err := s.ProcessUSPMessage(msg.Value)
+	if err != nil {
+		log.Printf("❌ Error processing USP message: %v", err)
+		return err
+	}
+
+	// If there's a response, publish it to outbound topic
+	if response != nil {
+		if err := s.kafkaProducer.PublishRaw(s.config.Kafka.Topics.USPMessagesOutbound, "", response); err != nil {
+			log.Printf("❌ Failed to publish USP response: %v", err)
+			return err
+		}
+		log.Printf("✅ Published USP response to %s", s.config.Kafka.Topics.USPMessagesOutbound)
+	}
+
+	return nil
+}
+
+// handleAPIRequest processes API requests from API Gateway
+func (s *USPCoreService) handleAPIRequest(msg *confluentkafka.Message) error {
+	log.Printf("📥 Processing API request from API Gateway")
+	
+	// TODO: Parse API request, process it, and send response to USPAPIResponse topic
+	// For now, just log the request
+	
+	return nil
+}
+
+// handleDataRequest processes data requests from Data Service
+func (s *USPCoreService) handleDataRequest(msg *confluentkafka.Message) error {
+	log.Printf("📥 Processing data request from Data Service")
+	
+	// TODO: Parse data request, process it, and send response to USPDataResponse topic
+	// For now, just log the request
+	
+	return nil
+}
+
+// handleDataEvent processes data events from Data Service
+func (s *USPCoreService) handleDataEvent(msg *confluentkafka.Message) error {
+	topic := *msg.TopicPartition.Topic
+	log.Printf("📥 Processing data event from topic: %s", topic)
+	
+	// TODO: Process data events (device created, updated, parameter changed, etc.)
+	// This allows USP service to stay synchronized with data changes
+	
+	return nil
+}
+
+// handleMTPEvent processes MTP connection events
+func (s *USPCoreService) handleMTPEvent(msg *confluentkafka.Message) error {
+	topic := *msg.TopicPartition.Topic
+	log.Printf("📥 Processing MTP event from topic: %s", topic)
+	
+	// TODO: Track MTP connection state, update device status, etc.
+	
+	return nil
 }
 
 // DetectUSPVersion detects USP protocol version from raw message data
 func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
-	// Try to unmarshal as USP 1.4 first
-	var record14 v1_4.Record
-	if err := proto.Unmarshal(data, &record14); err == nil {
-		if record14.Version == "1.4" {
-			return "1.4", nil
-		}
-	}
-
-	// Try to unmarshal as USP 1.3
+	log.Printf("🔍 Attempting to detect USP version from %d bytes of data", len(data))
+	
+	// Try to unmarshal as USP 1.3 first (most common)
 	var record13 v1_3.Record
-	if err := proto.Unmarshal(data, &record13); err == nil {
-		if record13.Version == "1.3" {
+	err13 := proto.Unmarshal(data, &record13)
+	if err13 == nil {
+		log.Printf("🔍 Successfully unmarshaled as v1.3 Record - Version=%q, FromId=%q, ToId=%q, RecordType=%T", 
+			record13.Version, record13.FromId, record13.ToId, record13.RecordType)
+		
+		// Check if version field is set and valid
+		if record13.Version != "" {
+			log.Printf("🔍 Detected USP version from Record.Version field: %s", record13.Version)
+			// Accept both "1.3" and variations
+			if record13.Version == "1.3" || record13.Version == "1.3.0" {
+				return "1.3", nil
+			}
+			if record13.Version == "1.4" || record13.Version == "1.4.0" {
+				return "1.4", nil
+			}
+		}
+		// If version field is not set but unmarshal succeeded with FromId/ToId, assume 1.3
+		if record13.FromId != "" || record13.ToId != "" {
+			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.3", 
+				record13.FromId, record13.ToId)
 			return "1.3", nil
 		}
+	} else {
+		log.Printf("⚠️ Failed to unmarshal as v1.3 Record: %v", err13)
 	}
 
+	// Try to unmarshal as USP 1.4
+	var record14 v1_4.Record
+	err14 := proto.Unmarshal(data, &record14)
+	if err14 == nil {
+		log.Printf("🔍 Successfully unmarshaled as v1.4 Record - Version=%q, FromId=%q, ToId=%q", 
+			record14.Version, record14.FromId, record14.ToId)
+		
+		if record14.Version == "1.4" || record14.Version == "1.4.0" {
+			log.Printf("🔍 Detected USP version 1.4 from Record.Version field")
+			return "1.4", nil
+		}
+		// If version field is not set but unmarshal succeeded with FromId/ToId, check for 1.4 specific fields
+		if record14.FromId != "" || record14.ToId != "" {
+			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.4", 
+				record14.FromId, record14.ToId)
+			return "1.4", nil
+		}
+	} else {
+		log.Printf("⚠️ Failed to unmarshal as v1.4 Record: %v", err14)
+	}
+
+	log.Printf("❌ Unable to detect USP version - Record.Version: v1.3=%q, v1.4=%q, FromId: v1.3=%q, v1.4=%q", 
+		record13.Version, record14.Version, record13.FromId, record14.FromId)
+	
+	// Debug: Show first 100 bytes of data in hex
+	if len(data) > 0 {
+		maxBytes := 100
+		if len(data) < maxBytes {
+			maxBytes = len(data)
+		}
+		log.Printf("🔍 First %d bytes (hex): %x", maxBytes, data[:maxBytes])
+	}
+	
 	return "", fmt.Errorf("unable to detect USP version")
 }
 
@@ -124,8 +320,11 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.4 message: %w", err)
 	}
 
+	log.Printf("📥 RECV: USP Message Type: %s, MsgID: %s (from: %s)", msg.Header.MsgType, msg.Header.MsgId, record.FromId)
+
 	// Create a simple response
 	responseMsg := s.createUSP14Response(&msg)
+	log.Printf("📤 SEND: Created response for MsgID: %s, ResponseType: %s (to: %s)", msg.Header.MsgId, responseMsg.Header.MsgType, record.FromId)
 
 	// Marshal response
 	responsePayload, err := proto.Marshal(responseMsg)
@@ -155,6 +354,8 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 	}
 
 	log.Printf("USP 1.3 message from %s to %s", record.FromId, record.ToId)
+	
+	agentEndpointID := record.FromId // Capture for potential auto-discovery
 
 	// Handle MTP-layer connection records (no payload, no response needed)
 	switch recordType := record.RecordType.(type) {
@@ -180,6 +381,7 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 	switch recordType := record.RecordType.(type) {
 	case *v1_3.Record_NoSessionContext:
 		payload = recordType.NoSessionContext.Payload
+		log.Printf("📦 NoSessionContext payload size: %d bytes", len(payload))
 	default:
 		return nil, fmt.Errorf("unsupported USP 1.3 record type: %T", recordType)
 	}
@@ -190,14 +392,29 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.3 message: %w", err)
 	}
 
+	log.Printf("📥 RECV: USP Message Type: %s, MsgID: %s (from: %s)", msg.Header.MsgType, msg.Header.MsgId, record.FromId)
+
 	// Create a simple response
 	responseMsg := s.createUSP13Response(&msg)
+	log.Printf("📤 SEND: Created response for MsgID: %s, ResponseType: %s (to: %s)", msg.Header.MsgId, responseMsg.Header.MsgType, record.FromId)
+
+	// Check if this was a Boot! Event - if so, trigger auto-discovery after response
+	if msg.Header.MsgType == v1_3.Header_NOTIFY {
+		if notify := msg.Body.GetRequest().GetNotify(); notify != nil {
+			if event := notify.GetEvent(); event != nil && event.EventName == "Boot!" {
+				// Trigger auto-discovery in background after sending response
+				go s.triggerAgentAutoDiscovery(agentEndpointID, "1.3", event.Params)
+			}
+		}
+	}
 
 	// Marshal response
 	responsePayload, err := proto.Marshal(responseMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal USP 1.3 response: %w", err)
 	}
+
+	log.Printf("📦 Response payload size: %d bytes", len(responsePayload))
 
 	// Create response record
 	responseRecord := &v1_3.Record{
@@ -211,7 +428,14 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 		},
 	}
 
-	return proto.Marshal(responseRecord)
+	responseBytes, err := proto.Marshal(responseRecord)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal response record: %w", err)
+	}
+
+	log.Printf("📤 Response Record size: %d bytes (ToId: %s, FromId: %s)", len(responseBytes), responseRecord.ToId, responseRecord.FromId)
+
+	return responseBytes, nil
 }
 
 func (s *USPCoreService) createUSP14Response(msg *v1_4.Msg) *v1_4.Msg {
@@ -220,6 +444,8 @@ func (s *USPCoreService) createUSP14Response(msg *v1_4.Msg) *v1_4.Msg {
 		return s.handleUSP14Get(msg)
 	case v1_4.Header_GET_SUPPORTED_DM:
 		return s.handleUSP14GetSupportedDM(msg)
+	case v1_4.Header_NOTIFY:
+		return s.handleUSP14Notify(msg)
 	default:
 		// Return error response for unsupported operations
 		return &v1_4.Msg{
@@ -245,6 +471,8 @@ func (s *USPCoreService) createUSP13Response(msg *v1_3.Msg) *v1_3.Msg {
 		return s.handleUSP13Get(msg)
 	case v1_3.Header_GET_SUPPORTED_DM:
 		return s.handleUSP13GetSupportedDM(msg)
+	case v1_3.Header_NOTIFY:
+		return s.handleUSP13Notify(msg)
 	default:
 		// Return error response for unsupported operations
 		return &v1_3.Msg{
@@ -442,6 +670,92 @@ func (s *USPCoreService) handleUSP13GetSupportedDM(msg *v1_3.Msg) *v1_3.Msg {
 	}
 }
 
+// handleUSP14Notify handles NOTIFY messages (including Boot! Event) for USP 1.4
+func (s *USPCoreService) handleUSP14Notify(msg *v1_4.Msg) *v1_4.Msg {
+	notify := msg.Body.GetRequest().GetNotify()
+	
+	// Log the notification details
+	if notify != nil {
+		log.Printf("📨 NOTIFY: Subscription ID: %s", notify.SubscriptionId)
+		
+		// Check if this is an Event notification (including Boot! Event)
+		if event := notify.GetEvent(); event != nil {
+			log.Printf("📨 EVENT: ObjPath=%s, EventName=%s", event.ObjPath, event.EventName)
+			
+			// Handle Boot! Event
+			if event.EventName == "Boot!" {
+				log.Printf("🔔 Received Boot! Event from agent (TR-369 onboarding)")
+				// Log boot parameters
+				for k, v := range event.Params {
+					log.Printf("   Boot Param: %s = %s", k, v)
+				}
+			}
+		}
+	}
+	
+	// Return NotifyResp acknowledgment
+	return &v1_4.Msg{
+		Header: &v1_4.Header{
+			MsgId:   fmt.Sprintf("notify-resp-%s", msg.Header.MsgId),
+			MsgType: v1_4.Header_NOTIFY_RESP,
+		},
+		Body: &v1_4.Body{
+			MsgBody: &v1_4.Body_Response{
+				Response: &v1_4.Response{
+					RespType: &v1_4.Response_NotifyResp{
+						NotifyResp: &v1_4.NotifyResp{
+							SubscriptionId: notify.GetSubscriptionId(),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// handleUSP13Notify handles NOTIFY messages (including Boot! Event) for USP 1.3
+func (s *USPCoreService) handleUSP13Notify(msg *v1_3.Msg) *v1_3.Msg {
+	notify := msg.Body.GetRequest().GetNotify()
+	
+	// Log the notification details
+	if notify != nil {
+		log.Printf("📨 NOTIFY: Subscription ID: %s", notify.SubscriptionId)
+		
+		// Check if this is an Event notification (including Boot! Event)
+		if event := notify.GetEvent(); event != nil {
+			log.Printf("📨 EVENT: ObjPath=%s, EventName=%s", event.ObjPath, event.EventName)
+			
+			// Handle Boot! Event
+			if event.EventName == "Boot!" {
+				log.Printf("🔔 Received Boot! Event from agent (TR-369 onboarding)")
+				// Log boot parameters
+				for k, v := range event.Params {
+					log.Printf("   Boot Param: %s = %s", k, v)
+				}
+			}
+		}
+	}
+	
+	// Return NotifyResp acknowledgment
+	return &v1_3.Msg{
+		Header: &v1_3.Header{
+			MsgId:   fmt.Sprintf("notify-resp-%s", msg.Header.MsgId),
+			MsgType: v1_3.Header_NOTIFY_RESP,
+		},
+		Body: &v1_3.Body{
+			MsgBody: &v1_3.Body_Response{
+				Response: &v1_3.Response{
+					RespType: &v1_3.Response_NotifyResp{
+						NotifyResp: &v1_3.NotifyResp{
+							SubscriptionId: notify.GetSubscriptionId(),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func (s *USPCoreService) getParameterValue(path string) string {
 	// Get value from TR-181 device manager
 	deviceInfo := s.deviceManager.GetDeviceInfo()
@@ -449,38 +763,45 @@ func (s *USPCoreService) getParameterValue(path string) string {
 		return fmt.Sprintf("%v", value)
 	}
 
-	// Default values for common parameters with environment variable fallbacks
+	// Get values from USP Agent configuration (from YAML)
+	agentConfig := s.config.USPAgentDevice
+	
 	switch path {
 	case "Device.DeviceInfo.Manufacturer":
-		if manufacturer := os.Getenv("OPENUSP_DEVICE_MANUFACTURER"); manufacturer != "" {
-			return manufacturer
+		if agentConfig.Manufacturer != "" {
+			return agentConfig.Manufacturer
 		}
 		return "Unknown"
 	case "Device.DeviceInfo.ManufacturerOUI":
-		if oui := os.Getenv("OPENUSP_DEVICE_MANUFACTURER_OUI"); oui != "" {
-			return oui
+		if agentConfig.OUI != "" {
+			return agentConfig.OUI
 		}
 		return "000000"
 	case "Device.DeviceInfo.ModelName":
-		if model := os.Getenv("OPENUSP_DEVICE_MODEL_NAME"); model != "" {
-			return model
+		if agentConfig.ModelName != "" {
+			return agentConfig.ModelName
 		}
 		return "TR-369 USP Agent"
 	case "Device.DeviceInfo.SerialNumber":
-		if serial := os.Getenv("OPENUSP_DEVICE_SERIAL_NUMBER"); serial != "" {
-			return serial
+		if agentConfig.SerialNumber != "" {
+			return agentConfig.SerialNumber
 		}
 		return "UNKNOWN"
 	case "Device.DeviceInfo.SoftwareVersion":
-		if version := os.Getenv("OPENUSP_DEVICE_SOFTWARE_VERSION"); version != "" {
-			return version
+		if agentConfig.SoftwareVersion != "" {
+			return agentConfig.SoftwareVersion
 		}
-		return "1.0.0"
+		return version.Version
 	case "Device.DeviceInfo.HardwareVersion":
-		if version := os.Getenv("OPENUSP_DEVICE_HARDWARE_VERSION"); version != "" {
-			return version
+		if agentConfig.HardwareVersion != "" {
+			return agentConfig.HardwareVersion
 		}
 		return "1.0"
+	case "Device.DeviceInfo.ProductClass":
+		if agentConfig.ProductClass != "" {
+			return agentConfig.ProductClass
+		}
+		return "TR-369"
 	default:
 		return "unknown"
 	}
@@ -509,25 +830,10 @@ func main() {
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Environment Variables:")
-		fmt.Println("  SERVICE_PORT       - gRPC port (default: 56250)")
+		fmt.Println("All configuration loaded from configs/openusp.yml")
+		fmt.Println("Environment variables can override YAML values (see openusp.yml comments)")
 		return
 	}
-
-	// Load configuration
-	fullConfig := config.Load()
-	grpcPort, _ := strconv.Atoi(fullConfig.USPServiceGRPCPort)
-	httpPort := 0
-	if fullConfig.USPServiceHTTPPort != "" {
-		httpPort, _ = strconv.Atoi(fullConfig.USPServiceHTTPPort)
-	}
-	if grpcPort == 0 || httpPort == 0 {
-		log.Fatalf("missing USP service ports in YAML configuration")
-	}
-
-	// Fixed ports – no service discovery needed
-
-	// Ports already loaded above
 
 	fmt.Println("OpenUSP Core Service - Multi-Version TR-369 Protocol Engine")
 	fmt.Println("==========================================================")
@@ -539,45 +845,50 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
-	// Initialize the USP core service (for TR-181 data model validation)
-	_, err := NewUSPCoreService()
+	// Convert HTTP port from string to int
+	httpPort, err := strconv.Atoi(cfg.USPServiceHTTPPort)
+	if err != nil || httpPort == 0 {
+		log.Fatalf("Invalid USP service HTTP port: %s", cfg.USPServiceHTTPPort)
+	}
+
+	// Initialize the USP core service with Kafka
+	uspService, err := NewUSPCoreService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize USP Core Service: %v", err)
 	}
-
 	log.Printf("✅ USP Core Service initialized with TR-181 data model")
 
-	// Create connection client for dynamic service discovery
-	connectionClient := client.NewOpenUSPConnectionClient(30 * time.Second)
-	if err != nil {
-		log.Fatalf("Failed to create connection client: %v", err)
+	// Setup Kafka consumers
+	if err := uspService.setupKafkaConsumers(); err != nil {
+		log.Fatalf("Failed to setup Kafka consumers: %v", err)
 	}
-	log.Printf("✅ Created connection client for dynamic service discovery")
 
-	// Get Data Service client via connection manager (dynamic discovery)
-	dataClient, err := connectionClient.GetDataServiceClient()
-	if err != nil {
-		log.Fatalf("Failed to get data service client via connection manager: %v", err)
-	}
-	log.Printf("✅ Connected to Data Service via connection manager")
+	// Start Kafka consumer
+	go uspService.kafkaConsumer.Start()
 
-	// HTTP port loaded from config
-
+	// Start HTTP server for health/metrics
 	go func() {
 		mux := http.NewServeMux()
 
 		// Health check endpoint
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			// Test Kafka connection
+			kafkaStatus := "connected"
+			if err := uspService.kafkaClient.Ping(); err != nil {
+				kafkaStatus = "disconnected"
+			}
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			response := fmt.Sprintf(`{
 				"service": "usp-service",
 				"status": "healthy",
 				"version": "1.0.0",
-				"grpc_port": %d,
 				"http_port": %d,
+				"kafka": "%s",
+				"kafka_brokers": %q,
 				"timestamp": "%s"
-			}`, grpcPort, httpPort, time.Now().Format(time.RFC3339))
+			}`, httpPort, kafkaStatus, cfg.Kafka.Brokers, time.Now().Format(time.RFC3339))
 			w.Write([]byte(response))
 		})
 
@@ -588,84 +899,142 @@ func main() {
 			response := fmt.Sprintf(`{
 				"service": "usp-service",
 				"status": "running",
-				"version": "1.0.0",
-				"grpc_port": %d,
+				"version": "%s",
 				"http_port": %d,
 				"tr181_objects": 822,
 				"usp_versions": ["1.3", "1.4"],
+				"kafka_topics": {
+					"inbound": "%s",
+					"outbound": "%s"
+				},
 				"timestamp": "%s"
-			}`, grpcPort, httpPort, time.Now().Format(time.RFC3339))
+			}`, version.Version, httpPort, cfg.Kafka.Topics.USPMessagesInbound, cfg.Kafka.Topics.USPMessagesOutbound, time.Now().Format(time.RFC3339))
 			w.Write([]byte(response))
 		})
 
 		// Metrics endpoint
 		mux.Handle("/metrics", metrics.HTTPHandler())
 
-		server := &http.Server{
-			Addr:    fmt.Sprintf(":%d", httpPort),
-			Handler: mux,
+		// Parse HTTP timeouts from config
+		readTimeout, _ := time.ParseDuration(cfg.USPService.ReadTimeout)
+		writeTimeout, _ := time.ParseDuration(cfg.USPService.WriteTimeout)
+		idleTimeout, _ := time.ParseDuration(cfg.USPService.IdleTimeout)
+
+		uspService.httpServer = &http.Server{
+			Addr:         fmt.Sprintf(":%d", httpPort),
+			Handler:      mux,
+			ReadTimeout:  readTimeout,
+			WriteTimeout: writeTimeout,
+			IdleTimeout:  idleTimeout,
 		}
 
-		log.Printf("� Starting HTTP server on port %d", httpPort)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("🌐 Starting HTTP server on port %d", httpPort)
+		if err := uspService.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
 
-	// Create gRPC server
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
-	if err != nil {
-		log.Fatalf("Failed to listen on port %d: %v", grpcPort, err)
-	}
-
-	// Configure gRPC server with keepalive enforcement to prevent ENHANCE_YOUR_CALM errors
-	grpcServer := grpc.NewServer(
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    60 * time.Second, // Send keepalive pings every 60 seconds
-			Timeout: 10 * time.Second, // Wait 10 seconds for keepalive ping ack
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             30 * time.Second, // Minimum allowed time between client pings
-			PermitWithoutStream: true,             // Allow pings even when no streams are active
-		}),
-	)
-	uspServiceServer := grpcImpl.NewUSPServiceServer(dataClient, connectionClient)
-	uspservice.RegisterUSPServiceServer(grpcServer, uspServiceServer)
-
-	// Start gRPC server in background
-	go func() {
-		log.Printf("🚀 USP Service gRPC server starting on port %d", grpcPort)
-		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalf("Failed to serve gRPC: %v", err)
-		}
-	}()
-
-	log.Printf("🚀 USP Service started successfully")
-	log.Printf("   └── gRPC Port: %d", grpcPort)
-	log.Printf("   └── HTTP Port: %d", httpPort)
-	log.Printf("   └── Environment Configuration: ✅ Enabled")
-	log.Printf("   └── Health Check: http://localhost:%d/health", httpPort)
-	log.Printf("   └── Status: http://localhost:%d/status", httpPort)
-	log.Printf("   └── TR-181 Device:2 data model loaded")
-	log.Printf("   └── USP protocol versions 1.3 and 1.4 supported")
-	fmt.Printf("   🔧 HTTP Endpoints: http://localhost:%d/health, /status, /metrics\n", httpPort)
-	fmt.Println("   🔧 TR-181 Device:2 data model loaded")
-	fmt.Println("   🔧 USP protocol versions 1.3 and 1.4 supported")
-	fmt.Println("   🔧 Automatic version detection enabled")
-	fmt.Println("   🔧 Device onboarding and lifecycle management")
-	fmt.Printf("   🔧 Data Service: localhost:%s\n", cfg.DataServiceGRPCPort)
+	log.Printf("✅ USP Service started - Kafka consumer: %s, HTTP: %d",
+		cfg.Kafka.Topics.USPMessagesInbound, httpPort)
 
 	// Handle graceful shutdown
-	fmt.Println("\n💡 Press Ctrl+C to exit...")
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Wait for shutdown signal
 	<-sigChan
-	log.Printf("� Received shutdown signal")
+	log.Printf("🛑 Received shutdown signal")
+	log.Printf("🛑 Stopping USP Service...")
 
-	// Fixed ports – no service deregistration needed
+	// Stop Kafka consumer
+	if uspService.kafkaConsumer != nil {
+		uspService.kafkaConsumer.Close()
+	}
 
-	grpcServer.GracefulStop()
-	log.Printf("✅ USP Service stopped successfully")
+	// Stop Kafka producer
+	if uspService.kafkaProducer != nil {
+		uspService.kafkaProducer.Close()
+	}
+
+	// Close Kafka client
+	if uspService.kafkaClient != nil {
+		uspService.kafkaClient.Close()
+	}
+
+	// Stop HTTP server with configured timeout
+	if uspService.httpServer != nil {
+		shutdownTimeout, _ := time.ParseDuration(cfg.USPService.ShutdownTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		uspService.httpServer.Shutdown(ctx)
+	}
+
+	log.Printf("✅ USP Service stopped")
+}
+
+// triggerAgentAutoDiscovery initiates the auto-discovery workflow after successful Boot! Event onboarding
+func (s *USPCoreService) triggerAgentAutoDiscovery(agentEndpointID, uspVersion string, bootParams map[string]string) {
+	log.Printf("🔍 Starting auto-discovery for agent: %s (USP %s)", agentEndpointID, uspVersion)
+
+	// Wait a moment for the Boot! response to be delivered
+	time.Sleep(2 * time.Second)
+
+	// Step 1: Register/Update device in data service
+	if err := s.registerDeviceFromBootParams(agentEndpointID, bootParams); err != nil {
+		log.Printf("❌ Failed to register device %s: %v", agentEndpointID, err)
+	} else {
+		log.Printf("✅ Device %s registered successfully", agentEndpointID)
+	}
+
+	// Step 2: Send GetSupportedDM to discover data model
+	log.Printf("📋 Sending GetSupportedDM request to %s", agentEndpointID)
+	// TODO: Implement sending GetSupportedDM request
+	// This requires creating a USP message, wrapping in Record, and publishing to Kafka
+
+	// Step 3: Send Get request for key parameters
+	log.Printf("📋 Sending Get request for Device.DeviceInfo. parameters to %s", agentEndpointID)
+	// TODO: Implement sending Get request
+	
+	log.Printf("✅ Auto-discovery workflow initiated for agent: %s", agentEndpointID)
+}
+
+// registerDeviceFromBootParams creates/updates device record using Boot! Event parameters
+func (s *USPCoreService) registerDeviceFromBootParams(agentEndpointID string, bootParams map[string]string) error {
+	log.Printf("📝 Registering device from Boot! Event parameters")
+	
+	// Extract key device information from Boot! params
+	deviceData := map[string]interface{}{
+		"endpoint_id":     agentEndpointID,
+		"manufacturer":    bootParams["Manufacturer"],
+		"model_name":      bootParams["ModelName"],
+		"serial_number":   bootParams["SerialNumber"],
+		"product_class":   bootParams["ProductClass"],
+		"software_version": bootParams["SoftwareVersion"],
+		"firmware_version": bootParams["SoftwareVersion"], // Often the same
+		"hardware_version": bootParams["HardwareVersion"],
+		"boot_cause":      bootParams["Cause"],
+		"onboarded_at":    time.Now().Format(time.RFC3339),
+		"last_boot_at":    time.Now().Format(time.RFC3339),
+		"status":          "online",
+	}
+
+	// Publish device registration event to Kafka
+	// The data-service will consume this and persist to database
+	err := s.kafkaProducer.PublishDeviceEvent(
+		s.config.Kafka.Topics.DataDeviceCreated,
+		"data.device.created", // event type
+		agentEndpointID,       // deviceID
+		agentEndpointID,       // endpointID
+		"usp",                 // protocol
+		deviceData,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to publish device.onboarded event: %w", err)
+	}
+
+	log.Printf("✅ Published device.onboarded event for %s to topic: %s", 
+		agentEndpointID, s.config.Kafka.Topics.DataDeviceCreated)
+
+	return nil
 }

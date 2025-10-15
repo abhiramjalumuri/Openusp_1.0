@@ -38,8 +38,9 @@ BUILD_DIR := build
 LOG_DIR := logs
 
 # OpenUSP Service definitions
-OPENUSP_CORE_SERVICES := data-service connection-manager usp-service cwmp-service mtp-service
-OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES)
+OPENUSP_CORE_SERVICES := data-service usp-service cwmp-service
+OPENUSP_MTP_SERVICES := mtp-stomp mtp-mqtt mtp-websocket mtp-http
+OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES) $(OPENUSP_MTP_SERVICES)
 OPENUSP_AGENTS := usp-agent cwmp-agent
 # Derived list excluding usp-agent for auto-generation of run targets
 OPENUSP_AGENTS_NO_USP := $(filter-out usp-agent,$(OPENUSP_AGENTS))
@@ -63,7 +64,7 @@ INFRA_VOLUMES := \
 .PHONY: infra-up infra-down infra-status infra-clean infra-volumes
 .PHONY: build build-services build-agents build-all
 .PHONY: run run-services run-agents run-all
-.PHONY: stop stop-services stop-agents stop-all force-stop stop-verify status-services status-quick status-debug
+.PHONY: stop stop-services stop-all force-stop stop-verify status-services status-quick status-debug
 .PHONY: monitoring-cleanup prometheus-reload
 .PHONY: $(addprefix build-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
 .PHONY: $(addprefix run-,$(OPENUSP_SERVICES) $(OPENUSP_AGENTS))
@@ -104,23 +105,25 @@ endpoints:
 	@echo "🌐 OpenUSP Services:"
 	@echo "  API Gateway:     http://localhost:6500 (Health: 6501)"
 	@echo "  Swagger UI:      http://localhost:6500/swagger/index.html"
-	@echo "  Data Service:    http://localhost:6400 (gRPC: 50100)"
-	@echo "  Connection Mgr:  http://localhost:6200 (gRPC: 50400)"
-	@echo "  USP Service:     http://localhost:6400 (gRPC: 50200)"
-	@echo "  CWMP Service:    http://localhost:7547 (gRPC: 50500)"
-	@echo "  MTP Service:     http://localhost:8081 (WebSocket), gRPC: 50300"
+	@echo "  Data Service:    http://localhost:6400 (Health: 6401)"
+	@echo "  USP Service:     http://localhost:6250 (Health: 6251)"
+	@echo "  CWMP Service:    http://localhost:7547 (Health: 7548)"
+	@echo "  MTP WebSocket:   http://localhost:8081 (Health: 8088)"
+	@echo "  MTP MQTT:        http://localhost:1883 (Health: 8089)"
+	@echo "  MTP STOMP:       http://localhost:61613 (Health: 8087)"
 	@echo ""
 	@echo "🏛️  Infrastructure:"
-
 	@echo "  Prometheus:      http://localhost:9090"
-	@echo "  Grafana:         http://localhost:3000 (admin/admin)"
+	@echo "  Grafana:         http://localhost:3000 (admin/openusp123)"
 	@echo "  PostgreSQL:      localhost:5433 (openusp/openusp123)"
 	@echo "  RabbitMQ:        http://localhost:15672 (openusp/openusp123)"
+	@echo "  Kafka:           localhost:9092"
+	@echo "  Kafka UI:        http://localhost:8082"
 	@echo ""
 	@echo "🎯 All ports are static - no service discovery needed"
 	@echo ""
-	@echo "🔗 gRPC Service Communication:"
-	@echo "  Service-to-service gRPC uses static ports (see docs/GRPC_SERVICES.md)"
+	@echo "� Kafka Event-Driven Architecture:"
+	@echo "  Service-to-service communication uses Kafka topics (see configs/openusp.yml)"
 	@echo "  Database:        $(OPENUSP_DB_USER)/$(OPENUSP_DB_PASSWORD)"
 
 docs:
@@ -215,14 +218,17 @@ run: run-services
 
 run-services: build-services infra-up
 	@echo "🚀 Starting OpenUSP services..."
-	@echo "   🌐 API Gateway, 🗄️  Data Service, 🔗 Connection Manager"
-	@echo "   📡 USP Service, 📞 CWMP Service, 🚀 MTP Service"
-	@$(MAKE) run-connection-manager-background
+	@echo "   🌐 API Gateway, 🗄️  Data Service"
+	@echo "   📡 USP Service, 📞 CWMP Service"
+	@echo "   🚀 MTP Services: STOMP, MQTT, WebSocket, UDS, HTTP"
 	@$(MAKE) run-data-service-background
 	@$(MAKE) run-api-gateway-background
 	@$(MAKE) run-usp-service-background
 	@$(MAKE) run-cwmp-service-background
-	@$(MAKE) run-mtp-service-background
+	@$(MAKE) run-mtp-stomp-background
+	@$(MAKE) run-mtp-mqtt-background
+	@$(MAKE) run-mtp-websocket-background
+	@$(MAKE) run-mtp-http-background
 	@echo "✅ All OpenUSP services started"
 
 run-agents: build-agents
@@ -242,22 +248,21 @@ run-all: run-services
 	@echo "   make run-cwmp-agent   # In separate terminal"
 
 # Stop targets
-stop: stop-services stop-agents
+stop: stop-services 
 
 stop-services:
 	@echo "🛑 Stopping OpenUSP services..."
+	@echo "   This will gracefully shutdown all running services"
 	@for service in $(OPENUSP_SERVICES); do \
-		$(MAKE) stop-$$service; \
+		if pgrep -f "./$(BUILD_DIR)/$$service" > /dev/null 2>&1 || [ -f logs/$$service.pid ]; then \
+			$(MAKE) stop-$$service; \
+		else \
+			echo "  ℹ️  $$service is not running"; \
+		fi; \
 	done
 	@echo "✅ OpenUSP services stopped"
 
-stop-agents:
-	@echo "🛑 Stopping OpenUSP agents..."
-	@pkill -f "usp-agent" 2>/dev/null || true
-	@pkill -f "cwmp-agent" 2>/dev/null || true
-	@echo "✅ OpenUSP agents stopped (if any were running)"
-
-stop-all: stop-services stop-agents
+stop-all: stop-services
 	@echo "✅ All OpenUSP components stopped"
 
 force-stop:
@@ -390,8 +395,35 @@ build-$(1):
 	@echo "✅ $(1) built successfully"
 endef
 
+# Build templates for agents (new location: cmd/agents/)
+define AGENT_BUILD_TEMPLATE
+build-$(1):
+	@echo "🔨 Building $(1)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/agents/$(2)
+	@echo "✅ $(1) built successfully"
+endef
+
+# Build templates for MTP services (location: cmd/mtp-services/)
+define MTP_BUILD_TEMPLATE
+build-$(1):
+	@echo "🔨 Building $(1)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/mtp-services/$(2)
+	@echo "✅ $(1) built successfully"
+endef
+
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
-$(foreach agent,$(OPENUSP_AGENTS),$(eval $(call BUILD_TEMPLATE,$(agent))))
+
+# MTP services with new paths
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-stomp,stomp))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-mqtt,mqtt))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-websocket,websocket))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-http,http))
+
+# Agent services with new paths
+$(eval $(call AGENT_BUILD_TEMPLATE,usp-agent,usp))
+$(eval $(call AGENT_BUILD_TEMPLATE,cwmp-agent,cwmp))
 
 # Individual service run targets (with background support)
 define SERVICE_RUN_TEMPLATE
@@ -411,14 +443,29 @@ stop-$(1):
 	@stopped=false; \
 	if [ -f logs/$(1).pid ]; then \
 		pid=$$(cat logs/$(1).pid); \
-		if kill $$pid 2>/dev/null; then \
-			echo "  Stopped via PID file ($$pid)"; \
-			stopped=true; \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			echo "  Found process $$pid, sending SIGTERM..."; \
+			kill -TERM $$pid 2>/dev/null || true; \
+			for i in 1 2 3 4 5; do \
+				if ! ps -p $$pid > /dev/null 2>&1; then \
+					echo "  Process $$pid stopped gracefully"; \
+					stopped=true; \
+					break; \
+				fi; \
+				sleep 1; \
+			done; \
+			if ps -p $$pid > /dev/null 2>&1; then \
+				echo "  Process $$pid did not stop, sending SIGKILL..."; \
+				kill -9 $$pid 2>/dev/null || true; \
+				stopped=true; \
+			fi; \
+		else \
+			echo "  PID file exists but process $$pid not running"; \
 		fi; \
 		rm -f logs/$(1).pid; \
 	fi; \
 	if pkill -f "./$(BUILD_DIR)/$(1)" 2>/dev/null; then \
-		echo "  Stopped $(1) processes"; \
+		echo "  Stopped additional $(1) processes via pkill"; \
 		stopped=true; \
 	fi; \
 	if [ "$$stopped" = "false" ]; then \
@@ -428,23 +475,25 @@ stop-$(1):
 endef
 
 # Individual agent run targets (console applications only)
+# Agents now use configs/agents.yml instead of individual config files
 define AGENT_RUN_TEMPLATE
 run-$(1): build-$(1)
 	@echo "🚀 Starting $(1) (console application)..."
-	@echo "   Config: configs/$(1).yaml"
+	@echo "   Config: configs/agents.yml"
 	@echo "   Press Ctrl+C to stop"
-	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/$(1) --config configs/$(1).yaml'
+	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/$(1)'
 endef
 
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
+$(foreach service,$(OPENUSP_MTP_SERVICES),$(eval $(call SERVICE_RUN_TEMPLATE,$(service))))
 $(foreach agent,$(OPENUSP_AGENTS_NO_USP),$(eval $(call AGENT_RUN_TEMPLATE,$(agent))))
 
-# Override for USP agent to use unified config
+# Override for USP agent to use unified config from agents.yml
 run-usp-agent: build-usp-agent
 	@echo "🚀 Starting usp-agent (console application)..."
-	@echo "   Config: configs/openusp.yml"
+	@echo "   Config: configs/agents.yml"
 	@echo "   Press Ctrl+C to stop"
-	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/usp-agent --config configs/openusp.yml'
+	@bash -c 'set -a; source configs/openusp.env; set +a; ./$(BUILD_DIR)/usp-agent --config configs/agents.yml'
 
 # API Gateway targets
 run-api-gateway:
@@ -567,12 +616,6 @@ service-status:
 	else \
 		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "connection-manager"; \
-	if curl -s http://localhost:6200/health >/dev/null 2>&1; then \
-		echo "✅ Accessible (http://localhost:6200)"; \
-	else \
-		echo "❌ Not accessible"; \
-	fi
 	@printf "%-20s: " "usp-service"; \
 	if curl -s http://localhost:6400/health >/dev/null 2>&1; then \
 		echo "✅ Accessible (http://localhost:6400)"; \
@@ -585,42 +628,70 @@ service-status:
 	else \
 		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "mtp-service"; \
-	if curl -s http://localhost:8082/health >/dev/null 2>&1; then \
+	@printf "%-20s: " "mtp-stomp"; \
+	if curl -s http://localhost:8087/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:8087)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "mtp-mqtt"; \
+	if curl -s http://localhost:8089/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:8089)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "mtp-websocket"; \
+	if curl -s http://localhost:8088/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:8088)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@printf "%-20s: " "mtp-http"; \
+	if curl -s http://localhost:8091/health >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:8091)"; \
+	else \
+		echo "❌ Not accessible"; \
+	fi
+	@echo ""
+	@echo "� Kafka Message Broker:"
+	@printf "%-20s: " "kafka-broker"; \
+	if timeout 2 bash -c "</dev/tcp/localhost/9092" 2>/dev/null; then \
+		echo "✅ Port 9092 open"; \
+	else \
+		echo "❌ Port 9092 closed"; \
+	fi
+	@printf "%-20s: " "kafka-ui"; \
+	if curl -s http://localhost:8082 >/dev/null 2>&1; then \
 		echo "✅ Accessible (http://localhost:8082)"; \
 	else \
 		echo "❌ Not accessible"; \
 	fi
 	@echo ""
-	@echo "🔗 gRPC Port Connectivity:"
-	@printf "%-20s: " "api-gateway-grpc"; \
-	echo "ℹ️  HTTP only (no gRPC)"
-	@printf "%-20s: " "data-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/50100" 2>/dev/null; then \
-		echo "✅ Port 50100 open"; \
+	@echo "📊 Metrics Endpoints:"
+	@printf "%-20s: " "mtp-stomp-metrics"; \
+	if curl -s http://localhost:9201/metrics >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:9201/metrics)"; \
 	else \
-		echo "❌ Port 50100 closed"; \
+		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "usp-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/50200" 2>/dev/null; then \
-		echo "✅ Port 50200 open"; \
+	@printf "%-20s: " "mtp-mqtt-metrics"; \
+	if curl -s http://localhost:9202/metrics >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:9202/metrics)"; \
 	else \
-		echo "❌ Port 50200 closed"; \
+		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "mtp-service-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/50300" 2>/dev/null; then \
-		echo "✅ Port 50300 open"; \
+	@printf "%-20s: " "mtp-websocket-metrics"; \
+	if curl -s http://localhost:9203/metrics >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:9203/metrics)"; \
 	else \
-		echo "❌ Port 50300 closed"; \
+		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "connection-mgr-grpc"; \
-	if timeout 2 bash -c "</dev/tcp/localhost/50400" 2>/dev/null; then \
-		echo "✅ Port 50400 open"; \
+	@printf "%-20s: " "mtp-http-metrics"; \
+	if curl -s http://localhost:9205/metrics >/dev/null 2>&1; then \
+		echo "✅ Accessible (http://localhost:9205/metrics)"; \
 	else \
-		echo "❌ Port 50400 closed"; \
+		echo "❌ Not accessible"; \
 	fi
-	@printf "%-20s: " "cwmp-service-grpc"; \
-	echo "ℹ️  Uses data-service gRPC (no own server)"
 
 # =============================================================================
 # Development Environment Management
@@ -796,13 +867,15 @@ status:
 			accessible_count=$$((accessible_count + 1)); \
 		elif [ "$$service" = "data-service" ] && curl -s http://localhost:6400/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
-		elif [ "$$service" = "connection-manager" ] && curl -s http://localhost:6200/health >/dev/null 2>&1; then \
-			accessible_count=$$((accessible_count + 1)); \
 		elif [ "$$service" = "usp-service" ] && curl -s http://localhost:6400/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
 		elif [ "$$service" = "cwmp-service" ] && curl -s http://localhost:7547/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
-		elif [ "$$service" = "mtp-service" ] && curl -s http://localhost:8081/health >/dev/null 2>&1; then \
+		elif [ "$$service" = "mtp-stomp" ] && curl -s http://localhost:8087/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "mtp-mqtt" ] && curl -s http://localhost:8089/health >/dev/null 2>&1; then \
+			accessible_count=$$((accessible_count + 1)); \
+		elif [ "$$service" = "mtp-websocket" ] && curl -s http://localhost:8088/health >/dev/null 2>&1; then \
 			accessible_count=$$((accessible_count + 1)); \
 		fi; \
 	done; \

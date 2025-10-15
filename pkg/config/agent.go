@@ -103,8 +103,8 @@ type TR369Config struct {
 	STOMPPassword              string        `json:"stomp_password"`
 	STOMPDestinationRequest    string        `json:"stomp_destinations_request"`
 	STOMPDestinationResponse   string        `json:"stomp_destinations_response"`
-	STOMPDestinationController string        `json:"stomp_destinations_controller"`
-	STOMPDestinationAgent      string        `json:"stomp_destinations_agent"`
+	STOMPDestinationOutbound   string        `json:"stomp_destinations_outbound"`
+	STOMPDestinationInbound    string        `json:"stomp_destinations_inbound"`
 	STOMPDestinationBroadcast  string        `json:"stomp_destinations_broadcast"`
 	STOMPHeartbeatSend         time.Duration `json:"stomp_heartbeat_send"`
 	STOMPHeartbeatReceive      time.Duration `json:"stomp_heartbeat_receive"`
@@ -129,14 +129,14 @@ type Agents struct {
 	CWMP *TR069Config
 }
 
-// LoadAgents loads both USP and CWMP agent configs from openusp.yml (single pass)
+// LoadAgents loads both USP and CWMP agent configs from agents.yml (single pass)
 func LoadAgents(path string) (*Agents, error) {
 	if path == "" {
-		path = "configs/openusp.yml"
+		path = "configs/agents.yml"
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read openusp.yml: %w", err)
+		return nil, fmt.Errorf("read agents.yml: %w", err)
 	}
 
 	// Unmarshal into unified structure capturing both agent sections
@@ -186,11 +186,11 @@ func LoadAgents(path string) (*Agents, error) {
 					Username     string `yaml:"username"`
 					Password     string `yaml:"password"`
 					Destinations struct {
-						Request    string `yaml:"request"`
-						Response   string `yaml:"response"`
-						Controller string `yaml:"controller"`
-						Agent      string `yaml:"agent"`
-						Broadcast  string `yaml:"broadcast"`
+						Request   string `yaml:"request"`
+						Response  string `yaml:"response"`
+						Outbound  string `yaml:"outbound"`
+						Inbound   string `yaml:"inbound"`
+						Broadcast string `yaml:"broadcast"`
 					} `yaml:"destinations"`
 					Heartbeat struct {
 						Send    string `yaml:"send"`
@@ -364,8 +364,8 @@ func LoadAgents(path string) (*Agents, error) {
 	usp.STOMPPassword = mapUSP.MTP.STOMP.Password
 	usp.STOMPDestinationRequest = mapUSP.MTP.STOMP.Destinations.Request
 	usp.STOMPDestinationResponse = mapUSP.MTP.STOMP.Destinations.Response
-	usp.STOMPDestinationController = mapUSP.MTP.STOMP.Destinations.Controller
-	usp.STOMPDestinationAgent = mapUSP.MTP.STOMP.Destinations.Agent
+	usp.STOMPDestinationOutbound = mapUSP.MTP.STOMP.Destinations.Outbound
+	usp.STOMPDestinationInbound = mapUSP.MTP.STOMP.Destinations.Inbound
 	usp.STOMPDestinationBroadcast = mapUSP.MTP.STOMP.Destinations.Broadcast
 	usp.STOMPHeartbeatSend = parseDurationOrZero(mapUSP.MTP.STOMP.Heartbeat.Send)
 	usp.STOMPHeartbeatReceive = parseDurationOrZero(mapUSP.MTP.STOMP.Heartbeat.Receive)

@@ -4,6 +4,7 @@ package usp
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"time"
 
 	v1_3 "openusp/pkg/proto/v1_3"
@@ -69,17 +70,40 @@ func (p *USPParser) DetectVersion(data []byte) (USPVersion, error) {
 	// Try USP 1.4 first
 	var record14 v1_4.Record
 	if err := proto.Unmarshal(data, &record14); err == nil {
+		log.Printf("🔍 USP 1.4 unmarshal succeeded, version='%s'", record14.Version)
 		if record14.Version == "1.4" {
+			log.Printf("✅ Detected USP 1.4")
 			return Version14, nil
 		}
+	} else {
+		log.Printf("🔍 USP 1.4 unmarshal failed: %v", err)
 	}
 
 	// Try USP 1.3
 	var record13 v1_3.Record
 	if err := proto.Unmarshal(data, &record13); err == nil {
+		log.Printf("🔍 USP 1.3 unmarshal succeeded, version='%s'", record13.Version)
 		if record13.Version == "1.3" {
+			log.Printf("✅ Detected USP 1.3 - returning Version13")
 			return Version13, nil
 		}
+	} else {
+		log.Printf("🔍 USP 1.3 unmarshal failed: %v", err)
+	}
+
+	// Log hex dump for debugging unrecognized messages
+	log.Printf("❌ Cannot detect USP version from %d bytes. Hex dump:", len(data))
+	if len(data) <= 200 {
+		log.Printf("   Full hex: %x", data)
+	} else {
+		log.Printf("   First 100 bytes: %x...", data[:100])
+	}
+	// Try to show what we got when unmarshaling
+	if record13.Version != "" {
+		log.Printf("   USP 1.3 unmarshal got version: '%s' (expected '1.3')", record13.Version)
+	}
+	if record14.Version != "" {
+		log.Printf("   USP 1.4 unmarshal got version: '%s' (expected '1.4')", record14.Version)
 	}
 
 	return "", fmt.Errorf("unable to detect USP version from data")

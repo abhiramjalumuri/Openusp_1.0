@@ -83,7 +83,6 @@ func LoadMTPConfig() *MTPConfig {
 				WebSocketEnabled bool `yaml:"websocket_enabled"`
 				MQTTEnabled      bool `yaml:"mqtt_enabled"`
 				STOMPEnabled     bool `yaml:"stomp_enabled"`
-				UDSEnabled       bool `yaml:"uds_enabled"`
 			} `yaml:"transports"`
 			WebSocket struct {
 				Subprotocol string `yaml:"subprotocol"`
@@ -99,9 +98,6 @@ func LoadMTPConfig() *MTPConfig {
 					Broadcast  string `yaml:"broadcast"`
 				} `yaml:"destinations"`
 			} `yaml:"stomp"`
-			UDS struct {
-				SocketPath string `yaml:"socket_path"`
-			} `yaml:"uds"`
 		} `yaml:"mtp"`
 		USPService struct {
 			GRPCPort int    `yaml:"grpc_port"`
@@ -115,8 +111,6 @@ func LoadMTPConfig() *MTPConfig {
 		WebSocketEnabled:  unified.MTP.Transports.WebSocketEnabled,
 		MQTTEnabled:       unified.MTP.Transports.MQTTEnabled,
 		STOMPEnabled:      unified.MTP.Transports.STOMPEnabled,
-		UnixSocketEnabled: unified.MTP.Transports.UDSEnabled,
-		UnixSocketPath:    unified.MTP.UDS.SocketPath,
 		GRPCPort:          unified.USPService.GRPCPort,
 		Address:           unified.USPService.Address,
 	}

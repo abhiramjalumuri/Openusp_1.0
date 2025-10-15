@@ -64,15 +64,19 @@ openusp/
 │   │   └── main.go           # Unified binary with PostgreSQL backend and versioning
 │   ├── usp-service/          # Main USP core service with dual version support
 │   │   └── main.go           # Unified binary with TR-369 compliance engine
-│   ├── mtp-service/          # Enhanced Message Transfer Protocol service with USP parsing
-│   │   └── main.go           # Unified binary with multi-transport support
 │   ├── cwmp-service/         # CWMP/TR-069 service for backward compatibility
 │   │   └── main.go           # Unified binary with SOAP/XML processing
 │   ├── connection-manager/   # Industry-standard connection management service
 │   │   └── main.go           # Circuit breaker patterns, service discovery, connection pooling
-│   ├── usp-agent/            # TR-369 USP protocol agent (YAML-configured)
-│   │   ├── main.go           # Complete USP agent with onboarding functionality
-│   │   └── README.md         # Agent usage and configuration
+│   ├── agents/               # Protocol agents (YAML-configured)
+│   │   ├── usp/              # TR-369 USP protocol agent
+│   │   └── cwmp/             # TR-069 CWMP protocol agent
+│   └── mtps/                 # Message Transfer Protocol services
+│       ├── http/             # HTTP/HTTPS transport
+│       ├── mqtt/             # MQTT transport
+│       ├── stomp/            # STOMP transport
+│       ├── websocket/        # WebSocket transport
+│       └── uds/              # Unix Domain Socket transport
 │   └── cwmp-agent/           # TR-069 CWMP protocol agent (YAML-configured)
 │       └── main.go           # Complete CWMP agent with onboarding functionality
 ├── internal/                 # Private application code  
@@ -170,11 +174,15 @@ openusp/
 ├── build/                   # Compiled binaries
 │   ├── api-gateway          # API Gateway binary
 │   ├── data-service         # Data Service binary
-│   ├── mtp-service          # MTP Service binary
 │   ├── usp-service          # USP Service binary
 │   ├── cwmp-service         # CWMP Service binary
 │   ├── usp-agent            # TR-369 USP agent binary
-│   └── cwmp-agent           # TR-069 CWMP agent binary
+│   ├── cwmp-agent           # TR-069 CWMP agent binary
+│   ├── mtp-stomp            # STOMP MTP transport binary
+│   ├── mtp-mqtt             # MQTT MTP transport binary
+│   ├── mtp-websocket        # WebSocket MTP transport binary
+│   ├── mtp-uds              # Unix Domain Socket MTP transport binary
+│   └── mtp-http             # HTTP/HTTPS MTP transport binary
 └── Makefile                 # Modern build system with standard targets
 ├── deployments/             # Docker, Kubernetes configs
 ├── scripts/                 # Build and deployment scripts
@@ -242,16 +250,28 @@ openusp/
    - Graceful shutdown and connection management
    - **Unified Binary**: Single binary with --consul flag and version support
 
-3. **MTP Service** (`cmd/mtp-service/main.go`)
-   - Comprehensive USP record and message parsing for v1.3 and v1.4
-   - Multi-protocol transport: MQTT, STOMP, WebSocket, Unix Domain Socket
-   - Demo UI with WebSocket testing at `http://localhost:8081/usp`
-   - Health check endpoint at `http://localhost:8081/health`
+3. **USP Service** (`cmd/usp-service/main.go`)
+   - Main USP core service with dual version support (v1.3 and v1.4)
+   - gRPC-based service communication
+   - Multi-protocol transport support via dedicated MTP services
+   - Health check and status endpoints
    - Automatic version detection and message validation
-   - Upon receiving a USP message, the service detects the version (1.3 or 1.4) and processes it accordingly
-   - Generates appropriate USP responses based on the operation and version
-   - Updates device data (TR-181 datamodel, objects, parameters, alerts, sessions) via Data Service gRPC calls
-   - **Unified Binary**: Single binary with --consul flag and runtime configuration
+   - Generates appropriate USP responses based on operation and version
+   - Updates device data via Data Service gRPC calls
+   - **Unified Binary**: Single binary with runtime configuration
+
+4. **MTP Transport Services** (`cmd/mtps/`)
+   - Dedicated transport services for each protocol:
+     * **HTTP/HTTPS** (`cmd/mtps/http/`) - HTTP transport with TLS support
+     * **MQTT** (`cmd/mtps/mqtt/`) - MQTT broker integration
+     * **STOMP** (`cmd/mtps/stomp/`) - STOMP protocol support
+     * **WebSocket** (`cmd/mtps/websocket/`) - WebSocket transport
+     * **UDS** (`cmd/mtps/uds/`) - Unix Domain Socket transport
+   - Each service provides:
+     * gRPC interface for inter-service communication
+     * Health check endpoints
+     * Metrics collection endpoints
+     * Configuration from openusp.yml (no hardcoded values)
 
 4. **CWMP Service** (`cmd/cwmp-service/main.go`)
    - Complete TR-069 protocol implementation for backward compatibility
@@ -353,7 +373,8 @@ openusp/
 
 10. **Modern Build System** (`Makefile`)
     - **Infrastructure Management**: infra-up, infra-down, infra-status, infra-clean for PostgreSQL, Consul, RabbitMQ, MQTT, Grafana, Prometheus
-    - **Service Building**: build-api-gateway, build-data-service, build-usp-service, build-mtp-service, build-cwmp-service
+    - **Service Building**: build-api-gateway, build-data-service, build-usp-service, build-cwmp-service
+    - **MTP Building**: build-mtp-stomp, build-mtp-mqtt, build-mtp-websocket, build-mtp-uds, build-mtp-http
     - **Agent Building**: build-usp-agent, build-cwmp-agent for protocol agents
     - **Service Management**: start-*, stop-*, clean-* targets for all services
     - **Comprehensive Targets**: build-all, start-all, stop-all, clean-all
@@ -492,13 +513,19 @@ make build-all                   # Build all OpenUSP services + agents
 # Start Services (with Consul enabled by default)
 make start-data-service          # gRPC data service
 make start-api-gateway          # REST API Gateway with Swagger UI
-make start-mtp-service          # Message transport service
 make start-cwmp-service         # CWMP/TR-069 service
 make start-usp-service          # USP core service
 
+# Start MTP Transport Services
+make run-mtp-stomp-background   # STOMP transport
+make run-mtp-mqtt-background    # MQTT transport
+make run-mtp-websocket-background # WebSocket transport
+make run-mtp-uds-background     # Unix Domain Socket transport
+make run-mtp-http-background    # HTTP/HTTPS transport
+
 # Start Working Protocol Agents
-make start-usp-agent            # TR-369 USP agent with onboarding
-make start-cwmp-agent           # TR-069 CWMP agent with onboarding
+make run-usp-agent              # TR-369 USP agent with onboarding
+make run-cwmp-agent             # TR-069 CWMP agent with onboarding
 
 # Check Status
 make consul-status              # View registered services

@@ -9,44 +9,44 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"openusp/internal/cwmp"
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
+	"openusp/pkg/kafka"
 	"openusp/pkg/metrics"
 	"openusp/pkg/version"
 )
 
 // CWMPService provides TR-069 protocol support for backward compatibility
 type CWMPService struct {
-	deployConfig      *config.DeploymentConfig
 	config            *Config
-	cwmpServer        *http.Server // TR-069 protocol server (port 7547)
 	healthServer      *http.Server // Health/status/metrics server (dynamic port)
 	processor         *cwmp.MessageProcessor
 	tr181Mgr          *tr181.DeviceManager
 	metrics           *metrics.OpenUSPMetrics
 	onboardingManager *cwmp.OnboardingManager
+	kafkaClient       *kafka.Client
+	kafkaProducer     *kafka.Producer
+	kafkaConsumer     *kafka.Consumer
+	globalConfig      *config.Config
 	mu                sync.RWMutex
 	connections       map[string]*cwmp.Session
 }
 
 // Config holds configuration for CWMP service
 type Config struct {
-	CWMPPort              int // Standard TR-069 port (7547)
-	HealthPort            int // Dynamic port for health/status/metrics
+	HealthPort            int // Port for health/status/metrics
 	ACSUsername           string
 	ACSPassword           string
 	ConnectionTimeout     time.Duration
 	SessionTimeout        time.Duration
 	MaxConcurrentSessions int
 	EnableAuthentication  bool
-	DataServiceAddress    string
 	TLS                   TLSConfig
 }
 
@@ -58,13 +58,60 @@ type TLSConfig struct {
 }
 
 // NewCWMPService creates a new CWMP service instance
-func NewCWMPService(config *Config) (*CWMPService, error) {
-	if config == nil {
-		config = DefaultConfig(0) // Use port 0 for testing (will be assigned dynamically)
+func NewCWMPService(globalConfig *config.Config) (*CWMPService, error) {
+	// Parse timeout durations from config
+	connTimeout, err := time.ParseDuration(globalConfig.CWMPService.ConnectionTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid connection timeout: %w", err)
+	}
+
+	sessionTimeout, err := time.ParseDuration(globalConfig.CWMPService.SessionTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session timeout: %w", err)
+	}
+
+	// Build service config from global config
+	serviceConfig := &Config{
+		HealthPort:            globalConfig.CWMPServiceHealthPort,
+		ACSUsername:           globalConfig.CWMPService.Username,
+		ACSPassword:           globalConfig.CWMPService.Password,
+		ConnectionTimeout:     connTimeout,
+		SessionTimeout:        sessionTimeout,
+		MaxConcurrentSessions: globalConfig.CWMPService.MaxConcurrentSessions,
+		EnableAuthentication:  globalConfig.CWMPService.AuthenticationEnabled,
+		TLS: TLSConfig{
+			Enabled:  false, // TLS handled by reverse proxy/ingress
+			CertFile: "",
+			KeyFile:  "",
+		},
+	}
+
+	// Initialize Kafka client
+	kafkaClient, err := kafka.NewClient(&globalConfig.Kafka)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka client: %w", err)
+	}
+
+	// Ensure Kafka topics exist
+	topicsManager := kafka.NewTopicsManager(kafkaClient, &globalConfig.Kafka.Topics)
+	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
+		return nil, fmt.Errorf("failed to create Kafka topics: %w", err)
+	}
+
+	// Initialize Kafka producer
+	kafkaProducer, err := kafka.NewProducer(kafkaClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka producer: %w", err)
+	}
+
+	// Initialize Kafka consumer
+	kafkaConsumer, err := kafka.NewConsumer(&globalConfig.Kafka, globalConfig.CWMPService.ConsumerGroup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka consumer: %w", err)
 	}
 
 	// Initialize TR-181 manager for data model support
-	tr181Manager, err := tr181.NewDeviceManager("pkg/datamodel/tr-181-2-19-1-usp-full.xml")
+	tr181Manager, err := tr181.NewDeviceManager(globalConfig.TR181.SchemaPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize TR-181 manager: %w", err)
 	}
@@ -76,22 +123,20 @@ func NewCWMPService(config *Config) (*CWMPService, error) {
 	metricsInstance := metrics.NewOpenUSPMetrics("cwmp-service")
 
 	service := &CWMPService{
-		deployConfig: nil, // Static configuration - no deployment config needed
-		config:       config,
-		processor:    processor,
-		metrics:      metricsInstance,
-		tr181Mgr:     tr181Manager,
-		connections:  make(map[string]*cwmp.Session),
+		//deployConfig:  nil, // Static configuration - no deployment config needed
+		config:        serviceConfig,
+		processor:     processor,
+		metrics:       metricsInstance,
+		tr181Mgr:      tr181Manager,
+		kafkaClient:   kafkaClient,
+		kafkaProducer: kafkaProducer,
+		kafkaConsumer: kafkaConsumer,
+		globalConfig:  globalConfig,
+		connections:   make(map[string]*cwmp.Session),
 	}
 
-	// Now resolve the data service address using the service discovery method
-	dataServiceAddr, err := service.getDataServiceAddress()
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve data service address: %w", err)
-	}
-
-	// Initialize onboarding manager with resolved address
-	onboardingManager, err := cwmp.NewOnboardingManager(dataServiceAddr, tr181Manager)
+	// Initialize onboarding manager with Kafka producer
+	onboardingManager, err := cwmp.NewOnboardingManager(kafkaProducer, tr181Manager, &globalConfig.Kafka.Topics)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize onboarding manager: %w", err)
 	}
@@ -100,132 +145,158 @@ func NewCWMPService(config *Config) (*CWMPService, error) {
 	service.onboardingManager = onboardingManager
 	processor.SetOnboardingManager(onboardingManager)
 
-	// Create CWMP protocol server (TR-069 on standard port 7547)
-	cwmpMux := http.NewServeMux()
-	cwmpMux.HandleFunc("/", service.handleCWMPRequest)
+	// NOTE: CWMP service NO LONGER runs HTTP server on port 7547
+	// TR-069 messages are received via mtp-http service on port 7547
+	// and forwarded to CWMP service through Kafka
 
-	service.cwmpServer = &http.Server{
-		Addr:         fmt.Sprintf(":%d", config.CWMPPort),
-		Handler:      cwmpMux,
-		ReadTimeout:  config.ConnectionTimeout,
-		WriteTimeout: config.ConnectionTimeout,
-		IdleTimeout:  config.SessionTimeout,
-	}
-
-	// Create health/admin server
+	// Create health/admin server only
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/health", service.handleHealth)
 	healthMux.HandleFunc("/status", service.handleStatus)
 	healthMux.Handle("/metrics", metrics.HTTPHandler())
 
 	service.healthServer = &http.Server{
-		Addr:         fmt.Sprintf(":%d", config.HealthPort),
+		Addr:         fmt.Sprintf(":%d", serviceConfig.HealthPort),
 		Handler:      healthMux,
-		ReadTimeout:  config.ConnectionTimeout,
-		WriteTimeout: config.ConnectionTimeout,
-		IdleTimeout:  config.SessionTimeout,
+		ReadTimeout:  serviceConfig.ConnectionTimeout,
+		WriteTimeout: serviceConfig.ConnectionTimeout,
+		IdleTimeout:  serviceConfig.SessionTimeout,
 	}
 
 	return service, nil
 }
 
-// DefaultConfig returns default CWMP service configuration
-func DefaultConfig(healthPort int) *Config {
-	// CWMP protocol port from environment or TR-069 standard port
-	cwmpPort := 7547 // Default TR-069 standard port
-	if portStr := strings.TrimSpace(os.Getenv("OPENUSP_CWMP_SERVICE_PORT")); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			cwmpPort = p
-		}
-	}
-
-	// Data service address - using static configuration
-	dataServiceAddr := "" // Will be populated by getDataServiceAddress()
-
-	return &Config{
-		CWMPPort:              cwmpPort,
-		HealthPort:            healthPort,
-		ACSUsername:           "acs",
-		ACSPassword:           "acs123",
-		ConnectionTimeout:     30 * time.Second,
-		SessionTimeout:        300 * time.Second,
-		MaxConcurrentSessions: 100,
-		EnableAuthentication:  true,
-		DataServiceAddress:    dataServiceAddr,
-		TLS: TLSConfig{
-			Enabled:  false,
-			CertFile: "",
-			KeyFile:  "",
-		},
-	}
-}
-
 // Start starts the CWMP service
 func (s *CWMPService) Start(ctx context.Context) error {
-	log.Printf("🚀 Starting CWMP Service...")
-	log.Printf("   📡 CWMP Protocol Port: %d (TR-069)", s.config.CWMPPort)
-	log.Printf("   🏥 Health API Port: %d (Dynamic)", s.config.HealthPort)
-
-	// Start the CWMP protocol server in a goroutine
+	// Start health server
 	go func() {
-		var err error
-		if s.config.TLS.Enabled {
-			log.Printf("🔒 TLS enabled, using cert: %s, key: %s", s.config.TLS.CertFile, s.config.TLS.KeyFile)
-			err = s.cwmpServer.ListenAndServeTLS(s.config.TLS.CertFile, s.config.TLS.KeyFile)
-		} else {
-			log.Printf("🔓 TLS disabled")
-			err = s.cwmpServer.ListenAndServe()
-		}
-
-		if err != nil && err != http.ErrServerClosed {
-			log.Printf("❌ CWMP protocol server error: %v", err)
-		}
-	}()
-
-	// Start the health/admin server in a goroutine
-	go func() {
-		err := s.healthServer.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
+		log.Printf("🏥 CWMP Service health endpoint listening on port %d", s.config.HealthPort)
+		if err := s.healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("❌ Health server error: %v", err)
 		}
 	}()
 
-	log.Printf("✅ CWMP Service is running")
-	log.Printf("   📍 CWMP Endpoint: http://localhost:%d", s.config.CWMPPort)
-	log.Printf("   � Authentication: %s", map[bool]string{true: "✅ Enabled", false: "❌ Disabled"}[s.config.EnableAuthentication])
-	log.Printf("   ⏱️  Connection Timeout: %v", s.config.ConnectionTimeout)
-	log.Printf("   ⏱️  Session Timeout: %v", s.config.SessionTimeout)
-	log.Printf("   🔧 Health Check: http://localhost:%d/health", s.config.HealthPort)
-	log.Printf("   🔧 Status: http://localhost:%d/status", s.config.HealthPort)
-	log.Printf("   📊 Metrics: http://localhost:%d/metrics", s.config.HealthPort)
+	// Setup Kafka consumers for duplex communication
+	if err := s.setupKafkaConsumers(); err != nil {
+		return fmt.Errorf("failed to setup Kafka consumers: %w", err)
+	}
+
+	// Start Kafka consumer
+	go s.kafkaConsumer.Start()
+
+	log.Printf("✅ CWMP Service started - Kafka consumer: %s, Health: http://localhost:%d",
+		s.globalConfig.CWMPService.ConsumerGroup, s.config.HealthPort)
 
 	// Wait for context cancellation
 	<-ctx.Done()
-	return s.Stop()
+
+	// Graceful shutdown
+	shutdownTimeout, _ := time.ParseDuration(s.globalConfig.CWMPService.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	log.Printf("🛑 Shutting down CWMP service...")
+	s.kafkaConsumer.Stop()
+	s.healthServer.Shutdown(shutdownCtx)
+
+	return nil
 }
 
-// getDataServiceAddress returns the data service address using YAML configuration
-func (s *CWMPService) getDataServiceAddress() (string, error) {
-	cfg := config.Load()
-	portStr := cfg.DataServiceGRPCPort
-	if portStr == "" {
-		return "", fmt.Errorf("data service gRPC port not configured in YAML")
+// setupKafkaConsumers configures Kafka subscriptions for duplex communication
+func (s *CWMPService) setupKafkaConsumers() error {
+	// Subscribe to all relevant topics for duplex communication
+	topics := []string{
+		s.globalConfig.Kafka.Topics.CWMPMessagesInbound,   // From MTP-HTTP service
+		s.globalConfig.Kafka.Topics.CWMPAPIRequest,        // From API Gateway
+		s.globalConfig.Kafka.Topics.CWMPDataRequest,       // From Data Service
+		s.globalConfig.Kafka.Topics.DataDeviceCreated,     // Data events from Data Service
+		s.globalConfig.Kafka.Topics.DataDeviceUpdated,     // Data events from Data Service
+		s.globalConfig.Kafka.Topics.DataParameterUpdated,  // Data events from Data Service
 	}
-	dataServiceAddr := fmt.Sprintf("localhost:%s", portStr)
-	return dataServiceAddr, nil
+
+	// Define message handler
+	handler := func(msg *confluentkafka.Message) error {
+		topic := *msg.TopicPartition.Topic
+		log.Printf("📨 Received message on topic %s: %d bytes", topic, len(msg.Value))
+
+		// Route to appropriate handler based on topic
+		switch topic {
+		case s.globalConfig.Kafka.Topics.CWMPMessagesInbound:
+			return s.handleCWMPMessage(msg)
+		case s.globalConfig.Kafka.Topics.CWMPAPIRequest:
+			return s.handleAPIRequest(msg)
+		case s.globalConfig.Kafka.Topics.CWMPDataRequest:
+			return s.handleDataRequest(msg)
+		case s.globalConfig.Kafka.Topics.DataDeviceCreated,
+			s.globalConfig.Kafka.Topics.DataDeviceUpdated,
+			s.globalConfig.Kafka.Topics.DataParameterUpdated:
+			return s.handleDataEvent(msg)
+		default:
+			log.Printf("⚠️  Unknown topic: %s", topic)
+			return nil
+		}
+	}
+
+	// Subscribe to topics
+	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to Kafka topics: %w", err)
+	}
+
+	log.Printf("✅ Subscribed to %d Kafka topics for duplex communication", len(topics))
+	for _, topic := range topics {
+		log.Printf("   └── %s", topic)
+	}
+	return nil
+}
+
+// handleCWMPMessage processes incoming CWMP messages from MTP-HTTP service
+func (s *CWMPService) handleCWMPMessage(msg *confluentkafka.Message) error {
+	s.processCWMPMessageFromKafka(msg.Value)
+	return nil
+}
+
+// handleAPIRequest processes API requests from API Gateway
+func (s *CWMPService) handleAPIRequest(msg *confluentkafka.Message) error {
+	log.Printf("📥 Processing API request from API Gateway")
+	
+	// TODO: Parse API request, process it, and send response to CWMPAPIResponse topic
+	// For now, just log the request
+	
+	return nil
+}
+
+// handleDataRequest processes data requests from Data Service
+func (s *CWMPService) handleDataRequest(msg *confluentkafka.Message) error {
+	log.Printf("📥 Processing data request from Data Service")
+	
+	// TODO: Parse data request, process it, and send response to CWMPDataResponse topic
+	// For now, just log the request
+	
+	return nil
+}
+
+// handleDataEvent processes data events from Data Service
+func (s *CWMPService) handleDataEvent(msg *confluentkafka.Message) error {
+	topic := *msg.TopicPartition.Topic
+	log.Printf("📥 Processing data event from topic: %s", topic)
+	
+	// TODO: Process data events (device created, updated, parameter changed, etc.)
+	// This allows CWMP service to stay synchronized with data changes
+	
+	return nil
 }
 
 // Stop stops the CWMP service
 func (s *CWMPService) Stop() error {
 	log.Printf("🛑 Stopping CWMP Service...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Use shutdown timeout from config
+	ctx, cancel := context.WithTimeout(context.Background(), s.config.SessionTimeout)
 	defer cancel()
 
 	// Close all active sessions
 	s.mu.Lock()
-	for sessionID, session := range s.connections {
-		log.Printf("🔌 Closing session: %s", sessionID)
+	for _, session := range s.connections {
 		session.Close()
 	}
 	s.connections = make(map[string]*cwmp.Session)
@@ -238,16 +309,17 @@ func (s *CWMPService) Stop() error {
 		}
 	}
 
-	// Shutdown both HTTP servers
-	var shutdownErr error
+	// Close Kafka connections
+	if s.kafkaProducer != nil {
+		s.kafkaProducer.Close()
+	}
 
-	// Shutdown CWMP protocol server
-	if err := s.cwmpServer.Shutdown(ctx); err != nil {
-		log.Printf("❌ Error shutting down CWMP protocol server: %v", err)
-		shutdownErr = err
+	if s.kafkaClient != nil {
+		s.kafkaClient.Close()
 	}
 
 	// Shutdown health server
+	var shutdownErr error
 	if err := s.healthServer.Shutdown(ctx); err != nil {
 		log.Printf("❌ Error shutting down health server: %v", err)
 		if shutdownErr == nil {
@@ -259,7 +331,6 @@ func (s *CWMPService) Stop() error {
 		return shutdownErr
 	}
 
-	log.Printf("✅ CWMP Service stopped")
 	return nil
 }
 
@@ -306,7 +377,7 @@ func (s *CWMPService) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service":            "cwmp-service",
 		"status":             "healthy",
 		"timestamp":          time.Now().UTC().Format(time.RFC3339),
-		"version":            "1.0.0",
+		"version":            version.Version,
 		"protocol":           "TR-069 v1.2",
 		"protocol_namespace": "urn:dslforum-org:cwmp-1-2",
 		"supported_versions": []string{"1.0", "1.1", "1.2"},
@@ -427,22 +498,16 @@ func main() {
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Environment Variables:")
-		fmt.Println("  SERVICE_PORT       - HTTP port (default: 7547)")
+		fmt.Println("All configuration loaded from configs/openusp.yml")
+		fmt.Println("Environment variables can override YAML values (see openusp.yml comments)")
 		return
 	}
 
-	// Fixed ports – no environment overrides needed
+	// Load configuration from YAML file
+	globalConfig := config.Load()
 
-	// Load configuration
-	fullConfig := config.Load()
-	servicePort, _ := strconv.Atoi(fullConfig.CWMPServicePort)
-	healthPort := servicePort + 1
-	config := DefaultConfig(healthPort)
-	_ = servicePort // Remove unused deployConfig and httpPort
-
-	// Create CWMP service
-	cwmpService, err := NewCWMPService(config)
+	// Create CWMP service with loaded configuration
+	cwmpService, err := NewCWMPService(globalConfig)
 	if err != nil {
 		log.Fatalf("Failed to create CWMP service: %v", err)
 	}
@@ -456,22 +521,48 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Printf("� Received shutdown signal")
-
-		// Fixed ports – no service deregistration needed
-
+		log.Printf("🛑 Received shutdown signal")
 		cancel()
 	}()
 
-	// Start CWMP service and show status
-	log.Printf("🚀 CWMP Service started successfully")
-	log.Printf("   └── HTTP Port: %d", servicePort)
-	log.Printf("   └── Health Check: http://localhost:%d/health", healthPort)
-	log.Printf("   └── Status: http://localhost:%d/status", healthPort)
-
+	// Start CWMP service
 	if err := cwmpService.Start(ctx); err != nil {
 		log.Fatalf("CWMP service error: %v", err)
 	}
 
-	log.Printf("✅ CWMP Service stopped successfully")
+	log.Printf("✅ CWMP Service stopped")
+}
+
+// processCWMPMessageFromKafka processes a TR-069/CWMP message received from Kafka
+func (s *CWMPService) processCWMPMessageFromKafka(data []byte) {
+	// Unmarshal the CWMP message wrapper
+	type CWMPMessage struct {
+		Payload  []byte            `json:"payload"`
+		Metadata map[string]string `json:"metadata"`
+	}
+
+	var cwmpMsg CWMPMessage
+	if err := json.Unmarshal(data, &cwmpMsg); err != nil {
+		log.Printf("❌ Failed to unmarshal CWMP message: %v", err)
+		return
+	}
+
+	log.Printf("📦 Processing TR-069 message (%d bytes) from %s", len(cwmpMsg.Payload), cwmpMsg.Metadata["client-address"])
+
+	// Process the TR-069 SOAP payload using the existing processor
+	// Note: This would typically parse the SOAP envelope and extract the CWMP method
+	//response, err := s.processor.ProcessMessage(cwmpMsg.Payload)
+	//if err != nil {
+	//	log.Printf("❌ Error processing CWMP message: %v", err)
+	//	return
+	//}
+
+	// TODO: Parse SOAP envelope and call appropriate CWMP handler
+
+	// In a full implementation, we would:
+	// 1. Parse the SOAP envelope
+	// 2. Extract the CWMP method (Inform, GetParameterValues, etc.)
+	// 3. Call the appropriate handler in processor
+	// 4. Generate SOAP response
+	// 5. Send response back via Kafka to mtp-http
 }
