@@ -6,8 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"openusp/pkg/config"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // Client wraps Kafka producer and consumer functionality

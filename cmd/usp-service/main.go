@@ -79,12 +79,12 @@ func NewUSPCoreService(cfg *config.Config) (*USPCoreService, error) {
 func (s *USPCoreService) setupKafkaConsumers() error {
 	// Subscribe to all relevant topics for duplex communication
 	topics := []string{
-		s.config.Kafka.Topics.USPMessagesInbound,   // From MTP services (STOMP, MQTT, WebSocket)
-		s.config.Kafka.Topics.USPAPIRequest,        // From API Gateway
-		s.config.Kafka.Topics.USPDataRequest,       // From Data Service
-		s.config.Kafka.Topics.DataDeviceCreated,    // Data events from Data Service
-		s.config.Kafka.Topics.DataDeviceUpdated,    // Data events from Data Service
-		s.config.Kafka.Topics.DataParameterUpdated, // Data events from Data Service
+		s.config.Kafka.Topics.USPMessagesInbound,       // From MTP services (STOMP, MQTT, WebSocket)
+		s.config.Kafka.Topics.USPAPIRequest,            // From API Gateway
+		s.config.Kafka.Topics.USPDataRequest,           // From Data Service
+		s.config.Kafka.Topics.DataDeviceCreated,        // Data events from Data Service
+		s.config.Kafka.Topics.DataDeviceUpdated,        // Data events from Data Service
+		s.config.Kafka.Topics.DataParameterUpdated,     // Data events from Data Service
 		s.config.Kafka.Topics.MTPConnectionEstablished, // MTP connection events
 		s.config.Kafka.Topics.MTPConnectionClosed,      // MTP connection events
 	}
@@ -153,20 +153,20 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 // handleAPIRequest processes API requests from API Gateway
 func (s *USPCoreService) handleAPIRequest(msg *confluentkafka.Message) error {
 	log.Printf("📥 Processing API request from API Gateway")
-	
+
 	// TODO: Parse API request, process it, and send response to USPAPIResponse topic
 	// For now, just log the request
-	
+
 	return nil
 }
 
 // handleDataRequest processes data requests from Data Service
 func (s *USPCoreService) handleDataRequest(msg *confluentkafka.Message) error {
 	log.Printf("📥 Processing data request from Data Service")
-	
+
 	// TODO: Parse data request, process it, and send response to USPDataResponse topic
 	// For now, just log the request
-	
+
 	return nil
 }
 
@@ -174,10 +174,10 @@ func (s *USPCoreService) handleDataRequest(msg *confluentkafka.Message) error {
 func (s *USPCoreService) handleDataEvent(msg *confluentkafka.Message) error {
 	topic := *msg.TopicPartition.Topic
 	log.Printf("📥 Processing data event from topic: %s", topic)
-	
+
 	// TODO: Process data events (device created, updated, parameter changed, etc.)
 	// This allows USP service to stay synchronized with data changes
-	
+
 	return nil
 }
 
@@ -185,23 +185,23 @@ func (s *USPCoreService) handleDataEvent(msg *confluentkafka.Message) error {
 func (s *USPCoreService) handleMTPEvent(msg *confluentkafka.Message) error {
 	topic := *msg.TopicPartition.Topic
 	log.Printf("📥 Processing MTP event from topic: %s", topic)
-	
+
 	// TODO: Track MTP connection state, update device status, etc.
-	
+
 	return nil
 }
 
 // DetectUSPVersion detects USP protocol version from raw message data
 func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 	log.Printf("🔍 Attempting to detect USP version from %d bytes of data", len(data))
-	
+
 	// Try to unmarshal as USP 1.3 first (most common)
 	var record13 v1_3.Record
 	err13 := proto.Unmarshal(data, &record13)
 	if err13 == nil {
-		log.Printf("🔍 Successfully unmarshaled as v1.3 Record - Version=%q, FromId=%q, ToId=%q, RecordType=%T", 
+		log.Printf("🔍 Successfully unmarshaled as v1.3 Record - Version=%q, FromId=%q, ToId=%q, RecordType=%T",
 			record13.Version, record13.FromId, record13.ToId, record13.RecordType)
-		
+
 		// Check if version field is set and valid
 		if record13.Version != "" {
 			log.Printf("🔍 Detected USP version from Record.Version field: %s", record13.Version)
@@ -215,7 +215,7 @@ func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 		}
 		// If version field is not set but unmarshal succeeded with FromId/ToId, assume 1.3
 		if record13.FromId != "" || record13.ToId != "" {
-			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.3", 
+			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.3",
 				record13.FromId, record13.ToId)
 			return "1.3", nil
 		}
@@ -227,16 +227,16 @@ func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 	var record14 v1_4.Record
 	err14 := proto.Unmarshal(data, &record14)
 	if err14 == nil {
-		log.Printf("🔍 Successfully unmarshaled as v1.4 Record - Version=%q, FromId=%q, ToId=%q", 
+		log.Printf("🔍 Successfully unmarshaled as v1.4 Record - Version=%q, FromId=%q, ToId=%q",
 			record14.Version, record14.FromId, record14.ToId)
-		
+
 		if record14.Version == "1.4" || record14.Version == "1.4.0" {
 			log.Printf("🔍 Detected USP version 1.4 from Record.Version field")
 			return "1.4", nil
 		}
 		// If version field is not set but unmarshal succeeded with FromId/ToId, check for 1.4 specific fields
 		if record14.FromId != "" || record14.ToId != "" {
-			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.4", 
+			log.Printf("🔍 Version field empty but Record has FromId=%q, ToId=%q, defaulting to USP 1.4",
 				record14.FromId, record14.ToId)
 			return "1.4", nil
 		}
@@ -244,9 +244,9 @@ func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 		log.Printf("⚠️ Failed to unmarshal as v1.4 Record: %v", err14)
 	}
 
-	log.Printf("❌ Unable to detect USP version - Record.Version: v1.3=%q, v1.4=%q, FromId: v1.3=%q, v1.4=%q", 
+	log.Printf("❌ Unable to detect USP version - Record.Version: v1.3=%q, v1.4=%q, FromId: v1.3=%q, v1.4=%q",
 		record13.Version, record14.Version, record13.FromId, record14.FromId)
-	
+
 	// Debug: Show first 100 bytes of data in hex
 	if len(data) > 0 {
 		maxBytes := 100
@@ -255,7 +255,7 @@ func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 		}
 		log.Printf("🔍 First %d bytes (hex): %x", maxBytes, data[:maxBytes])
 	}
-	
+
 	return "", fmt.Errorf("unable to detect USP version")
 }
 
@@ -354,7 +354,7 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 	}
 
 	log.Printf("USP 1.3 message from %s to %s", record.FromId, record.ToId)
-	
+
 	agentEndpointID := record.FromId // Capture for potential auto-discovery
 
 	// Handle MTP-layer connection records (no payload, no response needed)
@@ -673,15 +673,15 @@ func (s *USPCoreService) handleUSP13GetSupportedDM(msg *v1_3.Msg) *v1_3.Msg {
 // handleUSP14Notify handles NOTIFY messages (including Boot! Event) for USP 1.4
 func (s *USPCoreService) handleUSP14Notify(msg *v1_4.Msg) *v1_4.Msg {
 	notify := msg.Body.GetRequest().GetNotify()
-	
+
 	// Log the notification details
 	if notify != nil {
 		log.Printf("📨 NOTIFY: Subscription ID: %s", notify.SubscriptionId)
-		
+
 		// Check if this is an Event notification (including Boot! Event)
 		if event := notify.GetEvent(); event != nil {
 			log.Printf("📨 EVENT: ObjPath=%s, EventName=%s", event.ObjPath, event.EventName)
-			
+
 			// Handle Boot! Event
 			if event.EventName == "Boot!" {
 				log.Printf("🔔 Received Boot! Event from agent (TR-369 onboarding)")
@@ -692,7 +692,7 @@ func (s *USPCoreService) handleUSP14Notify(msg *v1_4.Msg) *v1_4.Msg {
 			}
 		}
 	}
-	
+
 	// Return NotifyResp acknowledgment
 	return &v1_4.Msg{
 		Header: &v1_4.Header{
@@ -716,15 +716,15 @@ func (s *USPCoreService) handleUSP14Notify(msg *v1_4.Msg) *v1_4.Msg {
 // handleUSP13Notify handles NOTIFY messages (including Boot! Event) for USP 1.3
 func (s *USPCoreService) handleUSP13Notify(msg *v1_3.Msg) *v1_3.Msg {
 	notify := msg.Body.GetRequest().GetNotify()
-	
+
 	// Log the notification details
 	if notify != nil {
 		log.Printf("📨 NOTIFY: Subscription ID: %s", notify.SubscriptionId)
-		
+
 		// Check if this is an Event notification (including Boot! Event)
 		if event := notify.GetEvent(); event != nil {
 			log.Printf("📨 EVENT: ObjPath=%s, EventName=%s", event.ObjPath, event.EventName)
-			
+
 			// Handle Boot! Event
 			if event.EventName == "Boot!" {
 				log.Printf("🔔 Received Boot! Event from agent (TR-369 onboarding)")
@@ -735,7 +735,7 @@ func (s *USPCoreService) handleUSP13Notify(msg *v1_3.Msg) *v1_3.Msg {
 			}
 		}
 	}
-	
+
 	// Return NotifyResp acknowledgment
 	return &v1_3.Msg{
 		Header: &v1_3.Header{
@@ -765,7 +765,7 @@ func (s *USPCoreService) getParameterValue(path string) string {
 
 	// Get values from USP Agent configuration (from YAML)
 	agentConfig := s.config.USPAgentDevice
-	
+
 	switch path {
 	case "Device.DeviceInfo.Manufacturer":
 		if agentConfig.Manufacturer != "" {
@@ -994,28 +994,28 @@ func (s *USPCoreService) triggerAgentAutoDiscovery(agentEndpointID, uspVersion s
 	// Step 3: Send Get request for key parameters
 	log.Printf("📋 Sending Get request for Device.DeviceInfo. parameters to %s", agentEndpointID)
 	// TODO: Implement sending Get request
-	
+
 	log.Printf("✅ Auto-discovery workflow initiated for agent: %s", agentEndpointID)
 }
 
 // registerDeviceFromBootParams creates/updates device record using Boot! Event parameters
 func (s *USPCoreService) registerDeviceFromBootParams(agentEndpointID string, bootParams map[string]string) error {
 	log.Printf("📝 Registering device from Boot! Event parameters")
-	
+
 	// Extract key device information from Boot! params
 	deviceData := map[string]interface{}{
-		"endpoint_id":     agentEndpointID,
-		"manufacturer":    bootParams["Manufacturer"],
-		"model_name":      bootParams["ModelName"],
-		"serial_number":   bootParams["SerialNumber"],
-		"product_class":   bootParams["ProductClass"],
+		"endpoint_id":      agentEndpointID,
+		"manufacturer":     bootParams["Manufacturer"],
+		"model_name":       bootParams["ModelName"],
+		"serial_number":    bootParams["SerialNumber"],
+		"product_class":    bootParams["ProductClass"],
 		"software_version": bootParams["SoftwareVersion"],
 		"firmware_version": bootParams["SoftwareVersion"], // Often the same
 		"hardware_version": bootParams["HardwareVersion"],
-		"boot_cause":      bootParams["Cause"],
-		"onboarded_at":    time.Now().Format(time.RFC3339),
-		"last_boot_at":    time.Now().Format(time.RFC3339),
-		"status":          "online",
+		"boot_cause":       bootParams["Cause"],
+		"onboarded_at":     time.Now().Format(time.RFC3339),
+		"last_boot_at":     time.Now().Format(time.RFC3339),
+		"status":           "online",
 	}
 
 	// Publish device registration event to Kafka
@@ -1033,7 +1033,7 @@ func (s *USPCoreService) registerDeviceFromBootParams(agentEndpointID string, bo
 		return fmt.Errorf("failed to publish device.onboarded event: %w", err)
 	}
 
-	log.Printf("✅ Published device.onboarded event for %s to topic: %s", 
+	log.Printf("✅ Published device.onboarded event for %s to topic: %s",
 		agentEndpointID, s.config.Kafka.Topics.DataDeviceCreated)
 
 	return nil

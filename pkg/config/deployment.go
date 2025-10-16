@@ -108,11 +108,11 @@ func LoadMTPConfig() *MTPConfig {
 		panic(fmt.Sprintf("Failed to parse %s: %v", yamlPath, err))
 	}
 	return &MTPConfig{
-		WebSocketEnabled:  unified.MTP.Transports.WebSocketEnabled,
-		MQTTEnabled:       unified.MTP.Transports.MQTTEnabled,
-		STOMPEnabled:      unified.MTP.Transports.STOMPEnabled,
-		GRPCPort:          unified.USPService.GRPCPort,
-		Address:           unified.USPService.Address,
+		WebSocketEnabled: unified.MTP.Transports.WebSocketEnabled,
+		MQTTEnabled:      unified.MTP.Transports.MQTTEnabled,
+		STOMPEnabled:     unified.MTP.Transports.STOMPEnabled,
+		GRPCPort:         unified.USPService.GRPCPort,
+		Address:          unified.USPService.Address,
 	}
 }
 

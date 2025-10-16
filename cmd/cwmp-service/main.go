@@ -13,13 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"openusp/internal/cwmp"
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 	"openusp/pkg/metrics"
 	"openusp/pkg/version"
+
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // CWMPService provides TR-069 protocol support for backward compatibility
@@ -206,12 +207,12 @@ func (s *CWMPService) Start(ctx context.Context) error {
 func (s *CWMPService) setupKafkaConsumers() error {
 	// Subscribe to all relevant topics for duplex communication
 	topics := []string{
-		s.globalConfig.Kafka.Topics.CWMPMessagesInbound,   // From MTP-HTTP service
-		s.globalConfig.Kafka.Topics.CWMPAPIRequest,        // From API Gateway
-		s.globalConfig.Kafka.Topics.CWMPDataRequest,       // From Data Service
-		s.globalConfig.Kafka.Topics.DataDeviceCreated,     // Data events from Data Service
-		s.globalConfig.Kafka.Topics.DataDeviceUpdated,     // Data events from Data Service
-		s.globalConfig.Kafka.Topics.DataParameterUpdated,  // Data events from Data Service
+		s.globalConfig.Kafka.Topics.CWMPMessagesInbound,  // From MTP-HTTP service
+		s.globalConfig.Kafka.Topics.CWMPAPIRequest,       // From API Gateway
+		s.globalConfig.Kafka.Topics.CWMPDataRequest,      // From Data Service
+		s.globalConfig.Kafka.Topics.DataDeviceCreated,    // Data events from Data Service
+		s.globalConfig.Kafka.Topics.DataDeviceUpdated,    // Data events from Data Service
+		s.globalConfig.Kafka.Topics.DataParameterUpdated, // Data events from Data Service
 	}
 
 	// Define message handler
@@ -258,20 +259,20 @@ func (s *CWMPService) handleCWMPMessage(msg *confluentkafka.Message) error {
 // handleAPIRequest processes API requests from API Gateway
 func (s *CWMPService) handleAPIRequest(msg *confluentkafka.Message) error {
 	log.Printf("📥 Processing API request from API Gateway")
-	
+
 	// TODO: Parse API request, process it, and send response to CWMPAPIResponse topic
 	// For now, just log the request
-	
+
 	return nil
 }
 
 // handleDataRequest processes data requests from Data Service
 func (s *CWMPService) handleDataRequest(msg *confluentkafka.Message) error {
 	log.Printf("📥 Processing data request from Data Service")
-	
+
 	// TODO: Parse data request, process it, and send response to CWMPDataResponse topic
 	// For now, just log the request
-	
+
 	return nil
 }
 
@@ -279,10 +280,10 @@ func (s *CWMPService) handleDataRequest(msg *confluentkafka.Message) error {
 func (s *CWMPService) handleDataEvent(msg *confluentkafka.Message) error {
 	topic := *msg.TopicPartition.Topic
 	log.Printf("📥 Processing data event from topic: %s", topic)
-	
+
 	// TODO: Process data events (device created, updated, parameter changed, etc.)
 	// This allows CWMP service to stay synchronized with data changes
-	
+
 	return nil
 }
 

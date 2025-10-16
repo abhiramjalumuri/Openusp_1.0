@@ -15,10 +15,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ============================================================================
-// USP CLIENT CONFIGURATION
-// ============================================================================
-
 const (
 	// USP Agent Configuration - now loaded from configuration
 	// Default values - should be overridden via configuration
@@ -207,42 +203,27 @@ func NewUSPClient(endpointID, controllerID, version string, tr Transport, agentC
 func (c *USPClient) Connect() error { return c.transport.Connect() }
 func (c *USPClient) Close() error   { return c.transport.Close() }
 
-// createOnboardingMessage creates a USP Notify message with Boot! event (TR-369 standard onboarding)
+// createOnboardingMessage creates a USP Notify message with device onboarding information
 func (c *USPClient) createOnboardingMessage() ([]byte, error) {
 	if c.version == "1.4" {
-		return c.createBootEventV14()
+		return c.createOnboardingMessageV14()
 	}
-	return c.createBootEventV13()
+	return c.createOnboardingMessageV13()
 }
 
-// createBootEventV13 creates a USP v1.3 Boot! Event Notification (TR-369 standard onboarding)
-func (c *USPClient) createBootEventV13() ([]byte, error) {
-	// Per TR-369: Agent MUST send Boot! event on startup/reconnect
-	// This is the standard onboarding mechanism
-
-	// Create Boot! Event with device parameters
-	bootEvent := &pb_v1_3.Notify_Event{
-		ObjPath:   "Device.Boot!",
-		EventName: "Boot!",
-		Params: map[string]string{
-			"Cause":           "LocalReboot",
-			"CommandKey":      "",
-			"FirmwareUpdated": "false",
-			"ParameterMap":    "",
-			"SoftwareVersion": deviceManufacturer + " " + deviceModelName,
-			"Manufacturer":    deviceManufacturer,
-			"ModelName":       deviceModelName,
-			"SerialNumber":    deviceSerialNumber,
-			"ProductClass":    deviceProductClass,
-		},
-	}
-
-	// Create USP Notify Request
+// createOnboardingMessageV13 creates a USP v1.3 Notify message with device onboarding information
+func (c *USPClient) createOnboardingMessageV13() ([]byte, error) {
+	// Create USP Notify Request for Device Onboarding using v1.3
 	notifyReq := &pb_v1_3.Notify{
-		SubscriptionId: "boot-event-subscription",
+		SubscriptionId: "device-onboarding",
 		SendResp:       true,
-		Notification: &pb_v1_3.Notify_Event_{
-			Event: bootEvent,
+		Notification: &pb_v1_3.Notify_OnBoardReq{
+			OnBoardReq: &pb_v1_3.Notify_OnBoardRequest{
+				Oui:                            "001122", // IEEE OUI for OpenUSP
+				ProductClass:                   deviceProductClass,
+				SerialNumber:                   deviceSerialNumber,
+				AgentSupportedProtocolVersions: supportedProtocolVersions,
+			},
 		},
 	}
 
@@ -256,7 +237,7 @@ func (c *USPClient) createBootEventV13() ([]byte, error) {
 	// Create USP Message
 	msg := &pb_v1_3.Msg{
 		Header: &pb_v1_3.Header{
-			MsgId:   fmt.Sprintf("boot-%d", time.Now().Unix()),
+			MsgId:   fmt.Sprintf("onboard-%d", time.Now().Unix()),
 			MsgType: pb_v1_3.Header_NOTIFY,
 		},
 		Body: &pb_v1_3.Body{
@@ -287,33 +268,19 @@ func (c *USPClient) createBootEventV13() ([]byte, error) {
 	return proto.Marshal(record)
 }
 
-// createBootEventV14 creates a USP v1.4 Boot! Event Notification (TR-369 standard onboarding)
-func (c *USPClient) createBootEventV14() ([]byte, error) {
-	// Per TR-369: Agent MUST send Boot! event on startup/reconnect
-
-	// Create Boot! Event with device parameters
-	bootEvent := &pb_v1_4.Notify_Event{
-		ObjPath:   "Device.Boot!",
-		EventName: "Boot!",
-		Params: map[string]string{
-			"Cause":           "LocalReboot",
-			"CommandKey":      "",
-			"FirmwareUpdated": "false",
-			"ParameterMap":    "",
-			"SoftwareVersion": deviceManufacturer + " " + deviceModelName,
-			"Manufacturer":    deviceManufacturer,
-			"ModelName":       deviceModelName,
-			"SerialNumber":    deviceSerialNumber,
-			"ProductClass":    deviceProductClass,
-		},
-	}
-
-	// Create USP Notify Request
+// createOnboardingMessageV14 creates a USP v1.4 Notify message with device onboarding information
+func (c *USPClient) createOnboardingMessageV14() ([]byte, error) {
+	// Create USP Notify Request for Device Onboarding
 	notifyReq := &pb_v1_4.Notify{
-		SubscriptionId: "boot-event-subscription",
+		SubscriptionId: "device-onboarding",
 		SendResp:       true,
-		Notification: &pb_v1_4.Notify_Event_{
-			Event: bootEvent,
+		Notification: &pb_v1_4.Notify_OnBoardReq{
+			OnBoardReq: &pb_v1_4.Notify_OnBoardRequest{
+				Oui:                            "001122", // IEEE OUI for OpenUSP
+				ProductClass:                   deviceProductClass,
+				SerialNumber:                   deviceSerialNumber,
+				AgentSupportedProtocolVersions: "1.3,1.4",
+			},
 		},
 	}
 
@@ -471,14 +438,11 @@ func (c *USPClient) createGetMessageV14() ([]byte, error) {
 }
 
 func (c *USPClient) sendRecord(recordBytes []byte) error {
-	// Parse the record to extract message type for logging
-	msgType := extractMessageType(recordBytes, c.version)
-	log.Printf("📤 SEND: USP %s message (size: %d bytes, version: %s) via %s", msgType, len(recordBytes), c.version, c.transport.Name())
-
+	log.Printf("Sending USP Record (size: %d bytes, version: %s) via %s", len(recordBytes), c.version, c.transport.Name())
 	if err := c.transport.Send(recordBytes); err != nil {
 		return fmt.Errorf("send record: %w", err)
 	}
-	log.Printf("✅ SENT: USP %s message successfully via %s", msgType, c.transport.Name())
+	log.Printf("USP Record sent successfully via %s", c.transport.Name())
 	return nil
 }
 
@@ -487,54 +451,8 @@ func (c *USPClient) readResponse() error {
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
-
-	// Parse the response to extract message type for logging
-	msgType := extractMessageType(resp, c.version)
-	log.Printf("📥 RECV: USP %s response (%d bytes) via %s", msgType, len(resp), c.transport.Name())
+	log.Printf("Received response via %s (%d bytes)", c.transport.Name(), len(resp))
 	return nil
-}
-
-// extractMessageType parses a USP Record to extract the message type
-func extractMessageType(recordBytes []byte, version string) string {
-	if version == "1.3" {
-		var record pb_v1_3.Record
-		if err := proto.Unmarshal(recordBytes, &record); err != nil {
-			return "UNKNOWN"
-		}
-
-		// Extract payload from NoSessionContext
-		if noSession := record.GetNoSessionContext(); noSession != nil {
-			var msg pb_v1_3.Msg
-			if err := proto.Unmarshal(noSession.Payload, &msg); err != nil {
-				return "UNKNOWN"
-			}
-
-			// Get message type from header
-			if msg.Header != nil {
-				return msg.Header.MsgType.String()
-			}
-		}
-	} else if version == "1.4" {
-		var record pb_v1_4.Record
-		if err := proto.Unmarshal(recordBytes, &record); err != nil {
-			return "UNKNOWN"
-		}
-
-		// Extract payload from NoSessionContext
-		if noSession := record.GetNoSessionContext(); noSession != nil {
-			var msg pb_v1_4.Msg
-			if err := proto.Unmarshal(noSession.Payload, &msg); err != nil {
-				return "UNKNOWN"
-			}
-
-			// Get message type from header
-			if msg.Header != nil {
-				return msg.Header.MsgType.String()
-			}
-		}
-	}
-
-	return "UNKNOWN"
 }
 
 // registerDeviceWithAPI registers the device with the OpenUSP API Gateway
@@ -543,24 +461,23 @@ func demonstrateUSPOperations(client *USPClient) error {
 	log.Printf("\n🚀 Starting TR-369 USP Client Demonstration")
 	log.Printf("=========================================")
 
-	// Step 1: Send Boot! Event (TR-369 Standard Onboarding)
-	log.Printf("\n1️⃣  Sending Boot! Event (TR-369 Standard Onboarding)...")
+	// Step 1: Send Device Onboarding Request
+	log.Printf("\n1️⃣  Sending Device Onboarding Request...")
 	log.Printf("   Device: %s %s (S/N: %s)", deviceManufacturer, deviceModelName, deviceSerialNumber)
 	log.Printf("   Agent Endpoint: %s", client.endpointID)
-	log.Printf("   Per TR-369: Agent MUST send Boot! event on startup/reconnect")
 
 	onboardRecord, err := client.createOnboardingMessage()
 	if err != nil {
-		return fmt.Errorf("failed to create Boot! event: %w", err)
+		return fmt.Errorf("failed to create onboarding message: %w", err)
 	}
 
 	if err := client.sendRecord(onboardRecord); err != nil {
-		return fmt.Errorf("failed to send Boot! event: %w", err)
+		return fmt.Errorf("failed to send onboarding request: %w", err)
 	}
 
-	log.Printf("Waiting for Boot! event acknowledgment...")
+	log.Printf("Waiting for onboarding response...")
 	if err := client.readResponse(); err != nil {
-		log.Printf("Error reading Boot! event response: %v", err)
+		log.Printf("Error reading onboarding response: %v", err)
 	}
 
 	// Small delay between operations

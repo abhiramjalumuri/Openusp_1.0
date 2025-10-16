@@ -98,16 +98,16 @@ type TR369Config struct {
 	MQTTKeepAlive     time.Duration `json:"mqtt_keep_alive"`
 
 	// STOMP MTP
-	STOMPBrokerURL             string        `json:"stomp_broker_url"`
-	STOMPUsername              string        `json:"stomp_username"`
-	STOMPPassword              string        `json:"stomp_password"`
-	STOMPDestinationRequest    string        `json:"stomp_destinations_request"`
-	STOMPDestinationResponse   string        `json:"stomp_destinations_response"`
-	STOMPDestinationOutbound   string        `json:"stomp_destinations_outbound"`
-	STOMPDestinationInbound    string        `json:"stomp_destinations_inbound"`
-	STOMPDestinationBroadcast  string        `json:"stomp_destinations_broadcast"`
-	STOMPHeartbeatSend         time.Duration `json:"stomp_heartbeat_send"`
-	STOMPHeartbeatReceive      time.Duration `json:"stomp_heartbeat_receive"`
+	STOMPBrokerURL            string        `json:"stomp_broker_url"`
+	STOMPUsername             string        `json:"stomp_username"`
+	STOMPPassword             string        `json:"stomp_password"`
+	STOMPDestinationRequest   string        `json:"stomp_destinations_request"`
+	STOMPDestinationResponse  string        `json:"stomp_destinations_response"`
+	STOMPDestinationOutbound  string        `json:"stomp_destinations_outbound"`
+	STOMPDestinationInbound   string        `json:"stomp_destinations_inbound"`
+	STOMPDestinationBroadcast string        `json:"stomp_destinations_broadcast"`
+	STOMPHeartbeatSend        time.Duration `json:"stomp_heartbeat_send"`
+	STOMPHeartbeatReceive     time.Duration `json:"stomp_heartbeat_receive"`
 
 	// Unix Domain Socket MTP
 	UDSSocketPath string `json:"uds_socket_path"`

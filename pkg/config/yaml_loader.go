@@ -105,17 +105,17 @@ type YAMLTR369Config struct {
 		} `yaml:"mqtt"`
 
 		STOMP struct {
-			BrokerURL             string `yaml:"broker_url"`
-			Username              string `yaml:"username"`
-			Password              string `yaml:"password"`
-			DestinationRequest    string `yaml:"destination_request"`
-			DestinationResponse   string `yaml:"destination_response"`
-			DestinationOutbound   string `yaml:"destination_outbound"`
-			DestinationInbound    string `yaml:"destination_inbound"`
-			DestinationBroadcast  string `yaml:"destination_broadcast"`
-			HeartbeatSend         string `yaml:"heartbeat_send"`
-			HeartbeatReceive      string `yaml:"heartbeat_receive"`
-			MessageEncoding       string `yaml:"message_encoding"`
+			BrokerURL            string `yaml:"broker_url"`
+			Username             string `yaml:"username"`
+			Password             string `yaml:"password"`
+			DestinationRequest   string `yaml:"destination_request"`
+			DestinationResponse  string `yaml:"destination_response"`
+			DestinationOutbound  string `yaml:"destination_outbound"`
+			DestinationInbound   string `yaml:"destination_inbound"`
+			DestinationBroadcast string `yaml:"destination_broadcast"`
+			HeartbeatSend        string `yaml:"heartbeat_send"`
+			HeartbeatReceive     string `yaml:"heartbeat_receive"`
+			MessageEncoding      string `yaml:"message_encoding"`
 		} `yaml:"stomp"`
 
 		UDS struct {

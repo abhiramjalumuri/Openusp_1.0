@@ -19,10 +19,10 @@ type YAMLConfig struct {
 			// NOTE: cwmp_service HTTP port removed - TR-069 handled by mtp-http on port 7547
 		} `yaml:"http"`
 		Health struct {
-			APIGateway  int `yaml:"api_gateway"`
-			DataService int `yaml:"data_service"`
-			USPService  int `yaml:"usp_service"`
-			CWMPService int `yaml:"cwmp_service"`
+			APIGateway   int `yaml:"api_gateway"`
+			DataService  int `yaml:"data_service"`
+			USPService   int `yaml:"usp_service"`
+			CWMPService  int `yaml:"cwmp_service"`
 			MTPStomp     int `yaml:"mtp_stomp"`
 			MTPMqtt      int `yaml:"mtp_mqtt"`
 			MTPWebsocket int `yaml:"mtp_websocket"`
@@ -57,7 +57,11 @@ type YAMLConfig struct {
 			EnableAutoCommit     bool   `yaml:"enable_auto_commit"`
 			AutoCommitIntervalMs int    `yaml:"auto_commit_interval_ms"`
 			SessionTimeoutMs     int    `yaml:"session_timeout_ms"`
+			HeartbeatIntervalMs  int    `yaml:"heartbeat_interval_ms"`
+			MaxPollIntervalMs    int    `yaml:"max_poll_interval_ms"`
 			MaxPollRecords       int    `yaml:"max_poll_records"`
+			FetchMinBytes        int    `yaml:"fetch_min_bytes"`
+			FetchMaxWaitMs       int    `yaml:"fetch_max_wait_ms"`
 		} `yaml:"consumer"`
 		Topics struct {
 			USPMessagesInbound       string `yaml:"usp_messages_inbound"`
@@ -305,10 +309,10 @@ type Config struct {
 	// Note: CWMP service no longer uses HTTP port - TR-069 handled by mtp-http on port 7547
 
 	// Health Check Ports
-	APIGatewayHealthPort  int
-	DataServiceHealthPort int
-	USPServiceHealthPort  int
-	CWMPServiceHealthPort int
+	APIGatewayHealthPort   int
+	DataServiceHealthPort  int
+	USPServiceHealthPort   int
+	CWMPServiceHealthPort  int
 	MTPStompHealthPort     int
 	MTPMqttHealthPort      int
 	MTPWebsocketHealthPort int
@@ -401,7 +405,11 @@ type KafkaConsumerConfig struct {
 	EnableAutoCommit     bool
 	AutoCommitIntervalMs int
 	SessionTimeoutMs     int
+	HeartbeatIntervalMs  int
+	MaxPollIntervalMs    int
 	MaxPollRecords       int
+	FetchMinBytes        int
+	FetchMaxWaitMs       int
 }
 
 // KafkaTopics holds all Kafka topic names
@@ -512,18 +520,18 @@ type InfraConfig struct {
 
 // MTPConfig holds MTP transport configuration
 type MTPConfig struct {
-	WebSocketEnabled  bool
-	MQTTEnabled       bool
-	STOMPEnabled      bool
-	HTTPEnabled       bool
+	WebSocketEnabled bool
+	MQTTEnabled      bool
+	STOMPEnabled     bool
+	HTTPEnabled      bool
 	// Transport-specific configurations
 	STOMP     STOMPTransportConfig
 	MQTT      MQTTTransportConfig
 	Websocket WebsocketTransportConfig
 	UDS       UDSTransportConfig
 	HTTP      HTTPTransportConfig
-	GRPCPort int
-	Address  string
+	GRPCPort  int
+	Address   string
 }
 
 // STOMPTransportConfig holds STOMP-specific configuration
@@ -532,9 +540,9 @@ type STOMPTransportConfig struct {
 	Username     string
 	Password     string
 	Destinations struct {
-		Inbound  string // messages from agents (inbound to controller)
-		Outbound string // messages to agents (outbound from controller)
-		Broadcast  string
+		Inbound   string // messages from agents (inbound to controller)
+		Outbound  string // messages to agents (outbound from controller)
+		Broadcast string
 	}
 }
 
@@ -659,24 +667,24 @@ func LoadWithPath(configPath string) *Config {
 		// NOTE: CWMP service no longer uses HTTP port - TR-069 handled by mtp-http on port 7547
 
 		// Health Ports - direct from YAML, no defaults
-		DataServiceHealthPort: yamlConfig.Ports.Health.DataService,
-		USPServiceHealthPort:  yamlConfig.Ports.Health.USPService,
-		CWMPServiceHealthPort: yamlConfig.Ports.Health.CWMPService,
-		APIGatewayHealthPort:  yamlConfig.Ports.Health.APIGateway,
-		MTPStompHealthPort:    yamlConfig.Ports.Health.MTPStomp,
-		MTPMqttHealthPort:     yamlConfig.Ports.Health.MTPMqtt,
+		DataServiceHealthPort:  yamlConfig.Ports.Health.DataService,
+		USPServiceHealthPort:   yamlConfig.Ports.Health.USPService,
+		CWMPServiceHealthPort:  yamlConfig.Ports.Health.CWMPService,
+		APIGatewayHealthPort:   yamlConfig.Ports.Health.APIGateway,
+		MTPStompHealthPort:     yamlConfig.Ports.Health.MTPStomp,
+		MTPMqttHealthPort:      yamlConfig.Ports.Health.MTPMqtt,
 		MTPWebsocketHealthPort: yamlConfig.Ports.Health.MTPWebsocket,
-		MTPHttpHealthPort:           yamlConfig.Ports.Health.MTPHttp,
+		MTPHttpHealthPort:      yamlConfig.Ports.Health.MTPHttp,
 
-	// Metrics Ports - direct from YAML, no defaults
-	DataServiceMetricsPort:  yamlConfig.Ports.Metrics.DataService,
-	USPServiceMetricsPort:   yamlConfig.Ports.Metrics.USPService,
-	CWMPServiceMetricsPort:  yamlConfig.Ports.Metrics.CWMPService,
-	APIGatewayMetricsPort:   yamlConfig.Ports.Metrics.APIGateway,
-	MTPStompMetricsPort:     yamlConfig.Ports.Metrics.MTPStomp,
-	MTPMqttMetricsPort:      yamlConfig.Ports.Metrics.MTPMqtt,
-	MTPWebsocketMetricsPort: yamlConfig.Ports.Metrics.MTPWebsocket,
-	MTPHttpMetricsPort:      yamlConfig.Ports.Metrics.MTPHttp,		// Database Configuration
+		// Metrics Ports - direct from YAML, no defaults
+		DataServiceMetricsPort:  yamlConfig.Ports.Metrics.DataService,
+		USPServiceMetricsPort:   yamlConfig.Ports.Metrics.USPService,
+		CWMPServiceMetricsPort:  yamlConfig.Ports.Metrics.CWMPService,
+		APIGatewayMetricsPort:   yamlConfig.Ports.Metrics.APIGateway,
+		MTPStompMetricsPort:     yamlConfig.Ports.Metrics.MTPStomp,
+		MTPMqttMetricsPort:      yamlConfig.Ports.Metrics.MTPMqtt,
+		MTPWebsocketMetricsPort: yamlConfig.Ports.Metrics.MTPWebsocket,
+		MTPHttpMetricsPort:      yamlConfig.Ports.Metrics.MTPHttp, // Database Configuration
 		Database: DatabaseConfig{
 			Host:     yamlConfig.Database.Host,
 			Port:     fmt.Sprintf("%d", yamlConfig.Database.Port),
@@ -704,7 +712,11 @@ func LoadWithPath(configPath string) *Config {
 				EnableAutoCommit:     yamlConfig.Kafka.Consumer.EnableAutoCommit,
 				AutoCommitIntervalMs: yamlConfig.Kafka.Consumer.AutoCommitIntervalMs,
 				SessionTimeoutMs:     yamlConfig.Kafka.Consumer.SessionTimeoutMs,
+				HeartbeatIntervalMs:  yamlConfig.Kafka.Consumer.HeartbeatIntervalMs,
+				MaxPollIntervalMs:    yamlConfig.Kafka.Consumer.MaxPollIntervalMs,
 				MaxPollRecords:       yamlConfig.Kafka.Consumer.MaxPollRecords,
+				FetchMinBytes:        yamlConfig.Kafka.Consumer.FetchMinBytes,
+				FetchMaxWaitMs:       yamlConfig.Kafka.Consumer.FetchMaxWaitMs,
 			},
 			Topics: KafkaTopics{
 				USPMessagesInbound:       yamlConfig.Kafka.Topics.USPMessagesInbound,
@@ -788,18 +800,18 @@ func LoadWithPath(configPath string) *Config {
 
 		// MTP Transport
 		MTP: MTPConfig{
-			WebSocketEnabled:  getBoolEnvWithYAMLFallback("OPENUSP_MTP_WEBSOCKET_ENABLED", yamlConfig.MTP.Transports.WebsocketEnabled, true),
-			MQTTEnabled:       getBoolEnvWithYAMLFallback("OPENUSP_MTP_MQTT_ENABLED", yamlConfig.MTP.Transports.MQTTEnabled, true),
-			STOMPEnabled:      getBoolEnvWithYAMLFallback("OPENUSP_MTP_STOMP_ENABLED", yamlConfig.MTP.Transports.STOMPEnabled, true),
+			WebSocketEnabled: getBoolEnvWithYAMLFallback("OPENUSP_MTP_WEBSOCKET_ENABLED", yamlConfig.MTP.Transports.WebsocketEnabled, true),
+			MQTTEnabled:      getBoolEnvWithYAMLFallback("OPENUSP_MTP_MQTT_ENABLED", yamlConfig.MTP.Transports.MQTTEnabled, true),
+			STOMPEnabled:     getBoolEnvWithYAMLFallback("OPENUSP_MTP_STOMP_ENABLED", yamlConfig.MTP.Transports.STOMPEnabled, true),
 			// STOMP configuration from YAML
 			STOMP: STOMPTransportConfig{
 				BrokerURL: yamlConfig.MTP.STOMP.BrokerURL,
 				Username:  yamlConfig.MTP.STOMP.Username,
 				Password:  yamlConfig.MTP.STOMP.Password,
 				Destinations: struct {
-					Inbound  string
-					Outbound string
-					Broadcast  string
+					Inbound   string
+					Outbound  string
+					Broadcast string
 				}{
 					Inbound:   yamlConfig.MTP.STOMP.Destinations.Inbound,
 					Outbound:  yamlConfig.MTP.STOMP.Destinations.Outbound,

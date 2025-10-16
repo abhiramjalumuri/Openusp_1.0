@@ -12,9 +12,6 @@
 //	@license.name				Apache 2.0
 //	@license.url				http://www.apache.org/licenses/LICENSE-2.0.html
 //
-//	@host						localhost:8080
-//	@BasePath					/api/v1
-//
 //	@schemes					http https
 //
 //	@securityDefinitions.apikey	ApiKeyAuth
@@ -35,12 +32,15 @@ import (
 	"syscall"
 	"time"
 
+	_ "openusp/api" // Import swagger docs
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 	"openusp/pkg/metrics"
 	"openusp/pkg/version"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type APIGateway struct {
@@ -92,6 +92,9 @@ func (gw *APIGateway) setupRoutes() {
 	gw.router.GET("/health", gw.healthCheck)
 	gw.router.GET("/status", gw.getStatus)
 	gw.router.GET("/metrics", gin.WrapH(metrics.HTTPHandler()))
+
+	// Swagger documentation
+	gw.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	v1 := gw.router.Group("/api/v1")
 	{
@@ -161,10 +164,26 @@ func (gw *APIGateway) metricsMiddleware() gin.HandlerFunc {
 	}
 }
 
+// healthCheck godoc
+//
+//	@Summary		Health check endpoint
+//	@Description	Check if the API Gateway service is healthy
+//	@Tags			System
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/health [get]
 func (gw *APIGateway) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "healthy", "service": "API Gateway", "mode": "kafka"})
 }
 
+// getStatus godoc
+//
+//	@Summary		Get service status
+//	@Description	Get detailed status information about the API Gateway
+//	@Tags			System
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/status [get]
 func (gw *APIGateway) getStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "running", "service": "API Gateway", "mode": "kafka"})
 }
@@ -215,35 +234,367 @@ func (gw *APIGateway) sendKafkaRequest(c *gin.Context, operation string) {
 	}
 }
 
-func (gw *APIGateway) listDevices(c *gin.Context)       { gw.sendKafkaRequest(c, "ListDevices") }
-func (gw *APIGateway) getDevice(c *gin.Context)         { gw.sendKafkaRequest(c, "GetDevice") }
-func (gw *APIGateway) provisionDevice(c *gin.Context)   { gw.sendKafkaRequest(c, "ProvisionDevice") }
-func (gw *APIGateway) updateDevice(c *gin.Context)      { gw.sendKafkaRequest(c, "UpdateDevice") }
-func (gw *APIGateway) deleteDevice(c *gin.Context)      { gw.sendKafkaRequest(c, "DeleteDevice") }
-func (gw *APIGateway) getParameters(c *gin.Context)     { gw.sendKafkaRequest(c, "GetParameters") }
-func (gw *APIGateway) setParameter(c *gin.Context)      { gw.sendKafkaRequest(c, "SetParameter") }
+// listDevices godoc
+//
+//	@Summary		List all devices
+//	@Description	Get a list of all registered devices
+//	@Tags			Devices
+//	@Produce		json
+//	@Param			offset	query		int		false	"Pagination offset"
+//	@Param			limit	query		int		false	"Pagination limit"
+//	@Success		200		{array}		map[string]interface{}
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/v1/devices [get]
+func (gw *APIGateway) listDevices(c *gin.Context) { gw.sendKafkaRequest(c, "ListDevices") }
+
+// getDevice godoc
+//
+//	@Summary		Get device by ID
+//	@Description	Get detailed information about a specific device
+//	@Tags			Devices
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id} [get]
+func (gw *APIGateway) getDevice(c *gin.Context) { gw.sendKafkaRequest(c, "GetDevice") }
+
+// provisionDevice godoc
+//
+//	@Summary		Create a new device
+//	@Description	Register a new device in the system
+//	@Tags			Devices
+//	@Accept			json
+//	@Produce		json
+//	@Param			device	body		map[string]interface{}	true	"Device information"
+//	@Success		201		{object}	map[string]interface{}
+//	@Failure		400		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/v1/devices [post]
+func (gw *APIGateway) provisionDevice(c *gin.Context) { gw.sendKafkaRequest(c, "ProvisionDevice") }
+
+// updateDevice godoc
+//
+//	@Summary		Update device
+//	@Description	Update device information
+//	@Tags			Devices
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id	path		string					true	"Device ID"
+//	@Param			device		body		map[string]interface{}	true	"Device information"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id} [put]
+func (gw *APIGateway) updateDevice(c *gin.Context) { gw.sendKafkaRequest(c, "UpdateDevice") }
+
+// deleteDevice godoc
+//
+//	@Summary		Delete device
+//	@Description	Remove a device from the system
+//	@Tags			Devices
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		204			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id} [delete]
+func (gw *APIGateway) deleteDevice(c *gin.Context) { gw.sendKafkaRequest(c, "DeleteDevice") }
+
+// getParameters godoc
+//
+//	@Summary		Get device parameters
+//	@Description	Retrieve all parameters for a device
+//	@Tags			Parameters
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/parameters [get]
+func (gw *APIGateway) getParameters(c *gin.Context) { gw.sendKafkaRequest(c, "GetParameters") }
+
+// setParameter godoc
+//
+//	@Summary		Set device parameter
+//	@Description	Update a device parameter value
+//	@Tags			Parameters
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id	path		string					true	"Device ID"
+//	@Param			parameter	body		map[string]interface{}	true	"Parameter data"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/parameters [put]
+func (gw *APIGateway) setParameter(c *gin.Context) { gw.sendKafkaRequest(c, "SetParameter") }
+
+// bulkGetParameters godoc
+//
+//	@Summary		Bulk get parameters
+//	@Description	Get multiple device parameters at once
+//	@Tags			Parameters
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id	path		string					true	"Device ID"
+//	@Param			paths		body		map[string]interface{}	true	"Parameter paths"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/parameters/get [post]
 func (gw *APIGateway) bulkGetParameters(c *gin.Context) { gw.sendKafkaRequest(c, "BulkGetParameters") }
+
+// bulkSetParameters godoc
+//
+//	@Summary		Bulk set parameters
+//	@Description	Set multiple device parameters at once
+//	@Tags			Parameters
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id	path		string					true	"Device ID"
+//	@Param			parameters	body		map[string]interface{}	true	"Parameters to set"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/parameters/set [post]
 func (gw *APIGateway) bulkSetParameters(c *gin.Context) { gw.sendKafkaRequest(c, "BulkSetParameters") }
-func (gw *APIGateway) searchParameters(c *gin.Context)  { gw.sendKafkaRequest(c, "SearchParameters") }
-func (gw *APIGateway) getObjects(c *gin.Context)        { gw.sendKafkaRequest(c, "GetObjects") }
-func (gw *APIGateway) getObjectByPath(c *gin.Context)   { gw.sendKafkaRequest(c, "GetObjectByPath") }
-func (gw *APIGateway) executeCommand(c *gin.Context)    { gw.sendKafkaRequest(c, "ExecuteCommand") }
+
+// searchParameters godoc
+//
+//	@Summary		Search parameters
+//	@Description	Search for device parameters by path
+//	@Tags			Parameters
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Param			path		query		string	false	"Parameter path to search"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/parameters/search [get]
+func (gw *APIGateway) searchParameters(c *gin.Context) { gw.sendKafkaRequest(c, "SearchParameters") }
+
+// getObjects godoc
+//
+//	@Summary		Get device objects
+//	@Description	Retrieve all objects for a device
+//	@Tags			Objects
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/objects [get]
+func (gw *APIGateway) getObjects(c *gin.Context) { gw.sendKafkaRequest(c, "GetObjects") }
+
+// getObjectByPath godoc
+//
+//	@Summary		Get object by path
+//	@Description	Retrieve a specific object by its path
+//	@Tags			Objects
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Param			object_path	path		string	true	"Object path"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/objects/{object_path} [get]
+func (gw *APIGateway) getObjectByPath(c *gin.Context) { gw.sendKafkaRequest(c, "GetObjectByPath") }
+
+// executeCommand godoc
+//
+//	@Summary		Execute command
+//	@Description	Execute a command on a device
+//	@Tags			Commands
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id	path		string					true	"Device ID"
+//	@Param			command		body		map[string]interface{}	true	"Command data"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/commands/execute [post]
+func (gw *APIGateway) executeCommand(c *gin.Context) { gw.sendKafkaRequest(c, "ExecuteCommand") }
+
+// createSubscription godoc
+//
+//	@Summary		Create subscription
+//	@Description	Create a new subscription for device events
+//	@Tags			Subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			device_id		path		string					true	"Device ID"
+//	@Param			subscription	body		map[string]interface{}	true	"Subscription data"
+//	@Success		201				{object}	map[string]interface{}
+//	@Failure		400				{object}	map[string]string
+//	@Failure		404				{object}	map[string]string
+//	@Failure		500				{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/subscriptions [post]
 func (gw *APIGateway) createSubscription(c *gin.Context) {
 	gw.sendKafkaRequest(c, "CreateSubscription")
 }
+
+// getSubscriptions godoc
+//
+//	@Summary		Get subscriptions
+//	@Description	Get all subscriptions for a device
+//	@Tags			Subscriptions
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/subscriptions [get]
 func (gw *APIGateway) getSubscriptions(c *gin.Context) { gw.sendKafkaRequest(c, "GetSubscriptions") }
+
+// deleteSubscription godoc
+//
+//	@Summary		Delete subscription
+//	@Description	Delete a specific subscription
+//	@Tags			Subscriptions
+//	@Produce		json
+//	@Param			device_id			path		string	true	"Device ID"
+//	@Param			subscription_id		path		string	true	"Subscription ID"
+//	@Success		204					{object}	map[string]interface{}
+//	@Failure		404					{object}	map[string]string
+//	@Failure		500					{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/subscriptions/{subscription_id} [delete]
 func (gw *APIGateway) deleteSubscription(c *gin.Context) {
 	gw.sendKafkaRequest(c, "DeleteSubscription")
 }
-func (gw *APIGateway) getDataModel(c *gin.Context)      { gw.sendKafkaRequest(c, "GetDataModel") }
-func (gw *APIGateway) getSchema(c *gin.Context)         { gw.sendKafkaRequest(c, "GetSchema") }
-func (gw *APIGateway) getObjectTree(c *gin.Context)     { gw.sendKafkaRequest(c, "GetObjectTree") }
-func (gw *APIGateway) listAlerts(c *gin.Context)        { gw.sendKafkaRequest(c, "ListAlerts") }
-func (gw *APIGateway) createAlert(c *gin.Context)       { gw.sendKafkaRequest(c, "CreateAlert") }
-func (gw *APIGateway) resolveAlert(c *gin.Context)      { gw.sendKafkaRequest(c, "ResolveAlert") }
-func (gw *APIGateway) getDeviceAlerts(c *gin.Context)   { gw.sendKafkaRequest(c, "GetDeviceAlerts") }
-func (gw *APIGateway) listSessions(c *gin.Context)      { gw.sendKafkaRequest(c, "ListSessions") }
-func (gw *APIGateway) getSession(c *gin.Context)        { gw.sendKafkaRequest(c, "GetSession") }
+
+// getDataModel godoc
+//
+//	@Summary		Get device data model
+//	@Description	Retrieve the complete data model for a device
+//	@Tags			DataModel
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/datamodel [get]
+func (gw *APIGateway) getDataModel(c *gin.Context) { gw.sendKafkaRequest(c, "GetDataModel") }
+
+// getSchema godoc
+//
+//	@Summary		Get device schema
+//	@Description	Retrieve the schema for a device
+//	@Tags			DataModel
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/schema [get]
+func (gw *APIGateway) getSchema(c *gin.Context) { gw.sendKafkaRequest(c, "GetSchema") }
+
+// getObjectTree godoc
+//
+//	@Summary		Get object tree
+//	@Description	Retrieve the object tree structure for a device
+//	@Tags			DataModel
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/tree [get]
+func (gw *APIGateway) getObjectTree(c *gin.Context) { gw.sendKafkaRequest(c, "GetObjectTree") }
+
+// listAlerts godoc
+//
+//	@Summary		List all alerts
+//	@Description	Get a list of all alerts in the system
+//	@Tags			Alerts
+//	@Produce		json
+//	@Param			offset	query		int		false	"Pagination offset"
+//	@Param			limit	query		int		false	"Pagination limit"
+//	@Success		200		{array}		map[string]interface{}
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/v1/alerts [get]
+func (gw *APIGateway) listAlerts(c *gin.Context) { gw.sendKafkaRequest(c, "ListAlerts") }
+
+// createAlert godoc
+//
+//	@Summary		Create alert
+//	@Description	Create a new alert
+//	@Tags			Alerts
+//	@Accept			json
+//	@Produce		json
+//	@Param			alert	body		map[string]interface{}	true	"Alert data"
+//	@Success		201		{object}	map[string]interface{}
+//	@Failure		400		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/api/v1/alerts [post]
+func (gw *APIGateway) createAlert(c *gin.Context) { gw.sendKafkaRequest(c, "CreateAlert") }
+
+// resolveAlert godoc
+//
+//	@Summary		Resolve alert
+//	@Description	Mark an alert as resolved
+//	@Tags			Alerts
+//	@Produce		json
+//	@Param			id	path		string	true	"Alert ID"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		404	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/api/v1/alerts/{id}/resolve [put]
+func (gw *APIGateway) resolveAlert(c *gin.Context) { gw.sendKafkaRequest(c, "ResolveAlert") }
+
+// getDeviceAlerts godoc
+//
+//	@Summary		Get device alerts
+//	@Description	Get all alerts for a specific device
+//	@Tags			Alerts
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/alerts [get]
+func (gw *APIGateway) getDeviceAlerts(c *gin.Context) { gw.sendKafkaRequest(c, "GetDeviceAlerts") }
+
+// listSessions godoc
+//
+//	@Summary		List all sessions
+//	@Description	Get a list of all sessions
+//	@Tags			Sessions
+//	@Produce		json
+//	@Success		200	{array}		map[string]interface{}
+//	@Failure		500	{object}	map[string]string
+//	@Router			/api/v1/sessions [get]
+func (gw *APIGateway) listSessions(c *gin.Context) { gw.sendKafkaRequest(c, "ListSessions") }
+
+// getSession godoc
+//
+//	@Summary		Get session by ID
+//	@Description	Get detailed information about a specific session
+//	@Tags			Sessions
+//	@Produce		json
+//	@Param			id	path		string	true	"Session ID"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		404	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/api/v1/sessions/{id} [get]
+func (gw *APIGateway) getSession(c *gin.Context) { gw.sendKafkaRequest(c, "GetSession") }
+
+// getDeviceSessions godoc
+//
+//	@Summary		Get device sessions
+//	@Description	Get all sessions for a specific device
+//	@Tags			Sessions
+//	@Produce		json
+//	@Param			device_id	path		string	true	"Device ID"
+//	@Success		200			{array}		map[string]interface{}
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/api/v1/devices/{device_id}/sessions [get]
 func (gw *APIGateway) getDeviceSessions(c *gin.Context) { gw.sendKafkaRequest(c, "GetDeviceSessions") }
 
 func (gw *APIGateway) Start(ctx context.Context) error {

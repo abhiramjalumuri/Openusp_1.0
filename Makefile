@@ -39,7 +39,9 @@ LOG_DIR := logs
 
 # OpenUSP Service definitions
 OPENUSP_CORE_SERVICES := data-service usp-service cwmp-service
-OPENUSP_MTP_SERVICES := mtp-stomp mtp-mqtt mtp-websocket mtp-http
+# Kafka-based MTP services (cmd/mtps/) - only STOMP is fully implemented
+OPENUSP_MTP_SERVICES := mtps-stomp
+# TODO: Complete implementations for: mtps-mqtt mtps-websocket mtps-http
 OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES) $(OPENUSP_MTP_SERVICES)
 OPENUSP_AGENTS := usp-agent cwmp-agent
 # Derived list excluding usp-agent for auto-generation of run targets
@@ -182,9 +184,9 @@ infra-status:
 	@docker compose -f $(DOCKER_COMPOSE_INFRA) ps
 	@echo ""
 	@echo "🌐 Network Information:"
-	@echo "Network: openusp-dev"
+	@echo "Network: deployments_openusp-dev"
 	@echo "Service Resolution: Container service names"
-	@docker network inspect openusp-dev --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null || echo "Network not found"
+	@docker network inspect deployments_openusp-dev --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null || echo "Network not found"
 
 infra-clean:
 	@echo "🧹 Cleaning infrastructure (this will remove all data!)..."
@@ -220,15 +222,12 @@ run-services: build-services infra-up
 	@echo "🚀 Starting OpenUSP services..."
 	@echo "   🌐 API Gateway, 🗄️  Data Service"
 	@echo "   📡 USP Service, 📞 CWMP Service"
-	@echo "   🚀 MTP Services: STOMP, MQTT, WebSocket, UDS, HTTP"
+	@echo "   🚀 Kafka-based MTP Service: STOMP"
 	@$(MAKE) run-data-service-background
 	@$(MAKE) run-api-gateway-background
 	@$(MAKE) run-usp-service-background
 	@$(MAKE) run-cwmp-service-background
-	@$(MAKE) run-mtp-stomp-background
-	@$(MAKE) run-mtp-mqtt-background
-	@$(MAKE) run-mtp-websocket-background
-	@$(MAKE) run-mtp-http-background
+	@$(MAKE) run-mtps-stomp-background
 	@echo "✅ All OpenUSP services started"
 
 run-agents: build-agents
@@ -404,22 +403,23 @@ build-$(1):
 	@echo "✅ $(1) built successfully"
 endef
 
-# Build templates for MTP services (location: cmd/mtp-services/)
+# Build templates for MTP services (Kafka-based location: cmd/mtps/)
 define MTP_BUILD_TEMPLATE
 build-$(1):
 	@echo "🔨 Building $(1)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/mtp-services/$(2)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/mtps/$(2)
 	@echo "✅ $(1) built successfully"
 endef
 
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
 
-# MTP services with new paths
-$(eval $(call MTP_BUILD_TEMPLATE,mtp-stomp,stomp))
-$(eval $(call MTP_BUILD_TEMPLATE,mtp-mqtt,mqtt))
-$(eval $(call MTP_BUILD_TEMPLATE,mtp-websocket,websocket))
-$(eval $(call MTP_BUILD_TEMPLATE,mtp-http,http))
+# Kafka-based MTP services with new paths (cmd/mtps/)
+$(eval $(call MTP_BUILD_TEMPLATE,mtps-stomp,stomp))
+# Future implementations (when ready):
+# $(eval $(call MTP_BUILD_TEMPLATE,mtps-mqtt,mqtt))
+# $(eval $(call MTP_BUILD_TEMPLATE,mtps-websocket,websocket))
+# $(eval $(call MTP_BUILD_TEMPLATE,mtps-http,http))
 
 # Agent services with new paths
 $(eval $(call AGENT_BUILD_TEMPLATE,usp-agent,usp))

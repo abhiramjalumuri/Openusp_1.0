@@ -190,13 +190,13 @@ func (ds *DataService) handleDeviceCreatedEvent(msg *confluentkafka.Message) err
 
 	// Extract device data from event
 	device := &database.Device{
-		EndpointID:      event.EndpointID,
-		Manufacturer:    event.Manufacturer,
-		ModelName:       event.ModelName,
-		SerialNumber:    event.SerialNumber,
-		ProductClass:    event.ProductClass,
-		Status:          event.Status,
-		ConnectionType:  event.Protocol, // USP protocol type
+		EndpointID:     event.EndpointID,
+		Manufacturer:   event.Manufacturer,
+		ModelName:      event.ModelName,
+		SerialNumber:   event.SerialNumber,
+		ProductClass:   event.ProductClass,
+		Status:         event.Status,
+		ConnectionType: event.Protocol, // USP protocol type
 	}
 
 	// Extract additional fields from Data map if available
@@ -218,7 +218,7 @@ func (ds *DataService) handleDeviceCreatedEvent(msg *confluentkafka.Message) err
 		return fmt.Errorf("failed to persist device to database: %w", err)
 	}
 
-	log.Printf("✅ Device persisted to database: %s (manufacturer: %s, model: %s, serial: %s)", 
+	log.Printf("✅ Device persisted to database: %s (manufacturer: %s, model: %s, serial: %s)",
 		event.EndpointID, event.Manufacturer, event.ModelName, event.SerialNumber)
 
 	return nil

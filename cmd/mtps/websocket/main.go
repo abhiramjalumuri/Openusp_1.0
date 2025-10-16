@@ -13,12 +13,8 @@ import (
 
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
-	pb_v1_3 "openusp/pkg/proto/v1_3"
-	pb_v1_4 "openusp/pkg/proto/v1_4"
 
-	kafkago "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -31,10 +27,8 @@ type WebSocketMTPService struct {
 	config        *config.Config
 	kafkaClient   *kafka.Client
 	kafkaProducer *kafka.Producer
-	kafkaConsumer *kafka.Consumer
 	upgrader      websocket.Upgrader
-	connections   map[string]*websocket.Conn // clientID -> websocket connection
-	endpointMap   map[string]string          // endpoint ID -> clientID (for routing responses)
+	connections   map[string]*websocket.Conn
 	connMutex     sync.RWMutex
 }
 
@@ -58,13 +52,6 @@ func main() {
 	}
 	defer kafkaProducer.Close()
 
-	// Create Kafka consumer for outbound messages
-	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, "openusp-mtp-websocket")
-	if err != nil {
-		log.Fatalf("❌ Failed to create Kafka consumer: %v", err)
-	}
-	defer kafkaConsumer.Close()
-
 	// Ensure topics exist
 	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
 	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
@@ -76,9 +63,7 @@ func main() {
 		config:        cfg,
 		kafkaClient:   kafkaClient,
 		kafkaProducer: kafkaProducer,
-		kafkaConsumer: kafkaConsumer,
 		connections:   make(map[string]*websocket.Conn),
-		endpointMap:   make(map[string]string),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -150,11 +135,6 @@ func main() {
 			log.Fatalf("❌ WebSocket server error: %v", err)
 		}
 	}()
-
-	// Setup Kafka consumer for outbound messages
-	if err := svc.setupKafkaConsumer(); err != nil {
-		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
-	}
 
 	log.Printf("✅ %s started successfully", ServiceName)
 	log.Printf("   └── WebSocket Port: %d", wsPort)
@@ -250,169 +230,24 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 
 // processUSPMessage publishes USP message to Kafka for processing
 func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([]byte, error) {
-	log.Printf("📥 WebSocket: Received USP TR-369 protobuf message from client %s (%d bytes)", clientID, len(data))
-
-	// Parse the USP Record to extract endpoint ID for routing responses
-	endpointID, err := s.extractEndpointID(data)
-	if err != nil {
-		log.Printf("⚠️ WebSocket: Failed to extract endpoint ID from message: %v", err)
-	} else {
-		// Map endpoint ID to client ID for response routing
-		s.connMutex.Lock()
-		s.endpointMap[endpointID] = clientID
-		s.connMutex.Unlock()
-		log.Printf("🔗 WebSocket: Mapped endpoint %s to client %s", endpointID, clientID)
-	}
-
-	// Publish raw TR-369 protobuf bytes directly to Kafka
-	// The USP service will parse the protobuf Record
-	err = s.kafkaProducer.PublishRaw(
+	// Publish USP message to Kafka
+	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
-		"", // key
-		data, // raw TR-369 protobuf bytes
+		clientID,                                     // endpointID (use clientID for now)
+		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
+		"Request",   // messageType
+		data,        // payload
+		"websocket", // mtpProtocol
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ WebSocket: USP TR-369 message published to Kafka topic: %s for client %s", 
-		s.config.Kafka.Topics.USPMessagesInbound, clientID)
+	log.Printf("✅ WebSocket: USP message published to Kafka for client %s", clientID)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// The response will be delivered asynchronously through the WebSocket
 	// For now, return nil to indicate async processing
 	return nil, nil
-}
-
-// extractEndpointID extracts the FromId field from USP Record for response routing
-func (s *WebSocketMTPService) extractEndpointID(data []byte) (string, error) {
-	// Try parsing as v1.3 first
-	var record_v13 pb_v1_3.Record
-	if err := proto.Unmarshal(data, &record_v13); err == nil && record_v13.FromId != "" {
-		return record_v13.FromId, nil
-	}
-
-	// Try parsing as v1.4
-	var record_v14 pb_v1_4.Record
-	if err := proto.Unmarshal(data, &record_v14); err == nil && record_v14.FromId != "" {
-		return record_v14.FromId, nil
-	}
-
-	return "", fmt.Errorf("failed to parse USP Record or FromId is empty")
-}
-
-// extractTargetEndpointID extracts the ToId (target endpoint) from USP Record
-func (s *WebSocketMTPService) extractTargetEndpointID(data []byte) (string, error) {
-	// Try parsing as v1.3 first
-	var record_v13 pb_v1_3.Record
-	if err := proto.Unmarshal(data, &record_v13); err == nil && record_v13.ToId != "" {
-		return record_v13.ToId, nil
-	}
-
-	// Try parsing as v1.4
-	var record_v14 pb_v1_4.Record
-	if err := proto.Unmarshal(data, &record_v14); err == nil && record_v14.ToId != "" {
-		return record_v14.ToId, nil
-	}
-
-	return "", fmt.Errorf("failed to parse USP Record or ToId is empty")
-}
-
-// setupKafkaConsumer subscribes to outbound messages from Kafka
-func (s *WebSocketMTPService) setupKafkaConsumer() error {
-	log.Printf("🔌 Setting up Kafka consumer for outbound messages...")
-
-	// Subscribe to USP outbound topic
-	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
-
-	handler := func(msg *kafkago.Message) error {
-		log.Printf("📥 Kafka: Received outbound USP message (%d bytes) from topic: %s", 
-			len(msg.Value), *msg.TopicPartition.Topic)
-
-		// Extract target endpoint ID from the USP Record
-		targetEndpoint, err := s.extractTargetEndpointID(msg.Value)
-		if err != nil {
-			log.Printf("⚠️ Failed to extract target endpoint: %v, broadcasting to all clients", err)
-			// Broadcast to all connected clients as fallback
-			return s.broadcastMessage(msg.Value)
-		}
-
-		// Route to specific client based on endpoint mapping
-		s.connMutex.RLock()
-		clientID, exists := s.endpointMap[targetEndpoint]
-		s.connMutex.RUnlock()
-
-		if !exists {
-			log.Printf("⚠️ No WebSocket client found for endpoint %s, broadcasting", targetEndpoint)
-			return s.broadcastMessage(msg.Value)
-		}
-
-		// Send to specific client
-		return s.sendToClient(clientID, msg.Value)
-	}
-
-	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
-		return fmt.Errorf("failed to subscribe to Kafka topics: %w", err)
-	}
-
-	log.Printf("✅ Subscribed to Kafka topic: %s", s.config.Kafka.Topics.USPMessagesOutbound)
-
-	// Start consuming in background
-	go func() {
-		log.Printf("🔄 Starting Kafka consumer for outbound messages...")
-		s.kafkaConsumer.Start()
-	}()
-
-	return nil
-}
-
-// sendToClient sends a message to a specific WebSocket client
-func (s *WebSocketMTPService) sendToClient(clientID string, data []byte) error {
-	s.connMutex.RLock()
-	conn, exists := s.connections[clientID]
-	s.connMutex.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("client %s not connected", clientID)
-	}
-
-	if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-		log.Printf("❌ WebSocket: Failed to send message to client %s: %v", clientID, err)
-		return err
-	}
-
-	log.Printf("📤 WebSocket: Sent outbound message to client %s (%d bytes)", clientID, len(data))
-	return nil
-}
-
-// broadcastMessage sends a message to all connected WebSocket clients
-func (s *WebSocketMTPService) broadcastMessage(data []byte) error {
-	s.connMutex.RLock()
-	clients := make(map[string]*websocket.Conn)
-	for id, conn := range s.connections {
-		clients[id] = conn
-	}
-	s.connMutex.RUnlock()
-
-	if len(clients) == 0 {
-		return fmt.Errorf("no connected clients to broadcast to")
-	}
-
-	var lastErr error
-	successCount := 0
-
-	for clientID, conn := range clients {
-		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-			log.Printf("❌ WebSocket: Failed to broadcast to client %s: %v", clientID, err)
-			lastErr = err
-		} else {
-			successCount++
-		}
-	}
-
-	log.Printf("📤 WebSocket: Broadcasted message to %d/%d clients (%d bytes)", 
-		successCount, len(clients), len(data))
-
-	return lastErr
 }

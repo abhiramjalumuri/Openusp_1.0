@@ -7,8 +7,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"openusp/pkg/config"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // MessageHandler is a function type for handling consumed messages
@@ -42,7 +43,20 @@ func NewConsumer(cfg *config.KafkaConfig, groupID string) (*Consumer, error) {
 		"enable.auto.commit":      cfg.ConsumerConfig.EnableAutoCommit,
 		"auto.commit.interval.ms": cfg.ConsumerConfig.AutoCommitIntervalMs,
 		"session.timeout.ms":      cfg.ConsumerConfig.SessionTimeoutMs,
-		// Note: max.poll.records is Java-specific, librdkafka uses fetch.min.bytes and fetch.max.bytes instead
+	}
+
+	// Add optional configuration with defaults if not set
+	if cfg.ConsumerConfig.HeartbeatIntervalMs > 0 {
+		configMap["heartbeat.interval.ms"] = cfg.ConsumerConfig.HeartbeatIntervalMs
+	}
+	if cfg.ConsumerConfig.MaxPollIntervalMs > 0 {
+		configMap["max.poll.interval.ms"] = cfg.ConsumerConfig.MaxPollIntervalMs
+	}
+	if cfg.ConsumerConfig.FetchMinBytes > 0 {
+		configMap["fetch.min.bytes"] = cfg.ConsumerConfig.FetchMinBytes
+	}
+	if cfg.ConsumerConfig.FetchMaxWaitMs > 0 {
+		configMap["fetch.wait.max.ms"] = cfg.ConsumerConfig.FetchMaxWaitMs
 	}
 
 	consumer, err := kafka.NewConsumer(&configMap)
