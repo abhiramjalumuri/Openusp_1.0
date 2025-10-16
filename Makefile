@@ -221,12 +221,15 @@ run-services: build-services infra-up
 	@echo "🚀 Starting OpenUSP services..."
 	@echo "   🌐 API Gateway, 🗄️  Data Service"
 	@echo "   📡 USP Service, 📞 CWMP Service"
-	@echo "   🚀 Kafka-based MTP Service: STOMP"
+	@echo "   🚀 Kafka-based MTP Services: STOMP, MQTT, WebSocket, HTTP"
 	@$(MAKE) run-data-service-background
 	@$(MAKE) run-api-gateway-background
 	@$(MAKE) run-usp-service-background
 	@$(MAKE) run-cwmp-service-background
 	@$(MAKE) run-mtp-stomp-background
+	@$(MAKE) run-mtp-mqtt-background
+	@$(MAKE) run-mtp-websocket-background
+	@$(MAKE) run-mtp-http-background
 	@echo "✅ All OpenUSP services started"
 
 run-agents: build-agents
