@@ -55,6 +55,8 @@ func (tm *TopicsManager) GetAllTopics() []string {
 		// CWMP topics
 		tm.config.CWMPMessagesInbound,
 		tm.config.CWMPMessagesOutbound,
+		tm.config.CWMPDataRequest,
+		tm.config.CWMPAPIRequest,
 
 		// Agent topics
 		tm.config.AgentStatusUpdated,
@@ -97,6 +99,8 @@ func (tm *TopicsManager) GetCWMPTopics() []string {
 	return []string{
 		tm.config.CWMPMessagesInbound,
 		tm.config.CWMPMessagesOutbound,
+		tm.config.CWMPDataRequest,
+		tm.config.CWMPAPIRequest,
 	}
 }
 

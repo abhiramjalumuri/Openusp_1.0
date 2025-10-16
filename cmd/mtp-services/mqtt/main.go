@@ -101,7 +101,7 @@ func main() {
 
 	// TODO: Start gRPC server on grpcPort
 	// This will be implemented after proto definitions are created
-	
+
 	// TODO: Start MQTT broker (implementation pending)
 
 	// go func() {
