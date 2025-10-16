@@ -152,7 +152,7 @@ type AgentOnboardingEvent struct {
 type MTPConnectionEvent struct {
 	BaseEvent
 	ConnectionID string                 `json:"connection_id"`
-	Protocol     string                 `json:"protocol"` // "websocket", "mqtt", "stomp", "uds", "http"
+	Protocol     string                 `json:"protocol"` // "websocket", "mqtt", "stomp", "http"
 	EndpointID   string                 `json:"endpoint_id,omitempty"`
 	RemoteAddr   string                 `json:"remote_addr,omitempty"`
 	Status       string                 `json:"status"` // "established", "closed", "error"

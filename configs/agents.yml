@@ -63,11 +63,6 @@ usp_agent:
         send: "30s"
         receive: "30s"
 
-    # UDS Configuration
-    uds:
-      socket_path: "/tmp/usp-agent.sock"
-      socket_mode: "0666"
-
   # Behavior Configuration
   behavior:
     auto_register: true

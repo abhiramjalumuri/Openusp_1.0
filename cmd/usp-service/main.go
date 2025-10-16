@@ -298,7 +298,7 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
 		return nil, nil // No response needed for MTP-layer connect
 	case *v1_4.Record_UdsConnect:
-		log.Printf("✅ UDS connection established for agent %s", record.FromId)
+		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
 		return nil, nil // No response needed for MTP-layer connect
 	case *v1_4.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)
@@ -369,7 +369,7 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
 		return nil, nil // No response needed for MTP-layer connect
 	case *v1_3.Record_UdsConnect:
-		log.Printf("✅ UDS connection established for agent %s", record.FromId)
+		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
 		return nil, nil // No response needed for MTP-layer connect
 	case *v1_3.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)

@@ -117,12 +117,6 @@ type YAMLTR369Config struct {
 			HeartbeatReceive     string `yaml:"heartbeat_receive"`
 			MessageEncoding      string `yaml:"message_encoding"`
 		} `yaml:"stomp"`
-
-		UDS struct {
-			SocketPath      string `yaml:"socket_path"`
-			SocketMode      string `yaml:"socket_mode"`
-			MessageEncoding string `yaml:"message_encoding"`
-		} `yaml:"uds"`
 	} `yaml:"mtp"`
 
 	AgentBehavior struct {
@@ -355,10 +349,6 @@ func LoadYAMLTR369Config(configPath string) (*TR369Config, error) {
 			config.STOMPHeartbeatReceive = duration
 		}
 	}
-
-	// Unix Domain Socket MTP
-	config.UDSSocketPath = yamlConfig.MTP.UDS.SocketPath
-	config.UDSSocketMode = yamlConfig.MTP.UDS.SocketMode
 
 	// Agent Behavior
 	config.AutoRegister = yamlConfig.AgentBehavior.AutoRegister

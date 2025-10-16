@@ -109,10 +109,6 @@ type TR369Config struct {
 	STOMPHeartbeatSend        time.Duration `json:"stomp_heartbeat_send"`
 	STOMPHeartbeatReceive     time.Duration `json:"stomp_heartbeat_receive"`
 
-	// Unix Domain Socket MTP
-	UDSSocketPath string `json:"uds_socket_path"`
-	UDSSocketMode string `json:"uds_socket_mode"`
-
 	// Agent Behavior
 	PeriodicInformEnabled       bool          `json:"periodic_inform_enabled"`
 	PeriodicInformInterval      time.Duration `json:"periodic_inform_interval"`
@@ -197,10 +193,6 @@ func LoadAgents(path string) (*Agents, error) {
 						Receive string `yaml:"receive"`
 					} `yaml:"heartbeat"`
 				} `yaml:"stomp"`
-				UDS struct {
-					SocketPath string `yaml:"socket_path"`
-					SocketMode string `yaml:"socket_mode"`
-				} `yaml:"uds"`
 			} `yaml:"mtp"`
 			Behavior struct {
 				AutoRegister                bool   `yaml:"auto_register"`
@@ -369,8 +361,6 @@ func LoadAgents(path string) (*Agents, error) {
 	usp.STOMPDestinationBroadcast = mapUSP.MTP.STOMP.Destinations.Broadcast
 	usp.STOMPHeartbeatSend = parseDurationOrZero(mapUSP.MTP.STOMP.Heartbeat.Send)
 	usp.STOMPHeartbeatReceive = parseDurationOrZero(mapUSP.MTP.STOMP.Heartbeat.Receive)
-	usp.UDSSocketPath = mapUSP.MTP.UDS.SocketPath
-	usp.UDSSocketMode = mapUSP.MTP.UDS.SocketMode
 	usp.AutoRegister = mapUSP.Behavior.AutoRegister
 	usp.PeriodicInformEnabled = mapUSP.Behavior.PeriodicInformEnabled
 	usp.PeriodicInformInterval = parseDurationOrZero(mapUSP.Behavior.PeriodicInformInterval)

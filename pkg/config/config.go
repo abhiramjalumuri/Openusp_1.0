@@ -201,9 +201,6 @@ type YAMLConfig struct {
 				Broadcast string `yaml:"broadcast"`
 			} `yaml:"destinations"`
 		} `yaml:"stomp"`
-		UDS struct {
-			SocketPath string `yaml:"socket_path"`
-		} `yaml:"uds"`
 		HTTP struct {
 			ServerURL          string `yaml:"server_url"`
 			Timeout            string `yaml:"timeout"`
@@ -528,7 +525,6 @@ type MTPConfig struct {
 	STOMP     STOMPTransportConfig
 	MQTT      MQTTTransportConfig
 	Websocket WebsocketTransportConfig
-	UDS       UDSTransportConfig
 	HTTP      HTTPTransportConfig
 	GRPCPort  int
 	Address   string
@@ -555,11 +551,6 @@ type MQTTTransportConfig struct {
 type WebsocketTransportConfig struct {
 	ServerPort  int
 	Subprotocol string
-}
-
-// UDSTransportConfig holds Unix Domain Socket-specific configuration
-type UDSTransportConfig struct {
-	SocketPath string
 }
 
 // HTTPTransportConfig holds HTTP/HTTPS-specific configuration
@@ -826,10 +817,6 @@ func LoadWithPath(configPath string) *Config {
 			Websocket: WebsocketTransportConfig{
 				ServerPort:  yamlConfig.MTP.Websocket.ServerPort,
 				Subprotocol: yamlConfig.MTP.Websocket.Subprotocol,
-			},
-			// UDS configuration from YAML
-			UDS: UDSTransportConfig{
-				SocketPath: yamlConfig.MTP.UDS.SocketPath,
 			},
 			// HTTP configuration from YAML
 			HTTP: HTTPTransportConfig{
