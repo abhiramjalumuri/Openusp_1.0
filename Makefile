@@ -226,7 +226,7 @@ run-services: build-services infra-up
 	@$(MAKE) run-api-gateway-background
 	@$(MAKE) run-usp-service-background
 	@$(MAKE) run-cwmp-service-background
-	@$(MAKE) run-mtps-stomp-background
+	@$(MAKE) run-mtp-stomp-background
 	@echo "✅ All OpenUSP services started"
 
 run-agents: build-agents
