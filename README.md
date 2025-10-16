@@ -224,7 +224,7 @@ go run cmd/agents/usp/main.go
 # Test TR-069 CWMP agent  
 make start-cwmp-agent  
 # or manually (uses unified configs/openusp.yml automatically):
-go run cmd/cwmp-agent/main.go
+go run cmd/agents/cwmp/main.go
 ```
 
 ### USP Protocol Testing
