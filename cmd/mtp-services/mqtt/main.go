@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
+
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 )
@@ -24,6 +26,7 @@ type MQTTMTPService struct {
 	config        *config.Config
 	kafkaClient   *kafka.Client
 	kafkaProducer *kafka.Producer
+	kafkaConsumer *kafka.Consumer
 }
 
 func main() {
@@ -46,6 +49,13 @@ func main() {
 	}
 	defer kafkaProducer.Close()
 
+	// Create Kafka consumer for outbound messages
+	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, "mtp-mqtt")
+	if err != nil {
+		log.Fatalf("❌ Failed to create Kafka consumer: %v", err)
+	}
+	defer kafkaConsumer.Close()
+
 	// Ensure topics exist
 	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
 	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
@@ -57,6 +67,7 @@ func main() {
 		config:        cfg,
 		kafkaClient:   kafkaClient,
 		kafkaProducer: kafkaProducer,
+		kafkaConsumer: kafkaConsumer,
 	}
 
 	// TODO: Initialize MQTT broker (implementation pending)
@@ -110,8 +121,15 @@ func main() {
 	// 	}
 	// }()
 
+	// Setup Kafka consumer for outbound messages (responses from USP service)
+	if err := svc.setupKafkaConsumer(); err != nil {
+		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
+	}
+
 	log.Printf("✅ %s started successfully", ServiceName)
 	log.Printf("   └── MQTT Broker: %s (TODO: implementation pending)", cfg.MTP.MQTT.BrokerURL)
+	log.Printf("   └── Kafka Inbound Topic: %s", cfg.Kafka.Topics.USPMessagesInbound)
+	log.Printf("   └── Kafka Outbound Topic: %s", cfg.Kafka.Topics.USPMessagesOutbound)
 	log.Printf("   └── Health Port: %d", healthPort)
 	log.Printf("   └── Kafka Brokers: %v", cfg.Kafka.Brokers)
 
@@ -169,11 +187,11 @@ func main() {
 // }
 
 // ProcessUSPMessage implements the MessageProcessor interface
-// This is called by the MQTT broker when a message is received
+// This is called by the MQTT broker when a message is received from agents
 func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
-	log.Printf("📥 MQTT: Received USP message (%d bytes)", len(data))
+	log.Printf("📥 MQTT: Received USP message from agent (%d bytes)", len(data))
 
-	// Publish USP message to Kafka
+	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		"mqtt-client",                                // endpointID
@@ -184,14 +202,48 @@ func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	)
 
 	if err != nil {
-		log.Printf("❌ MQTT: Failed to publish to Kafka: %v", err)
+		log.Printf("❌ MQTT: Failed to publish to Kafka inbound topic: %v", err)
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ MQTT: USP message published to Kafka")
+	log.Printf("✅ MQTT: USP message published to Kafka inbound topic")
 
 	// In event-driven architecture, we don't wait for synchronous response
-	// The response will be published to MQTT asynchronously via a consumer
-	// For now, return nil to indicate async processing
+	// Responses will come through Kafka outbound topic
 	return nil, nil
+}
+
+// setupKafkaConsumer configures Kafka consumer to receive outbound messages from USP service
+func (s *MQTTMTPService) setupKafkaConsumer() error {
+	// Subscribe to outbound topic to receive responses from USP service
+	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
+
+	handler := func(msg *confluentkafka.Message) error {
+		log.Printf("📨 MQTT: Received outbound message from Kafka (%d bytes)", len(msg.Value))
+		
+		// TODO: Send message to agent via MQTT
+		// When MQTT broker is implemented, publish to agent's topic:
+		// if s.mqttBroker != nil {
+		//     topic := s.config.MTP.MQTT.Topics.Response
+		//     err := s.mqttBroker.Publish(topic, msg.Value)
+		//     if err != nil {
+		//         log.Printf("❌ MQTT: Failed to send message to agent: %v", err)
+		//         return err
+		//     }
+		//     log.Printf("✅ MQTT: Sent message to agent via topic %s (%d bytes)", topic, len(msg.Value))
+		// } else {
+		//     log.Printf("⚠️ MQTT: Broker not connected, cannot send message to agent")
+		// }
+		
+		log.Printf("ℹ️  MQTT: Outbound message ready to send (MQTT broker implementation pending)")
+		return nil
+	}
+
+	// Subscribe to Kafka outbound topic
+	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to Kafka outbound topic: %w", err)
+	}
+
+	log.Printf("✅ MQTT: Subscribed to Kafka outbound topic: %s", s.config.Kafka.Topics.USPMessagesOutbound)
+	return nil
 }

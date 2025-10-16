@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/gorilla/websocket"
+
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
-
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -27,6 +28,7 @@ type WebSocketMTPService struct {
 	config        *config.Config
 	kafkaClient   *kafka.Client
 	kafkaProducer *kafka.Producer
+	kafkaConsumer *kafka.Consumer
 	upgrader      websocket.Upgrader
 	connections   map[string]*websocket.Conn
 	connMutex     sync.RWMutex
@@ -52,6 +54,13 @@ func main() {
 	}
 	defer kafkaProducer.Close()
 
+	// Create Kafka consumer for outbound messages
+	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, "mtp-websocket")
+	if err != nil {
+		log.Fatalf("❌ Failed to create Kafka consumer: %v", err)
+	}
+	defer kafkaConsumer.Close()
+
 	// Ensure topics exist
 	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
 	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
@@ -63,6 +72,7 @@ func main() {
 		config:        cfg,
 		kafkaClient:   kafkaClient,
 		kafkaProducer: kafkaProducer,
+		kafkaConsumer: kafkaConsumer,
 		connections:   make(map[string]*websocket.Conn),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -136,9 +146,16 @@ func main() {
 		}
 	}()
 
+	// Setup Kafka consumer for outbound messages (responses from USP service)
+	if err := svc.setupKafkaConsumer(); err != nil {
+		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
+	}
+
 	log.Printf("✅ %s started successfully", ServiceName)
 	log.Printf("   └── WebSocket Port: %d", wsPort)
 	log.Printf("   └── Subprotocol: %s", cfg.MTP.Websocket.Subprotocol)
+	log.Printf("   └── Kafka Inbound Topic: %s", cfg.Kafka.Topics.USPMessagesInbound)
+	log.Printf("   └── Kafka Outbound Topic: %s", cfg.Kafka.Topics.USPMessagesOutbound)
 	log.Printf("   └── Health Port: %d", healthPort)
 	log.Printf("   └── Kafka Brokers: %v", cfg.Kafka.Brokers)
 
@@ -230,7 +247,7 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 
 // processUSPMessage publishes USP message to Kafka for processing
 func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([]byte, error) {
-	// Publish USP message to Kafka
+	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		clientID,                                     // endpointID (use clientID for now)
@@ -241,13 +258,55 @@ func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
+		return nil, fmt.Errorf("failed to publish to Kafka inbound topic: %w", err)
 	}
 
-	log.Printf("✅ WebSocket: USP message published to Kafka for client %s", clientID)
+	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic for client %s", clientID)
 
 	// In event-driven architecture, we don't wait for synchronous response
-	// The response will be delivered asynchronously through the WebSocket
-	// For now, return nil to indicate async processing
+	// Responses will come through Kafka outbound topic
 	return nil, nil
+}
+
+// setupKafkaConsumer configures Kafka consumer to receive outbound messages from USP service
+func (s *WebSocketMTPService) setupKafkaConsumer() error {
+	// Subscribe to outbound topic to receive responses from USP service
+	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
+
+	handler := func(msg *confluentkafka.Message) error {
+		log.Printf("📨 WebSocket: Received outbound message from Kafka (%d bytes)", len(msg.Value))
+		
+		// TODO: Need to extract endpoint/client ID from Kafka message to route to correct WebSocket connection
+		// For now, log that message is ready
+		// When implemented:
+		// 1. Parse message headers to get target endpoint/client ID
+		// 2. Look up WebSocket connection in s.connections map
+		// 3. Send message via conn.WriteMessage(websocket.BinaryMessage, msg.Value)
+		
+		log.Printf("ℹ️  WebSocket: Outbound message ready (client routing implementation pending)")
+		
+		// Example implementation (when client ID routing is added):
+		// s.connMutex.RLock()
+		// conn, exists := s.connections[clientID]
+		// s.connMutex.RUnlock()
+		// if exists {
+		//     if err := conn.WriteMessage(websocket.BinaryMessage, msg.Value); err != nil {
+		//         log.Printf("❌ WebSocket: Failed to send message to client %s: %v", clientID, err)
+		//         return err
+		//     }
+		//     log.Printf("✅ WebSocket: Sent message to client %s (%d bytes)", clientID, len(msg.Value))
+		// } else {
+		//     log.Printf("⚠️ WebSocket: Client %s not connected, cannot send message", clientID)
+		// }
+		
+		return nil
+	}
+
+	// Subscribe to Kafka outbound topic
+	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to Kafka outbound topic: %w", err)
+	}
+
+	log.Printf("✅ WebSocket: Subscribed to Kafka outbound topic: %s", s.config.Kafka.Topics.USPMessagesOutbound)
+	return nil
 }

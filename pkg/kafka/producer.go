@@ -79,6 +79,19 @@ func (p *Producer) PublishUSPMessage(topic string, endpointID, messageID, messag
 	return p.PublishEvent(topic, event)
 }
 
+// PublishCWMPMessage publishes a CWMP message event
+func (p *Producer) PublishCWMPMessage(topic string, deviceID, messageID, messageType string, payload []byte, mtpProtocol string) error {
+	event := CWMPMessageEvent{
+		BaseEvent:   NewBaseEvent(EventCWMPMessageInbound, "mtp-http"),
+		DeviceID:    deviceID,
+		MessageType: messageType,
+		Payload:     payload,
+		SessionID:   messageID, // Use messageID as session ID for now
+	}
+
+	return p.PublishEvent(topic, event)
+}
+
 // PublishDeviceEvent publishes a device lifecycle event
 func (p *Producer) PublishDeviceEvent(topic string, eventType EventType, deviceID, endpointID, protocol string, data map[string]interface{}) error {
 	event := DeviceEvent{

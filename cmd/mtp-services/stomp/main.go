@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
+
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 )
@@ -40,12 +42,20 @@ type STOMPBroker struct {
 	authenticated  bool
 }
 
+// IsConnected returns true if STOMP broker is connected
+func (b *STOMPBroker) IsConnected() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.connected
+}
+
 // STOMPMTPService handles STOMP transport for USP messages
 type STOMPMTPService struct {
 	config        *config.Config
 	stompBroker   *STOMPBroker
 	kafkaClient   *kafka.Client
 	kafkaProducer *kafka.Producer
+	kafkaConsumer *kafka.Consumer
 }
 
 func main() {
@@ -68,6 +78,13 @@ func main() {
 	}
 	defer kafkaProducer.Close()
 
+	// Create Kafka consumer for outbound messages
+	kafkaConsumer, err := kafka.NewConsumer(&cfg.Kafka, "mtp-stomp")
+	if err != nil {
+		log.Fatalf("❌ Failed to create Kafka consumer: %v", err)
+	}
+	defer kafkaConsumer.Close()
+
 	// Ensure topics exist
 	topicsManager := kafka.NewTopicsManager(kafkaClient, &cfg.Kafka.Topics)
 	if err := topicsManager.EnsureAllTopicsExist(); err != nil {
@@ -79,6 +96,7 @@ func main() {
 		config:        cfg,
 		kafkaClient:   kafkaClient,
 		kafkaProducer: kafkaProducer,
+		kafkaConsumer: kafkaConsumer,
 	}
 
 	// Initialize STOMP broker
@@ -134,10 +152,17 @@ func main() {
 		}
 	}()
 
+	// Setup Kafka consumer for outbound messages (responses from USP service)
+	if err := svc.setupKafkaConsumer(); err != nil {
+		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
+	}
+
 	log.Printf("✅ %s started successfully", ServiceName)
 	log.Printf("   └── STOMP Broker: %s", cfg.MTP.STOMP.BrokerURL)
 	log.Printf("   └── STOMP Inbound Queue: %s", cfg.MTP.STOMP.Destinations.Inbound)
 	log.Printf("   └── STOMP Outbound Queue: %s", cfg.MTP.STOMP.Destinations.Outbound)
+	log.Printf("   └── Kafka Inbound Topic: %s", cfg.Kafka.Topics.USPMessagesInbound)
+	log.Printf("   └── Kafka Outbound Topic: %s", cfg.Kafka.Topics.USPMessagesOutbound)
 	log.Printf("   └── Health Port: %d", healthPort)
 	log.Printf("   └── Kafka Brokers: %v", cfg.Kafka.Brokers)
 
@@ -506,11 +531,11 @@ func (b *STOMPBroker) Close() {
 }
 
 // ProcessUSPMessage implements the MessageProcessor interface
-// This is called by the STOMP broker when a message is received
+// This is called by the STOMP broker when a message is received from agents
 func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
-	log.Printf("📥 STOMP: Received USP message (%d bytes)", len(data))
+	log.Printf("📥 STOMP: Received USP message from agent (%d bytes)", len(data))
 
-	// Publish USP message to Kafka
+	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		"stomp-client",                               // endpointID
@@ -521,12 +546,51 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	)
 
 	if err != nil {
-		log.Printf("❌ STOMP: Failed to publish to Kafka: %v", err)
+		log.Printf("❌ STOMP: Failed to publish to Kafka inbound topic: %v", err)
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ STOMP: USP message published to Kafka")
+	log.Printf("✅ STOMP: USP message published to Kafka inbound topic")
 
 	// In event-driven architecture, we don't wait for synchronous response
+	// Responses will come through Kafka outbound topic
 	return nil, nil
+}
+
+// setupKafkaConsumer configures Kafka consumer to receive outbound messages from USP service
+func (s *STOMPMTPService) setupKafkaConsumer() error {
+	// Subscribe to outbound topic to receive responses from USP service
+	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
+
+	handler := func(msg *confluentkafka.Message) error {
+		log.Printf("📨 STOMP: Received outbound message from Kafka (%d bytes)", len(msg.Value))
+		
+		// Send message to agent via STOMP
+		if s.stompBroker != nil && s.stompBroker.IsConnected() {
+			// Send to the outbound STOMP destination (agents subscribe to this)
+			outboundDest := s.config.MTP.STOMP.Destinations.Outbound
+			if outboundDest == "" {
+				outboundDest = "/queue/usp.agent" // Default fallback
+			}
+			
+			err := s.stompBroker.Send(outboundDest, msg.Value)
+			if err != nil {
+				log.Printf("❌ STOMP: Failed to send message to agent via %s: %v", outboundDest, err)
+				return err
+			}
+			log.Printf("✅ STOMP: Sent message to agent via %s (%d bytes)", outboundDest, len(msg.Value))
+		} else {
+			log.Printf("⚠️ STOMP: Broker not connected, cannot send message to agent")
+		}
+		
+		return nil
+	}
+
+	// Subscribe to Kafka outbound topic
+	if err := s.kafkaConsumer.Subscribe(topics, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to Kafka outbound topic: %w", err)
+	}
+
+	log.Printf("✅ STOMP: Subscribed to Kafka outbound topic: %s", s.config.Kafka.Topics.USPMessagesOutbound)
+	return nil
 }
