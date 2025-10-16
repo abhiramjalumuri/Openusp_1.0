@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"openusp/internal/mtp"
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 )
@@ -21,9 +19,9 @@ const (
 )
 
 // MQTTMTPService handles MQTT transport for USP messages
+// TODO: Implement MQTT broker connection similar to STOMP
 type MQTTMTPService struct {
 	config        *config.Config
-	mqttBroker    *mtp.MQTTBroker
 	kafkaClient   *kafka.Client
 	kafkaProducer *kafka.Producer
 }
@@ -61,10 +59,10 @@ func main() {
 		kafkaProducer: kafkaProducer,
 	}
 
-	// Initialize MQTT broker
-	if err := svc.initMQTTBroker(); err != nil {
-		log.Fatalf("❌ Failed to initialize MQTT broker: %v", err)
-	}
+	// TODO: Initialize MQTT broker (implementation pending)
+	// if err := svc.initMQTTBroker(); err != nil {
+	// 	log.Fatalf("❌ Failed to initialize MQTT broker: %v", err)
+	// }
 
 	// Validate and get ports from configuration - no hardcoded defaults
 	healthPort := svc.config.MTPMqttHealthPort
@@ -103,18 +101,17 @@ func main() {
 
 	// TODO: Start gRPC server on grpcPort
 	// This will be implemented after proto definitions are created
-	// Start MQTT broker
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	
+	// TODO: Start MQTT broker (implementation pending)
 
-	go func() {
-		if err := svc.mqttBroker.Start(ctx); err != nil {
-			log.Printf("❌ MQTT broker error: %v", err)
-		}
-	}()
+	// go func() {
+	// 	if err := svc.mqttBroker.Start(ctx); err != nil {
+	// 		log.Printf("❌ MQTT broker error: %v", err)
+	// 	}
+	// }()
 
 	log.Printf("✅ %s started successfully", ServiceName)
-	log.Printf("   └── MQTT Broker: %s", cfg.MTP.MQTT.BrokerURL)
+	log.Printf("   └── MQTT Broker: %s (TODO: implementation pending)", cfg.MTP.MQTT.BrokerURL)
 	log.Printf("   └── Health Port: %d", healthPort)
 	log.Printf("   └── Kafka Brokers: %v", cfg.Kafka.Brokers)
 
@@ -124,51 +121,52 @@ func main() {
 
 	<-sigChan
 	log.Printf("🛑 Shutting down %s...", ServiceName)
-	cancel()
 
-	// Cleanup
-	if svc.mqttBroker != nil {
-		svc.mqttBroker.Close()
-	}
+	// TODO: Cleanup MQTT broker when implemented
+	// if svc.mqttBroker != nil {
+	// 	svc.mqttBroker.Close()
+	// }
 
 	log.Printf("✅ %s stopped gracefully", ServiceName)
 }
 
+// TODO: Implement MQTT broker connection
 // initMQTTBroker initializes MQTT broker connection
-func (s *MQTTMTPService) initMQTTBroker() error {
-	// Get MQTT configuration from YAML
-	mqttConfig := s.config.MTP.MQTT
+// func (s *MQTTMTPService) initMQTTBroker() error {
+// 	// Get MQTT configuration from YAML
+// 	mqttConfig := s.config.MTP.MQTT
+//
+// 	log.Printf("🔌 Creating MQTT broker connection...")
+// 	log.Printf("   └── Broker URL: %s", mqttConfig.BrokerURL)
+//
+// 	broker, err := mtp.NewMQTTBroker(mqttConfig.BrokerURL)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to create MQTT broker: %w", err)
+// 	}
+//
+// 	// Set message handler to process incoming MQTT messages
+// 	broker.SetMessageHandler(s.onMQTTMessage)
+// 	s.mqttBroker = broker
+//
+// 	log.Printf("✅ MQTT broker initialized")
+// 	return nil
+// }
 
-	log.Printf("🔌 Creating MQTT broker connection...")
-	log.Printf("   └── Broker URL: %s", mqttConfig.BrokerURL)
-
-	broker, err := mtp.NewMQTTBroker(mqttConfig.BrokerURL)
-	if err != nil {
-		return fmt.Errorf("failed to create MQTT broker: %w", err)
-	}
-
-	// Set message handler to process incoming MQTT messages
-	broker.SetMessageHandler(s.onMQTTMessage)
-	s.mqttBroker = broker
-
-	log.Printf("✅ MQTT broker initialized")
-	return nil
-}
-
+// TODO: Implement MQTT message handler
 // onMQTTMessage handles incoming MQTT messages
-func (s *MQTTMTPService) onMQTTMessage(topic string, payload []byte) {
-	log.Printf("📥 MQTT: Received message on topic %s (%d bytes)", topic, len(payload))
-
-	// Process the USP message
-	response, err := s.ProcessUSPMessage(payload)
-	if err != nil {
-		log.Printf("❌ MQTT: Message processing failed: %v", err)
-		return
-	}
-
-	// Response is already sent in ProcessUSPMessage
-	_ = response
-}
+// func (s *MQTTMTPService) onMQTTMessage(topic string, payload []byte) {
+// 	log.Printf("📥 MQTT: Received message on topic %s (%d bytes)", topic, len(payload))
+//
+// 	// Process the USP message
+// 	response, err := s.ProcessUSPMessage(payload)
+// 	if err != nil {
+// 		log.Printf("❌ MQTT: Message processing failed: %v", err)
+// 		return
+// 	}
+//
+// 	// Response is already sent in ProcessUSPMessage
+// 	_ = response
+// }
 
 // ProcessUSPMessage implements the MessageProcessor interface
 // This is called by the MQTT broker when a message is received
