@@ -43,6 +43,10 @@ func (tm *TopicsManager) GetAllTopics() []string {
 		tm.config.USPMessagesInbound,
 		tm.config.USPMessagesOutbound,
 		tm.config.USPRecordsParsed,
+		tm.config.USPAPIRequest,
+		tm.config.USPAPIResponse,
+		tm.config.USPDataRequest,
+		tm.config.USPDataResponse,
 
 		// Data topics
 		tm.config.DataDeviceCreated,
@@ -56,7 +60,9 @@ func (tm *TopicsManager) GetAllTopics() []string {
 		tm.config.CWMPMessagesInbound,
 		tm.config.CWMPMessagesOutbound,
 		tm.config.CWMPDataRequest,
+		tm.config.CWMPDataResponse,
 		tm.config.CWMPAPIRequest,
+		tm.config.CWMPAPIResponse,
 
 		// Agent topics
 		tm.config.AgentStatusUpdated,
@@ -79,6 +85,10 @@ func (tm *TopicsManager) GetUSPTopics() []string {
 		tm.config.USPMessagesInbound,
 		tm.config.USPMessagesOutbound,
 		tm.config.USPRecordsParsed,
+		tm.config.USPAPIRequest,
+		tm.config.USPAPIResponse,
+		tm.config.USPDataRequest,
+		tm.config.USPDataResponse,
 	}
 }
 
@@ -100,7 +110,9 @@ func (tm *TopicsManager) GetCWMPTopics() []string {
 		tm.config.CWMPMessagesInbound,
 		tm.config.CWMPMessagesOutbound,
 		tm.config.CWMPDataRequest,
+		tm.config.CWMPDataResponse,
 		tm.config.CWMPAPIRequest,
+		tm.config.CWMPAPIResponse,
 	}
 }
 
