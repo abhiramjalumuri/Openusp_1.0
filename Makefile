@@ -39,7 +39,7 @@ LOG_DIR := logs
 
 # OpenUSP Service definitions
 OPENUSP_CORE_SERVICES := data-service usp-service cwmp-service
-# Kafka-based MTP services (cmd/mtps/) - only STOMP is fully implemented
+# Kafka-based MTP services (cmd/mtp-services/) - only STOMP is fully implemented
 OPENUSP_MTP_SERVICES := mtps-stomp
 # TODO: Complete implementations for: mtps-mqtt mtps-websocket mtps-http
 OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES) $(OPENUSP_MTP_SERVICES)
@@ -403,18 +403,18 @@ build-$(1):
 	@echo "✅ $(1) built successfully"
 endef
 
-# Build templates for MTP services (Kafka-based location: cmd/mtps/)
+# Build templates for MTP services (Kafka-based location: cmd/mtp-services/)
 define MTP_BUILD_TEMPLATE
 build-$(1):
 	@echo "🔨 Building $(1)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/mtps/$(2)
+	@$(GOBUILD) -ldflags '$(LDFLAGS)' -o $(BUILD_DIR)/$(1) ./cmd/mtp-services/$(2)
 	@echo "✅ $(1) built successfully"
 endef
 
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
 
-# Kafka-based MTP services with new paths (cmd/mtps/)
+# Kafka-based MTP services with new paths (cmd/mtp-services/)
 $(eval $(call MTP_BUILD_TEMPLATE,mtps-stomp,stomp))
 # Future implementations (when ready):
 # $(eval $(call MTP_BUILD_TEMPLATE,mtps-mqtt,mqtt))
