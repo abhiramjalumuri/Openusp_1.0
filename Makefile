@@ -39,9 +39,8 @@ LOG_DIR := logs
 
 # OpenUSP Service definitions
 OPENUSP_CORE_SERVICES := data-service usp-service cwmp-service
-# Kafka-based MTP services (cmd/mtp-services/) - only STOMP is fully implemented
-OPENUSP_MTP_SERVICES := mtps-stomp
-# TODO: Complete implementations for: mtps-mqtt mtps-websocket mtps-http
+# Kafka-based MTP services (cmd/mtp-services/)
+OPENUSP_MTP_SERVICES := mtp-stomp mtp-mqtt mtp-websocket mtp-http
 OPENUSP_SERVICES := api-gateway $(OPENUSP_CORE_SERVICES) $(OPENUSP_MTP_SERVICES)
 OPENUSP_AGENTS := usp-agent cwmp-agent
 # Derived list excluding usp-agent for auto-generation of run targets
@@ -415,11 +414,10 @@ endef
 $(foreach service,$(OPENUSP_CORE_SERVICES),$(eval $(call BUILD_TEMPLATE,$(service))))
 
 # Kafka-based MTP services with new paths (cmd/mtp-services/)
-$(eval $(call MTP_BUILD_TEMPLATE,mtps-stomp,stomp))
-# Future implementations (when ready):
-# $(eval $(call MTP_BUILD_TEMPLATE,mtps-mqtt,mqtt))
-# $(eval $(call MTP_BUILD_TEMPLATE,mtps-websocket,websocket))
-# $(eval $(call MTP_BUILD_TEMPLATE,mtps-http,http))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-stomp,stomp))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-mqtt,mqtt))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-websocket,websocket))
+$(eval $(call MTP_BUILD_TEMPLATE,mtp-http,http))
 
 # Agent services with new paths
 $(eval $(call AGENT_BUILD_TEMPLATE,usp-agent,usp))
