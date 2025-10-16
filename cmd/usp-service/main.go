@@ -130,10 +130,20 @@ func (s *USPCoreService) setupKafkaConsumers() error {
 
 // handleUSPMessage processes incoming USP messages from MTP services
 func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
-	log.Printf("📨 Received USP TR-369 protobuf message: %d bytes", len(msg.Value))
+	log.Printf("📨 Received message from topic: %s (%d bytes)", *msg.TopicPartition.Topic, len(msg.Value))
 
-	// Process the raw TR-369 protobuf Record directly
-	response, err := s.ProcessUSPMessage(msg.Value)
+	// Unmarshal Kafka USPMessageEvent envelope
+	var event kafka.USPMessageEvent
+	if err := json.Unmarshal(msg.Value, &event); err != nil {
+		log.Printf("❌ Failed to unmarshal USPMessageEvent: %v", err)
+		return err
+	}
+
+	log.Printf("📨 USP Message Event - EndpointID: %s, MessageType: %s, Payload: %d bytes, MTP: %s",
+		event.EndpointID, event.MessageType, len(event.Payload), event.MTPProtocol)
+
+	// Process the USP protobuf Record from the event payload
+	response, err := s.ProcessUSPMessage(event.Payload)
 	if err != nil {
 		log.Printf("❌ Error processing USP message: %v", err)
 		return err
@@ -145,7 +155,7 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 			log.Printf("❌ Failed to publish USP response: %v", err)
 			return err
 		}
-		log.Printf("✅ Published USP response to %s", s.config.Kafka.Topics.USPMessagesOutbound)
+		log.Printf("✅ Published USP response to %s (%d bytes)", s.config.Kafka.Topics.USPMessagesOutbound, len(response))
 	}
 
 	return nil
