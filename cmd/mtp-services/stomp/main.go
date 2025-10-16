@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -535,10 +536,17 @@ func (b *STOMPBroker) Close() {
 func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	log.Printf("📥 STOMP: Received USP message from agent (%d bytes)", len(data))
 
+	// Extract endpoint ID from USP Record to properly route responses
+	endpointID := s.extractEndpointID(data)
+	if endpointID == "" {
+		endpointID = "stomp-client-unknown" // Fallback
+		log.Printf("⚠️ STOMP: Could not extract endpoint ID from message, using fallback")
+	}
+
 	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
-		"stomp-client",                               // endpointID
+		endpointID,                                   // endpointID extracted from USP Record
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
 		"Request", // messageType
 		data,      // payload
@@ -550,11 +558,39 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ STOMP: USP message published to Kafka inbound topic")
+	log.Printf("✅ STOMP: USP message published to Kafka inbound topic (EndpointID: %s)", endpointID)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic
 	return nil, nil
+}
+
+// extractEndpointID extracts the FromId (endpoint ID) from a USP Record
+func (s *STOMPMTPService) extractEndpointID(data []byte) string {
+	// Scan for "proto::usp.agent" pattern which is the agent's endpoint ID format
+	// This avoids matching "proto::openusp.controller" (the ToId)
+	dataStr := string(data)
+	
+	// Look specifically for agent endpoint patterns
+	patterns := []string{"proto::usp.agent", "proto::cwmp.agent", "proto::device"}
+	for _, pattern := range patterns {
+		if idx := strings.Index(dataStr, pattern); idx >= 0 {
+			// Extract endpoint ID (format: proto::usp.agent.XXX)
+			remaining := dataStr[idx:]
+			// Find the null terminator or whitespace (but not colon, as it's part of proto::)
+			endIdx := strings.IndexAny(remaining, "\x00\n\r\t ")
+			if endIdx > 0 {
+				return remaining[:endIdx]
+			}
+			// If no terminator found within reasonable length, take first 25 chars
+			if len(remaining) > 25 {
+				return remaining[:25]
+			}
+			return remaining
+		}
+	}
+	
+	return ""
 }
 
 // setupKafkaConsumer configures Kafka consumer to receive outbound messages from USP service
@@ -565,6 +601,16 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 	handler := func(msg *confluentkafka.Message) error {
 		log.Printf("📨 STOMP: Received outbound message from Kafka (%d bytes)", len(msg.Value))
 		
+		// Unmarshal Kafka USPMessageEvent envelope
+		var event kafka.USPMessageEvent
+		if err := json.Unmarshal(msg.Value, &event); err != nil {
+			log.Printf("❌ STOMP: Failed to unmarshal USPMessageEvent: %v", err)
+			return err
+		}
+
+		log.Printf("📨 STOMP: USP Response - EndpointID: %s, MessageType: %s, Payload: %d bytes",
+			event.EndpointID, event.MessageType, len(event.Payload))
+
 		// Send message to agent via STOMP
 		if s.stompBroker != nil && s.stompBroker.IsConnected() {
 			// Send to the outbound STOMP destination (agents subscribe to this)
@@ -573,12 +619,13 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 				outboundDest = "/queue/usp.agent" // Default fallback
 			}
 			
-			err := s.stompBroker.Send(outboundDest, msg.Value)
+			// Send the raw USP protobuf payload (not the JSON envelope)
+			err := s.stompBroker.Send(outboundDest, event.Payload)
 			if err != nil {
-				log.Printf("❌ STOMP: Failed to send message to agent via %s: %v", outboundDest, err)
+				log.Printf("❌ STOMP: Failed to send message to agent %s via %s: %v", event.EndpointID, outboundDest, err)
 				return err
 			}
-			log.Printf("✅ STOMP: Sent message to agent via %s (%d bytes)", outboundDest, len(msg.Value))
+			log.Printf("✅ STOMP: Sent response to agent %s via %s (%d bytes)", event.EndpointID, outboundDest, len(event.Payload))
 		} else {
 			log.Printf("⚠️ STOMP: Broker not connected, cannot send message to agent")
 		}

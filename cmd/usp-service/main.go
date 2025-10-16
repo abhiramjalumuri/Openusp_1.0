@@ -149,13 +149,23 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 		return err
 	}
 
-	// If there's a response, publish it to outbound topic
+	// If there's a response, publish it to outbound topic with routing information
 	if response != nil {
-		if err := s.kafkaProducer.PublishRaw(s.config.Kafka.Topics.USPMessagesOutbound, "", response); err != nil {
+		// Wrap response in USPMessageEvent with endpoint ID and MTP protocol for routing
+		err = s.kafkaProducer.PublishUSPMessage(
+			s.config.Kafka.Topics.USPMessagesOutbound,
+			event.EndpointID,  // Route response back to the same endpoint
+			fmt.Sprintf("resp-%d", time.Now().UnixNano()),
+			"Response",
+			response,
+			event.MTPProtocol, // Use the same MTP protocol as the incoming message
+		)
+		if err != nil {
 			log.Printf("❌ Failed to publish USP response: %v", err)
 			return err
 		}
-		log.Printf("✅ Published USP response to %s (%d bytes)", s.config.Kafka.Topics.USPMessagesOutbound, len(response))
+		log.Printf("✅ Published USP response to %s (EndpointID: %s, MTP: %s, %d bytes)",
+			s.config.Kafka.Topics.USPMessagesOutbound, event.EndpointID, event.MTPProtocol, len(response))
 	}
 
 	return nil
