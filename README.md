@@ -219,7 +219,7 @@ DB_PORT=5433 go run cmd/data-service/main.go
 # Test TR-369 USP agent
 make start-usp-agent
 # or manually (uses unified configs/openusp.yml automatically):
-go run cmd/usp-agent/main.go
+go run cmd/agents/usp/main.go
 
 # Test TR-069 CWMP agent  
 make start-cwmp-agent  
