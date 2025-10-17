@@ -110,6 +110,13 @@ type YAMLConfig struct {
 		Password string `yaml:"password"`
 	} `yaml:"database"`
 
+	Redis struct {
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Password string `yaml:"password"`
+		DB       int    `yaml:"db"`
+	} `yaml:"redis"`
+
 	Infrastructure struct {
 		Kafka struct {
 			Host   string `yaml:"host"`
@@ -331,6 +338,9 @@ type Config struct {
 	// Database Configuration
 	Database DatabaseConfig
 
+	// Redis Configuration
+	Redis RedisConfig
+
 	// Service URLs (HTTP/REST only)
 	DataServiceURL string
 	APIGatewayURL  string
@@ -483,6 +493,14 @@ type DatabaseConfig struct {
 	User     string
 	Password string
 	SSLMode  string
+}
+
+// RedisConfig holds Redis connection settings
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
 }
 
 // CWMPConfig holds CWMP/TR-069 configuration
@@ -675,7 +693,9 @@ func LoadWithPath(configPath string) *Config {
 		MTPStompMetricsPort:     yamlConfig.Ports.Metrics.MTPStomp,
 		MTPMqttMetricsPort:      yamlConfig.Ports.Metrics.MTPMqtt,
 		MTPWebsocketMetricsPort: yamlConfig.Ports.Metrics.MTPWebsocket,
-		MTPHttpMetricsPort:      yamlConfig.Ports.Metrics.MTPHttp, // Database Configuration
+		MTPHttpMetricsPort:      yamlConfig.Ports.Metrics.MTPHttp,
+
+		// Database Configuration
 		Database: DatabaseConfig{
 			Host:     yamlConfig.Database.Host,
 			Port:     fmt.Sprintf("%d", yamlConfig.Database.Port),
@@ -683,6 +703,14 @@ func LoadWithPath(configPath string) *Config {
 			User:     yamlConfig.Database.User,
 			Password: yamlConfig.Database.Password,
 			SSLMode:  yamlConfig.Database.SSLMode,
+		},
+
+		// Redis Configuration
+		Redis: RedisConfig{
+			Host:     yamlConfig.Redis.Host,
+			Port:     fmt.Sprintf("%d", yamlConfig.Redis.Port),
+			Password: yamlConfig.Redis.Password,
+			DB:       yamlConfig.Redis.DB,
 		},
 
 		// Kafka Configuration
@@ -975,6 +1003,19 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// getEnvAsInt gets integer environment variable with default value
+func getEnvAsInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return intValue
 }
 
 // getBoolEnv gets boolean environment variable with default value

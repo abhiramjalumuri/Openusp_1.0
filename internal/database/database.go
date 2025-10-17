@@ -126,6 +126,7 @@ func (d *Database) Migrate() error {
 		&Parameter{},
 		&Alert{},
 		&Session{},
+		&ConnectionHistory{},
 	)
 
 	if err != nil {

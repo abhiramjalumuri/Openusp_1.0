@@ -88,6 +88,24 @@ services:
       - openusp-dev
     restart: unless-stopped
 
+  # Redis Cache for Agent Connection State
+  redis-dev:
+    image: redis:7.2-alpine
+    container_name: openusp-redis-dev
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass openusp123 --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - openusp_redis_data:/data
+    networks:
+      - openusp-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Kafka Message Broker (KRaft mode - no Zookeeper)
   kafka-dev:
     image: confluentinc/cp-kafka:7.5.0
@@ -152,3 +170,4 @@ volumes:
   openusp_rabbitmq_data:
   openusp_grafana_data:
   openusp_kafka_data:
+  openusp_redis_data:

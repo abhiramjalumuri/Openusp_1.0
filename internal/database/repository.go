@@ -108,6 +108,44 @@ func (r *DeviceRepository) UpdateLastSeen(endpointID string) error {
 	return r.db.Model(&Device{}).Where("endpoint_id = ?", endpointID).Update("last_seen", now).Error
 }
 
+// UpdateConnectionStatus updates the connection status and last_seen for a device
+func (r *DeviceRepository) UpdateConnectionStatus(endpointID, status string) error {
+	now := time.Now()
+	return r.db.Model(&Device{}).
+		Where("endpoint_id = ?", endpointID).
+		Updates(map[string]interface{}{
+			"status":    status,
+			"last_seen": &now,
+		}).Error
+}
+
+// UpdateMTPInfo updates MTP routing information for a device
+func (r *DeviceRepository) UpdateMTPInfo(endpointID, mtpProtocol string, websocketURL, stompQueue, mqttTopic, httpURL string) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"mtp_protocol": mtpProtocol,
+		"last_seen":    &now,
+	}
+	
+	// Update protocol-specific routing fields
+	if websocketURL != "" {
+		updates["websocket_url"] = websocketURL
+	}
+	if stompQueue != "" {
+		updates["stomp_queue"] = stompQueue
+	}
+	if mqttTopic != "" {
+		updates["mqtt_topic"] = mqttTopic
+	}
+	if httpURL != "" {
+		updates["http_url"] = httpURL
+	}
+	
+	return r.db.Model(&Device{}).
+		Where("endpoint_id = ?", endpointID).
+		Updates(updates).Error
+}
+
 // GetOnlineDevices retrieves devices that are currently online
 func (r *DeviceRepository) GetOnlineDevices() ([]Device, error) {
 	var devices []Device
@@ -280,20 +318,135 @@ func (r *SessionRepository) DeleteByDeviceID(deviceID uint) error {
 	return r.db.Where("device_id = ?", deviceID).Delete(&Session{}).Error
 }
 
+// ConnectionHistoryRepository handles connection history operations
+type ConnectionHistoryRepository struct {
+	db *gorm.DB
+}
+
+// NewConnectionHistoryRepository creates a new connection history repository
+func NewConnectionHistoryRepository(db *gorm.DB) *ConnectionHistoryRepository {
+	return &ConnectionHistoryRepository{db: db}
+}
+
+// Create creates a new connection history record
+func (r *ConnectionHistoryRepository) Create(history *ConnectionHistory) error {
+	return r.db.Create(history).Error
+}
+
+// GetByID retrieves a connection history record by ID
+func (r *ConnectionHistoryRepository) GetByID(id uint) (*ConnectionHistory, error) {
+	var history ConnectionHistory
+	err := r.db.Preload("Device").First(&history, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &history, nil
+}
+
+// GetByDeviceID retrieves all connection history for a device
+func (r *ConnectionHistoryRepository) GetByDeviceID(deviceID uint) ([]ConnectionHistory, error) {
+	var history []ConnectionHistory
+	err := r.db.Where("device_id = ?", deviceID).
+		Order("created_at DESC").
+		Find(&history).Error
+	return history, err
+}
+
+// GetByEndpointID retrieves all connection history for an endpoint
+func (r *ConnectionHistoryRepository) GetByEndpointID(endpointID string) ([]ConnectionHistory, error) {
+	var history []ConnectionHistory
+	err := r.db.Where("endpoint_id = ?", endpointID).
+		Order("created_at DESC").
+		Find(&history).Error
+	return history, err
+}
+
+// GetActiveConnection retrieves the currently active connection for an endpoint
+func (r *ConnectionHistoryRepository) GetActiveConnection(endpointID string) (*ConnectionHistory, error) {
+	var history ConnectionHistory
+	err := r.db.Where("endpoint_id = ? AND disconnected_at IS NULL", endpointID).
+		Order("connected_at DESC").
+		First(&history).Error
+	if err != nil {
+		return nil, err
+	}
+	return &history, nil
+}
+
+// UpdateDisconnection updates a connection record with disconnection info
+func (r *ConnectionHistoryRepository) UpdateDisconnection(id uint) error {
+	now := time.Now()
+	return r.db.Model(&ConnectionHistory{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"disconnected_at": now,
+			"duration":        gorm.Expr("EXTRACT(EPOCH FROM (? - connected_at))", now),
+		}).Error
+}
+
+// GetRecentConnections retrieves recent connections with optional filters
+func (r *ConnectionHistoryRepository) GetRecentConnections(limit int, protocol string) ([]ConnectionHistory, error) {
+	query := r.db.Preload("Device").Order("created_at DESC").Limit(limit)
+	
+	if protocol != "" {
+		query = query.Where("mtp_protocol = ?", protocol)
+	}
+	
+	var history []ConnectionHistory
+	err := query.Find(&history).Error
+	return history, err
+}
+
+// GetConnectionStats returns connection statistics
+func (r *ConnectionHistoryRepository) GetConnectionStats() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+	
+	// Total connections
+	var total int64
+	if err := r.db.Model(&ConnectionHistory{}).Count(&total).Error; err != nil {
+		return nil, err
+	}
+	stats["total_connections"] = total
+	
+	// Active connections
+	var active int64
+	if err := r.db.Model(&ConnectionHistory{}).Where("disconnected_at IS NULL").Count(&active).Error; err != nil {
+		return nil, err
+	}
+	stats["active_connections"] = active
+	
+	// Connections by protocol
+	var protocolStats []struct {
+		Protocol string
+		Count    int64
+	}
+	if err := r.db.Model(&ConnectionHistory{}).
+		Select("mtp_protocol as protocol, COUNT(*) as count").
+		Group("mtp_protocol").
+		Scan(&protocolStats).Error; err != nil {
+		return nil, err
+	}
+	stats["by_protocol"] = protocolStats
+	
+	return stats, nil
+}
+
 // Repositories aggregates all repository instances
 type Repositories struct {
-	Device    *DeviceRepository
-	Parameter *ParameterRepository
-	Alert     *AlertRepository
-	Session   *SessionRepository
+	Device            *DeviceRepository
+	Parameter         *ParameterRepository
+	Alert             *AlertRepository
+	Session           *SessionRepository
+	ConnectionHistory *ConnectionHistoryRepository
 }
 
 // NewRepositories creates all repository instances
 func NewRepositories(db *gorm.DB) *Repositories {
 	return &Repositories{
-		Device:    NewDeviceRepository(db),
-		Parameter: NewParameterRepository(db),
-		Alert:     NewAlertRepository(db),
-		Session:   NewSessionRepository(db),
+		Device:            NewDeviceRepository(db),
+		Parameter:         NewParameterRepository(db),
+		Alert:             NewAlertRepository(db),
+		Session:           NewSessionRepository(db),
+		ConnectionHistory: NewConnectionHistoryRepository(db),
 	}
 }

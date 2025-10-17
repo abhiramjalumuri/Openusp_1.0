@@ -89,6 +89,23 @@ type Session struct {
 	Device Device `gorm:"foreignKey:DeviceID" json:"device,omitempty"`
 }
 
+// ConnectionHistory represents the connection history of agents
+type ConnectionHistory struct {
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	DeviceID        uint       `gorm:"index" json:"device_id"`                      // Foreign key to Device (nullable for auto-registration)
+	EndpointID      string     `gorm:"index;not null" json:"endpoint_id"`           // Agent endpoint ID
+	MTPProtocol     string     `gorm:"not null" json:"mtp_protocol"`                // websocket, stomp, mqtt, http
+	ProtocolVersion string     `json:"protocol_version"`                            // MTP protocol version (STOMP 1.2, MQTT 5.0, etc.)
+	EventType       string     `gorm:"not null" json:"event_type"`                  // "connected", "disconnected"
+	ConnectedAt     time.Time  `json:"connected_at"`                                // When connection was established
+	DisconnectedAt  *time.Time `json:"disconnected_at"`                             // When connection was closed (NULL if still connected)
+	Duration        int64      `json:"duration"`                                    // Connection duration in seconds (computed on disconnect)
+	CreatedAt       time.Time  `json:"created_at"`
+
+	// Relationship
+	Device *Device `gorm:"foreignKey:DeviceID" json:"device,omitempty"`
+}
+
 // TableName methods for custom table names (optional)
 func (Device) TableName() string {
 	return "devices"
@@ -104,4 +121,8 @@ func (Alert) TableName() string {
 
 func (Session) TableName() string {
 	return "sessions"
+}
+
+func (ConnectionHistory) TableName() string {
+	return "connection_history"
 }
