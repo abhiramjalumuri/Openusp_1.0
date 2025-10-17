@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -141,6 +142,15 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 
 	log.Printf("📨 USP Message Event - EndpointID: %s, MessageType: %s, Payload: %d bytes, MTP: %s",
 		event.EndpointID, event.MessageType, len(event.Payload), event.MTPProtocol)
+	
+	// Log MTP destination if present
+	if event.MTPDestination.WebSocketURL != "" || event.MTPDestination.STOMPQueue != "" || event.MTPDestination.MQTTTopic != "" {
+		log.Printf("📍 MTP Destination - WebSocket: %s, STOMP: %s, MQTT: %s",
+			event.MTPDestination.WebSocketURL, event.MTPDestination.STOMPQueue, event.MTPDestination.MQTTTopic)
+	}
+
+	// Store the MTP routing information for this endpoint (will be used for future responses)
+	s.storeEndpointMTPRouting(event.EndpointID, event.MTPProtocol, event.MTPDestination)
 
 	// Process the USP protobuf Record from the event payload
 	response, err := s.ProcessUSPMessage(event.Payload)
@@ -151,21 +161,31 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 
 	// If there's a response, publish it to outbound topic with routing information
 	if response != nil {
-		// Wrap response in USPMessageEvent with endpoint ID and MTP protocol for routing
-		err = s.kafkaProducer.PublishUSPMessage(
+		// Get routing information for this endpoint (from incoming message or database)
+		destination := event.MTPDestination
+		mtpProtocol := event.MTPProtocol
+		
+		// If no routing info in the incoming message, try to get it from database
+		if destination.WebSocketURL == "" && destination.STOMPQueue == "" && destination.MQTTTopic == "" {
+			destination, mtpProtocol = s.getEndpointMTPRouting(event.EndpointID)
+		}
+		
+		// Wrap response in USPMessageEvent with endpoint ID, MTP protocol, and routing information
+		err = s.kafkaProducer.PublishUSPMessageWithDestination(
 			s.config.Kafka.Topics.USPMessagesOutbound,
 			event.EndpointID,  // Route response back to the same endpoint
 			fmt.Sprintf("resp-%d", time.Now().UnixNano()),
 			"Response",
 			response,
-			event.MTPProtocol, // Use the same MTP protocol as the incoming message
+			mtpProtocol,       // Use the same MTP protocol as the incoming message
+			destination,       // Include MTP-specific routing information
 		)
 		if err != nil {
 			log.Printf("❌ Failed to publish USP response: %v", err)
 			return err
 		}
 		log.Printf("✅ Published USP response to %s (EndpointID: %s, MTP: %s, %d bytes)",
-			s.config.Kafka.Topics.USPMessagesOutbound, event.EndpointID, event.MTPProtocol, len(response))
+			s.config.Kafka.Topics.USPMessagesOutbound, event.EndpointID, mtpProtocol, len(response))
 	}
 
 	return nil
@@ -1156,4 +1176,50 @@ func (s *USPCoreService) registerDeviceFromBootParams(agentEndpointID string, bo
 		agentEndpointID, s.config.Kafka.Topics.DataDeviceCreated)
 
 	return nil
+}
+
+// endpointMTPCache stores MTP routing information temporarily (in-memory cache)
+// In production, this should be stored in database or distributed cache
+var endpointMTPCache = struct {
+	sync.RWMutex
+	routes map[string]struct {
+		protocol    string
+		destination kafka.MTPDestination
+	}
+}{
+	routes: make(map[string]struct {
+		protocol    string
+		destination kafka.MTPDestination
+	}),
+}
+
+// storeEndpointMTPRouting stores MTP routing information for an endpoint
+func (s *USPCoreService) storeEndpointMTPRouting(endpointID string, mtpProtocol string, destination kafka.MTPDestination) {
+	endpointMTPCache.Lock()
+	defer endpointMTPCache.Unlock()
+	
+	endpointMTPCache.routes[endpointID] = struct {
+		protocol    string
+		destination kafka.MTPDestination
+	}{
+		protocol:    mtpProtocol,
+		destination: destination,
+	}
+	
+	log.Printf("💾 Stored MTP routing for %s: protocol=%s, websocket=%s, stomp=%s, mqtt=%s",
+		endpointID, mtpProtocol, destination.WebSocketURL, destination.STOMPQueue, destination.MQTTTopic)
+}
+
+// getEndpointMTPRouting retrieves MTP routing information for an endpoint
+func (s *USPCoreService) getEndpointMTPRouting(endpointID string) (kafka.MTPDestination, string) {
+	endpointMTPCache.RLock()
+	defer endpointMTPCache.RUnlock()
+	
+	if route, exists := endpointMTPCache.routes[endpointID]; exists {
+		log.Printf("📖 Retrieved MTP routing for %s: protocol=%s", endpointID, route.protocol)
+		return route.destination, route.protocol
+	}
+	
+	log.Printf("⚠️ No MTP routing found for %s in cache", endpointID)
+	return kafka.MTPDestination{}, ""
 }

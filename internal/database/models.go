@@ -20,6 +20,14 @@ type Device struct {
 	LastSeen        *time.Time     `json:"last_seen"`
 	IPAddress       string         `json:"ip_address"`
 	ConnectionType  string         `json:"connection_type"` // MQTT, STOMP, WebSocket, Unix
+	
+	// MTP routing information (stored as MTPProtocol for backward compatibility)
+	MTPProtocol      string `json:"mtp_protocol"`       // websocket, stomp, mqtt, http
+	WebSocketURL     string `json:"websocket_url"`      // WebSocket endpoint URL
+	STOMPQueue       string `json:"stomp_queue"`        // STOMP destination queue
+	MQTTTopic        string `json:"mqtt_topic"`         // MQTT response topic
+	HTTPURL          string `json:"http_url"`           // HTTP callback URL
+	
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`

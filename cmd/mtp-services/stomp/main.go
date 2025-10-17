@@ -547,14 +547,22 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		log.Printf("⚠️ STOMP: Could not extract endpoint ID from message, using fallback")
 	}
 
+	// STOMP queue for routing responses back to the agent
+	// Agents listen on /queue/controller->agent for inbound messages from the controller
+	stompQueue := "/queue/controller->agent"
+	destination := kafka.MTPDestination{
+		STOMPQueue: stompQueue,
+	}
+
 	// Publish USP message to Kafka inbound topic for USP service to process
-	err := s.kafkaProducer.PublishUSPMessage(
+	err := s.kafkaProducer.PublishUSPMessageWithDestination(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		endpointID,                                   // endpointID extracted from USP Record
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
-		"Request", // messageType
-		data,      // payload
-		"stomp",   // mtpProtocol
+		"Request",    // messageType
+		data,         // payload
+		"stomp",      // mtpProtocol
+		destination,  // MTP routing information
 	)
 
 	if err != nil {
@@ -562,7 +570,8 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ STOMP: USP message published to Kafka inbound topic (EndpointID: %s)", endpointID)
+	log.Printf("✅ STOMP: USP message published to Kafka inbound topic (EndpointID: %s, Queue: %s)", 
+		endpointID, stompQueue)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic
@@ -617,19 +626,26 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 
 		// Send message to agent via STOMP
 		if s.stompBroker != nil && s.stompBroker.IsConnected() {
-			// Send to the outbound STOMP destination (agents subscribe to this)
-			outboundDest := s.config.MTP.STOMP.Destinations.Outbound
-			if outboundDest == "" {
-				outboundDest = "/queue/usp.agent" // Default fallback
+			// Use the STOMP queue from the MTP destination if provided, otherwise fall back to config
+			stompQueue := event.MTPDestination.STOMPQueue
+			if stompQueue == "" {
+				// Fall back to config
+				stompQueue = s.config.MTP.STOMP.Destinations.Outbound
+				if stompQueue == "" {
+					stompQueue = "/queue/controller->agent" // Default fallback
+				}
+				log.Printf("⚠️ STOMP: No queue in MTPDestination, using fallback: %s", stompQueue)
 			}
 			
+			log.Printf("📍 STOMP: Routing to queue: %s", stompQueue)
+			
 			// Send the raw USP protobuf payload (not the JSON envelope)
-			err := s.stompBroker.Send(outboundDest, event.Payload)
+			err := s.stompBroker.Send(stompQueue, event.Payload)
 			if err != nil {
-				log.Printf("❌ STOMP: Failed to send message to agent %s via %s: %v", event.EndpointID, outboundDest, err)
+				log.Printf("❌ STOMP: Failed to send message to agent %s via %s: %v", event.EndpointID, stompQueue, err)
 				return err
 			}
-			log.Printf("✅ STOMP: Sent response to agent %s via %s (%d bytes)", event.EndpointID, outboundDest, len(event.Payload))
+			log.Printf("✅ STOMP: Sent response to agent %s via %s (%d bytes)", event.EndpointID, stompQueue, len(event.Payload))
 		} else {
 			log.Printf("⚠️ STOMP: Broker not connected, cannot send message to agent")
 		}

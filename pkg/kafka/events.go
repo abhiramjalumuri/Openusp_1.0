@@ -54,6 +54,24 @@ type USPMessageEvent struct {
 	Payload      []byte `json:"payload"` // Serialized USP Record
 	MTPProtocol  string `json:"mtp_protocol,omitempty"`
 	MTPSessionID string `json:"mtp_session_id,omitempty"`
+	
+	// MTP-specific routing information
+	MTPDestination MTPDestination `json:"mtp_destination,omitempty"`
+}
+
+// MTPDestination contains protocol-specific routing information
+type MTPDestination struct {
+	// WebSocket routing
+	WebSocketURL string `json:"websocket_url,omitempty"` // e.g., "ws://localhost:8081/usp"
+	
+	// STOMP routing
+	STOMPQueue string `json:"stomp_queue,omitempty"` // e.g., "/queue/controller->agent"
+	
+	// MQTT routing
+	MQTTTopic string `json:"mqtt_topic,omitempty"` // e.g., "usp/agent/response"
+	
+	// HTTP routing (for CWMP or HTTP MTP)
+	HTTPURL string `json:"http_url,omitempty"` // e.g., "http://device-ip:port/path"
 }
 
 // USPRecordParsedEvent represents a parsed USP record

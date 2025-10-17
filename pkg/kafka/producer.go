@@ -67,13 +67,19 @@ func (p *Producer) PublishRaw(topic string, key string, data []byte) error {
 
 // PublishUSPMessage publishes a USP message event
 func (p *Producer) PublishUSPMessage(topic string, endpointID, messageID, messageType string, payload []byte, mtpProtocol string) error {
+	return p.PublishUSPMessageWithDestination(topic, endpointID, messageID, messageType, payload, mtpProtocol, MTPDestination{})
+}
+
+// PublishUSPMessageWithDestination publishes a USP message event with MTP routing information
+func (p *Producer) PublishUSPMessageWithDestination(topic string, endpointID, messageID, messageType string, payload []byte, mtpProtocol string, destination MTPDestination) error {
 	event := USPMessageEvent{
-		BaseEvent:   NewBaseEvent(EventUSPMessageInbound, "mtp-service"),
-		EndpointID:  endpointID,
-		MessageID:   messageID,
-		MessageType: messageType,
-		Payload:     payload,
-		MTPProtocol: mtpProtocol,
+		BaseEvent:      NewBaseEvent(EventUSPMessageInbound, "mtp-service"),
+		EndpointID:     endpointID,
+		MessageID:      messageID,
+		MessageType:    messageType,
+		Payload:        payload,
+		MTPProtocol:    mtpProtocol,
+		MTPDestination: destination,
 	}
 
 	return p.PublishEvent(topic, event)

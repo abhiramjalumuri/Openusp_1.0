@@ -59,9 +59,9 @@ kafka:
     auto_offset_reset: "earliest" # earliest, latest, none
     enable_auto_commit: true
     auto_commit_interval_ms: 5000
-    session_timeout_ms: 60000  # Increased to 60 seconds (from 30s)
-    heartbeat_interval_ms: 10000  # Send heartbeat every 10 seconds
-    max_poll_interval_ms: 300000  # 5 minutes - max time between poll() calls
+    session_timeout_ms: 60000 # Increased to 60 seconds (from 30s)
+    heartbeat_interval_ms: 10000 # Send heartbeat every 10 seconds
+    max_poll_interval_ms: 300000 # 5 minutes - max time between poll() calls
     max_poll_records: 500
     fetch_min_bytes: 1
     fetch_max_wait_ms: 500
@@ -237,8 +237,8 @@ mtp:
     password: "openusp123"
     # STOMP destination/queue configuration
     destinations:
-      inbound: "/queue/agent.request" # messages from agents (inbound to controller)
-      outbound: "/queue/agent.response" # messages to agents (outbound from controller)
+      inbound: "/queue/agent->controller" # messages from agents (inbound to controller)
+      outbound: "/queue/controller->agent" # messages to agents (outbound from controller)
 
   http:
     server_url: "http://localhost:7547" # HTTP/HTTPS server endpoint for TR-069/CWMP communication (standard port 7547)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -195,14 +196,23 @@ func main() {
 func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	log.Printf("📥 MQTT: Received USP message from agent (%d bytes)", len(data))
 
+	// MQTT topic for agent responses - this is where we should send responses to
+	// In a real implementation, this would be extracted from the MQTT message metadata
+	// or agent configuration. For now, use default topic.
+	mqttTopic := "usp/agent/response" // Default response topic for agents
+
 	// Publish USP message to Kafka inbound topic for USP service to process
-	err := s.kafkaProducer.PublishUSPMessage(
+	// Include the MQTT topic in MTPDestination so USP service knows where to route responses
+	err := s.kafkaProducer.PublishUSPMessageWithDestination(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		"mqtt-client",                                // endpointID
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
 		"Request", // messageType
 		data,      // payload
 		"mqtt",    // mtpProtocol
+		kafka.MTPDestination{
+			MQTTTopic: mqttTopic, // Where to send responses for this agent
+		},
 	)
 
 	if err != nil {
@@ -210,7 +220,7 @@ func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ MQTT: USP message published to Kafka inbound topic")
+	log.Printf("✅ MQTT: USP message published to Kafka inbound topic with destination topic: %s", mqttTopic)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic
@@ -225,21 +235,39 @@ func (s *MQTTMTPService) setupKafkaConsumer() error {
 	handler := func(msg *confluentkafka.Message) error {
 		log.Printf("📨 MQTT: Received outbound message from Kafka (%d bytes)", len(msg.Value))
 		
+		// Parse the Kafka message envelope to extract MTP destination
+		var envelope kafka.USPMessageEvent
+		if err := json.Unmarshal(msg.Value, &envelope); err != nil {
+			log.Printf("❌ MQTT: Failed to parse Kafka message: %v", err)
+			return fmt.Errorf("failed to parse Kafka message: %w", err)
+		}
+
+		log.Printf("📨 MQTT: USP Response - EndpointID: %s, MessageType: %s, Payload: %d bytes",
+			envelope.EndpointID, envelope.MessageType, len(envelope.Payload))
+
+		// Use the MQTT topic from the MTP destination if provided, otherwise fall back to default
+		mqttTopic := envelope.MTPDestination.MQTTTopic
+		if mqttTopic == "" {
+			mqttTopic = "usp/agent/response" // Default fallback topic
+			log.Printf("⚠️ MQTT: No topic in MTPDestination, using fallback: %s", mqttTopic)
+		}
+		
+		log.Printf("📍 MQTT: Routing to topic: %s", mqttTopic)
+		
 		// TODO: Send message to agent via MQTT
 		// When MQTT broker is implemented, publish to agent's topic:
 		// if s.mqttBroker != nil {
-		//     topic := s.config.MTP.MQTT.Topics.Response
-		//     err := s.mqttBroker.Publish(topic, msg.Value)
+		//     err := s.mqttBroker.Publish(mqttTopic, envelope.Payload)
 		//     if err != nil {
-		//         log.Printf("❌ MQTT: Failed to send message to agent: %v", err)
+		//         log.Printf("❌ MQTT: Failed to send message to agent %s via %s: %v", envelope.EndpointID, mqttTopic, err)
 		//         return err
 		//     }
-		//     log.Printf("✅ MQTT: Sent message to agent via topic %s (%d bytes)", topic, len(msg.Value))
+		//     log.Printf("✅ MQTT: Sent response to agent %s via %s (%d bytes)", envelope.EndpointID, mqttTopic, len(envelope.Payload))
 		// } else {
 		//     log.Printf("⚠️ MQTT: Broker not connected, cannot send message to agent")
 		// }
 		
-		log.Printf("ℹ️  MQTT: Outbound message ready to send (MQTT broker implementation pending)")
+		log.Printf("ℹ️  MQTT: Outbound message ready to send to topic %s (MQTT broker implementation pending)", mqttTopic)
 		return nil
 	}
 

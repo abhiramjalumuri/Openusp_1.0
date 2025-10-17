@@ -27,7 +27,7 @@ usp_agent:
 
   # MTP Configuration
   mtp:
-    type: "websocket"
+    type: "stomp"
 
     # WebSocket Configuration
     websocket:
@@ -57,8 +57,8 @@ usp_agent:
       username: "openusp"
       password: "openusp123"
       destinations:
-        outbound: "/queue/agent.request" # agent → controller (outbound)
-        inbound: "/queue/agent.response" # controller → agent (inbound)
+        outbound: "/queue/agent->controller" # agent → controller (outbound)
+        inbound: "/queue/controller->agent" # controller → agent (inbound)
       heartbeat:
         send: "30s"
         receive: "30s"

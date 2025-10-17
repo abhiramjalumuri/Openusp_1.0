@@ -306,21 +306,29 @@ func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([
 		log.Printf("⚠️ WebSocket: Could not extract endpoint ID, using clientID: %s", clientID)
 	}
 	
+	// Construct WebSocket URL for this agent (used by USP service for routing responses)
+	websocketURL := fmt.Sprintf("ws://localhost:%d/usp", s.config.MTP.Websocket.ServerPort)
+	destination := kafka.MTPDestination{
+		WebSocketURL: websocketURL,
+	}
+	
 	// Publish USP message to Kafka inbound topic for USP service to process
-	err := s.kafkaProducer.PublishUSPMessage(
+	err := s.kafkaProducer.PublishUSPMessageWithDestination(
 		s.config.Kafka.Topics.USPMessagesInbound,
 		endpointID,                                   // endpointID (extracted from USP Record)
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
 		"Request",   // messageType
 		data,        // payload
 		"websocket", // mtpProtocol
+		destination, // MTP routing information
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish to Kafka inbound topic: %w", err)
 	}
 
-	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic (endpoint: %s, client: %s)", endpointID, clientID)
+	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic (endpoint: %s, client: %s, url: %s)", 
+		endpointID, clientID, websocketURL)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic
