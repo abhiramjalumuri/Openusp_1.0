@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -177,8 +176,8 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 			event.MTPDestination.WebSocketURL, event.MTPDestination.STOMPQueue, event.MTPDestination.MQTTTopic)
 	}
 
-	// Store the MTP routing information for this endpoint (will be used for future responses)
-	s.storeEndpointMTPRouting(event.EndpointID, event.MTPProtocol, event.MTPDestination)
+	// Note: MTP routing information is stored in Redis by handleAgentConnect when processing Connect records
+	// No need to store here separately - Redis is the single source of truth for connection state
 
 	// Process the USP protobuf Record from the event payload
 	response, err := s.ProcessUSPMessageWithEvent(event.Payload, &event)
@@ -1266,48 +1265,30 @@ func (s *USPCoreService) registerDeviceFromBootParams(agentEndpointID string, bo
 	return nil
 }
 
-// endpointMTPCache stores MTP routing information temporarily (in-memory cache)
-// In production, this should be stored in database or distributed cache
-var endpointMTPCache = struct {
-	sync.RWMutex
-	routes map[string]struct {
-		protocol    string
-		destination kafka.MTPDestination
-	}
-}{
-	routes: make(map[string]struct {
-		protocol    string
-		destination kafka.MTPDestination
-	}),
-}
-
-// storeEndpointMTPRouting stores MTP routing information for an endpoint
-func (s *USPCoreService) storeEndpointMTPRouting(endpointID string, mtpProtocol string, destination kafka.MTPDestination) {
-	endpointMTPCache.Lock()
-	defer endpointMTPCache.Unlock()
-	
-	endpointMTPCache.routes[endpointID] = struct {
-		protocol    string
-		destination kafka.MTPDestination
-	}{
-		protocol:    mtpProtocol,
-		destination: destination,
-	}
-	
-	log.Printf("💾 Stored MTP routing for %s: protocol=%s, websocket=%s, stomp=%s, mqtt=%s",
-		endpointID, mtpProtocol, destination.WebSocketURL, destination.STOMPQueue, destination.MQTTTopic)
-}
-
-// getEndpointMTPRouting retrieves MTP routing information for an endpoint
+// getEndpointMTPRouting retrieves MTP routing information for an endpoint from Redis
+// This is used when sending responses or Controller-initiated messages to agents
 func (s *USPCoreService) getEndpointMTPRouting(endpointID string) (kafka.MTPDestination, string) {
-	endpointMTPCache.RLock()
-	defer endpointMTPCache.RUnlock()
-	
-	if route, exists := endpointMTPCache.routes[endpointID]; exists {
-		log.Printf("📖 Retrieved MTP routing for %s: protocol=%s", endpointID, route.protocol)
-		return route.destination, route.protocol
+	// Query Redis for the agent's connection information
+	conn, err := s.redisClient.GetAgentConnection(endpointID)
+	if err != nil {
+		log.Printf("⚠️ Failed to get connection info from Redis for %s: %v", endpointID, err)
+		return kafka.MTPDestination{}, ""
 	}
 	
-	log.Printf("⚠️ No MTP routing found for %s in cache", endpointID)
-	return kafka.MTPDestination{}, ""
+	if conn == nil {
+		log.Printf("⚠️ No active connection found in Redis for %s", endpointID)
+		return kafka.MTPDestination{}, ""
+	}
+	
+	// Convert Redis connection info to Kafka MTPDestination
+	destination := kafka.MTPDestination{
+		WebSocketURL: conn.MTPDestination.WebSocketURL,
+		STOMPQueue:   conn.MTPDestination.STOMPQueue,
+		MQTTTopic:    conn.MTPDestination.MQTTTopic,
+	}
+	
+	log.Printf("📖 Retrieved MTP routing from Redis for %s: protocol=%s, status=%s", 
+		endpointID, conn.MTPProtocol, conn.Status)
+	
+	return destination, conn.MTPProtocol
 }
