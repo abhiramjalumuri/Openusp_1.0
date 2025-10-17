@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -191,10 +192,87 @@ func main() {
 // 	_ = response
 // }
 
+// extractEndpointID extracts the FromId (endpoint ID) from a USP Record
+// Supports all TR-369 authority schemes
+func (s *MQTTMTPService) extractEndpointID(data []byte) string {
+	// Extract endpoint ID from USP Record based on TR-369 authority schemes
+	// 
+	// TR-369 defines the following authority schemes for endpoint IDs:
+	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
+	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
+	//   - oui:<OUI>-<SerialNumber>  (e.g., oui:00D09E-123456789)
+	//   - cid:<CompanyID>  (e.g., cid:3561-MyDevice)
+	//   - uuid:<UUID>  (e.g., uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6)
+	//   - imei:<IMEI>  (e.g., imei:990000862471854)
+	//   - imeisv:<IMEISV>  (e.g., imeisv:9900008624718540)
+	//   - ops:<OPS-ID>  (e.g., ops:1234567890)
+	//   - self::self (for controller self-identification)
+	
+	dataStr := string(data)
+	
+	// Define all TR-369 authority scheme patterns
+	// Order matters: check more specific patterns first to avoid false matches
+	authoritySchemes := []string{
+		"proto:",     // proto:<protocol>:<authority> - most common for agents
+		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",       // oui:<OUI>-<SerialNumber>
+		"cid:",       // cid:<CompanyID>
+		"uuid:",      // uuid:<UUID>
+		"imei:",      // imei:<IMEI>
+		"imeisv:",    // imeisv:<IMEISV>
+		"ops:",       // ops:<OPS-ID>
+		"self::",     // self::self (controller)
+	}
+	
+	for _, scheme := range authoritySchemes {
+		if idx := strings.Index(dataStr, scheme); idx >= 0 {
+			// Extract endpoint ID starting from the scheme
+			remaining := dataStr[idx:]
+			
+			// Find the terminator (null byte, whitespace, or control characters)
+			// Don't break on ':' or '-' as they're part of the endpoint ID format
+			endIdx := strings.IndexAny(remaining, "\x00\n\r\t ")
+			if endIdx > 0 {
+				endpointID := remaining[:endIdx]
+				// Validate it's not a controller endpoint (we want agent endpoints)
+				if !strings.Contains(endpointID, "controller") && 
+				   !strings.Contains(endpointID, "openusp") {
+					return endpointID
+				}
+			} else {
+				// No terminator found, take reasonable length
+				// UUID can be up to 36 chars, MAC addresses ~17, OUI patterns ~30-50
+				maxLen := 60
+				if len(remaining) > maxLen {
+					endpointID := remaining[:maxLen]
+					if !strings.Contains(endpointID, "controller") && 
+					   !strings.Contains(endpointID, "openusp") {
+						return endpointID
+					}
+				} else if len(remaining) > 0 {
+					if !strings.Contains(remaining, "controller") && 
+					   !strings.Contains(remaining, "openusp") {
+						return remaining
+					}
+				}
+			}
+		}
+	}
+	
+	return ""
+}
+
 // ProcessUSPMessage implements the MessageProcessor interface
 // This is called by the MQTT broker when a message is received from agents
 func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	log.Printf("📥 MQTT: Received USP message from agent (%d bytes)", len(data))
+
+	// Extract endpoint ID from USP Record - this is MANDATORY
+	endpointID := s.extractEndpointID(data)
+	if endpointID == "" {
+		log.Printf("❌ MQTT: Failed to extract endpoint ID from USP Record - invalid message")
+		return nil, fmt.Errorf("endpoint ID (from_id) is mandatory but not found in USP Record")
+	}
 
 	// MQTT topic for agent responses - this is where we should send responses to
 	// In a real implementation, this would be extracted from the MQTT message metadata
@@ -205,7 +283,7 @@ func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	// Include the MQTT topic in MTPDestination so USP service knows where to route responses
 	err := s.kafkaProducer.PublishUSPMessageWithDestination(
 		s.config.Kafka.Topics.USPMessagesInbound,
-		"mqtt-client",                                // endpointID
+		endpointID,                                   // endpointID extracted from USP Record
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
 		"Request", // messageType
 		data,      // payload
@@ -220,7 +298,7 @@ func (s *MQTTMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ MQTT: USP message published to Kafka inbound topic with destination topic: %s", mqttTopic)
+	log.Printf("✅ MQTT: USP message published to Kafka inbound topic (EndpointID: %s, Topic: %s)", endpointID, mqttTopic)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic

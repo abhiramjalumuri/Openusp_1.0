@@ -261,29 +261,62 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 }
 
 // extractEndpointID extracts the FromId (endpoint ID) from a USP Record
+// Supports all TR-369 authority schemes
 func (s *WebSocketMTPService) extractEndpointID(data []byte) string {
-	// Scan for "proto::usp.agent" pattern which is the agent's endpoint ID format
-	// This avoids matching "proto::openusp.controller" (the ToId)
+	// Extract endpoint ID from USP Record based on TR-369 authority schemes
+	// 
+	// TR-369 defines the following authority schemes for endpoint IDs:
+	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
+	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
+	//   - oui:<OUI>-<SerialNumber>  (e.g., oui:00D09E-123456789)
+	//   - cid:<CompanyID>  (e.g., cid:3561-MyDevice)
+	//   - uuid:<UUID>  (e.g., uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6)
+	//   - imei:<IMEI>  (e.g., imei:990000862471854)
+	//   - imeisv:<IMEISV>  (e.g., imeisv:9900008624718540)
+	//   - ops:<OPS-ID>  (e.g., ops:1234567890)
+	//   - self::self (for controller self-identification)
+	
 	dataStr := string(data)
 	
-	// Look specifically for agent endpoint patterns
-	patterns := []string{"proto::usp.agent", "proto::cwmp.agent", "proto::device"}
-	for _, pattern := range patterns {
-		if idx := strings.Index(dataStr, pattern); idx >= 0 {
-			// Extract endpoint ID (format: proto::usp.agent.XXX)
-			// Find the extent of valid characters: alphanumeric, dots, colons, hyphens, underscores
-			endIdx := idx + len(pattern)
+	// Define all TR-369 authority scheme patterns
+	// Order matters: check more specific patterns first to avoid false matches
+	authoritySchemes := []string{
+		"proto:",     // proto:<protocol>:<authority> - most common for agents
+		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",       // oui:<OUI>-<SerialNumber>
+		"cid:",       // cid:<CompanyID>
+		"uuid:",      // uuid:<UUID>
+		"imei:",      // imei:<IMEI>
+		"imeisv:",    // imeisv:<IMEISV>
+		"ops:",       // ops:<OPS-ID>
+		"self::",     // self::self (controller)
+	}
+	
+	for _, scheme := range authoritySchemes {
+		if idx := strings.Index(dataStr, scheme); idx >= 0 {
+			// Extract endpoint ID starting from the scheme
+			// Find valid characters: alphanumeric, dots, colons, hyphens, underscores
+			endIdx := idx
 			for endIdx < len(dataStr) {
 				ch := dataStr[endIdx]
-				// Valid characters in endpoint IDs
+				// Valid characters in endpoint IDs per TR-369
 				if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || 
-				   (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_' {
+				   (ch >= '0' && ch <= '9') || ch == ':' || ch == '.' || 
+				   ch == '-' || ch == '_' {
 					endIdx++
 				} else {
 					break
 				}
 			}
-			return dataStr[idx:endIdx]
+			
+			if endIdx > idx {
+				endpointID := dataStr[idx:endIdx]
+				// Validate it's not a controller endpoint (we want agent endpoints)
+				if !strings.Contains(endpointID, "controller") && 
+				   !strings.Contains(endpointID, "openusp") {
+					return endpointID
+				}
+			}
 		}
 	}
 	
@@ -292,19 +325,18 @@ func (s *WebSocketMTPService) extractEndpointID(data []byte) string {
 
 // processUSPMessage publishes USP message to Kafka for processing
 func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([]byte, error) {
-	// Extract the actual endpoint ID from the USP Record
+	// Extract the actual endpoint ID from the USP Record - this is MANDATORY
 	endpointID := s.extractEndpointID(data)
-	if endpointID != "" {
-		// Map endpoint ID to clientID for routing responses
-		s.connMutex.Lock()
-		s.endpointToClient[endpointID] = clientID
-		s.connMutex.Unlock()
-		log.Printf("📍 WebSocket: Mapped endpoint %s to client %s", endpointID, clientID)
-	} else {
-		// Fall back to using clientID if endpoint extraction fails
-		endpointID = clientID
-		log.Printf("⚠️ WebSocket: Could not extract endpoint ID, using clientID: %s", clientID)
+	if endpointID == "" {
+		log.Printf("❌ WebSocket: Failed to extract endpoint ID from USP Record - invalid message")
+		return nil, fmt.Errorf("endpoint ID (from_id) is mandatory but not found in USP Record")
 	}
+	
+	// Map endpoint ID to clientID for routing responses
+	s.connMutex.Lock()
+	s.endpointToClient[endpointID] = clientID
+	s.connMutex.Unlock()
+	log.Printf("📍 WebSocket: Mapped endpoint %s to client %s", endpointID, clientID)
 	
 	// Construct WebSocket URL for this agent (used by USP service for routing responses)
 	websocketURL := fmt.Sprintf("ws://localhost:%d/usp", s.config.MTP.Websocket.ServerPort)

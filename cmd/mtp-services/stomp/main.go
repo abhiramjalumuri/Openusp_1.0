@@ -540,11 +540,11 @@ func (b *STOMPBroker) Close() {
 func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 	log.Printf("📥 STOMP: Received USP message from agent (%d bytes)", len(data))
 
-	// Extract endpoint ID from USP Record to properly route responses
+	// Extract endpoint ID from USP Record - this is MANDATORY
 	endpointID := s.extractEndpointID(data)
 	if endpointID == "" {
-		endpointID = "stomp-client-unknown" // Fallback
-		log.Printf("⚠️ STOMP: Could not extract endpoint ID from message, using fallback")
+		log.Printf("❌ STOMP: Failed to extract endpoint ID from USP Record - invalid message")
+		return nil, fmt.Errorf("endpoint ID (from_id) is mandatory but not found in USP Record")
 	}
 
 	// STOMP queue for routing responses back to the agent
@@ -580,26 +580,69 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 
 // extractEndpointID extracts the FromId (endpoint ID) from a USP Record
 func (s *STOMPMTPService) extractEndpointID(data []byte) string {
-	// Scan for "proto::usp.agent" pattern which is the agent's endpoint ID format
-	// This avoids matching "proto::openusp.controller" (the ToId)
+	// Extract endpoint ID from USP Record based on TR-369 authority schemes
+	// 
+	// TR-369 defines the following authority schemes for endpoint IDs:
+	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
+	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
+	//   - oui:<OUI>-<SerialNumber>  (e.g., oui:00D09E-123456789)
+	//   - cid:<CompanyID>  (e.g., cid:3561-MyDevice)
+	//   - uuid:<UUID>  (e.g., uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6)
+	//   - imei:<IMEI>  (e.g., imei:990000862471854)
+	//   - imeisv:<IMEISV>  (e.g., imeisv:9900008624718540)
+	//   - ops:<OPS-ID>  (e.g., ops:1234567890)
+	//   - self::self (for controller self-identification)
+	//
+	// The FromId field in a USP Record contains the sender's endpoint ID
+	
 	dataStr := string(data)
 	
-	// Look specifically for agent endpoint patterns
-	patterns := []string{"proto::usp.agent", "proto::cwmp.agent", "proto::device"}
-	for _, pattern := range patterns {
-		if idx := strings.Index(dataStr, pattern); idx >= 0 {
-			// Extract endpoint ID (format: proto::usp.agent.XXX)
+	// Define all TR-369 authority scheme patterns
+	// Order matters: check more specific patterns first to avoid false matches
+	authoritySchemes := []string{
+		"proto:",     // proto:<protocol>:<authority> - most common for agents
+		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",       // oui:<OUI>-<SerialNumber>
+		"cid:",       // cid:<CompanyID>
+		"uuid:",      // uuid:<UUID>
+		"imei:",      // imei:<IMEI>
+		"imeisv:",    // imeisv:<IMEISV>
+		"ops:",       // ops:<OPS-ID>
+		"self::",     // self::self (controller)
+	}
+	
+	for _, scheme := range authoritySchemes {
+		if idx := strings.Index(dataStr, scheme); idx >= 0 {
+			// Extract endpoint ID starting from the scheme
 			remaining := dataStr[idx:]
-			// Find the null terminator or whitespace (but not colon, as it's part of proto::)
+			
+			// Find the terminator (null byte, whitespace, or control characters)
+			// Don't break on ':' or '-' as they're part of the endpoint ID format
 			endIdx := strings.IndexAny(remaining, "\x00\n\r\t ")
 			if endIdx > 0 {
-				return remaining[:endIdx]
+				endpointID := remaining[:endIdx]
+				// Validate it's not a controller endpoint (we want agent endpoints)
+				if !strings.Contains(endpointID, "controller") && 
+				   !strings.Contains(endpointID, "openusp") {
+					return endpointID
+				}
+			} else {
+				// No terminator found, take reasonable length
+				// UUID can be up to 36 chars, MAC addresses ~17, OUI patterns ~30-50
+				maxLen := 60
+				if len(remaining) > maxLen {
+					endpointID := remaining[:maxLen]
+					if !strings.Contains(endpointID, "controller") && 
+					   !strings.Contains(endpointID, "openusp") {
+						return endpointID
+					}
+				} else if len(remaining) > 0 {
+					if !strings.Contains(remaining, "controller") && 
+					   !strings.Contains(remaining, "openusp") {
+						return remaining
+					}
+				}
 			}
-			// If no terminator found within reasonable length, take first 25 chars
-			if len(remaining) > 25 {
-				return remaining[:25]
-			}
-			return remaining
 		}
 	}
 	
