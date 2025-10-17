@@ -126,6 +126,10 @@ func main() {
 		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
 	}
 
+	// Start Kafka consumer loop to receive outbound messages
+	svc.kafkaConsumer.Start()
+	log.Printf("✅ Kafka consumer started for outbound messages")
+
 	log.Printf("✅ %s started successfully", ServiceName)
 	log.Printf("   └── MQTT Broker: %s (TODO: implementation pending)", cfg.MTP.MQTT.BrokerURL)
 	log.Printf("   └── Kafka Inbound Topic: %s", cfg.Kafka.Topics.USPMessagesInbound)

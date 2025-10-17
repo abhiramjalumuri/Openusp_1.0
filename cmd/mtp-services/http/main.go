@@ -55,6 +55,10 @@ func main() {
 		log.Fatalf("❌ Failed to setup Kafka consumer: %v", err)
 	}
 
+	// Start Kafka consumer loop to receive outbound messages
+	svc.kafkaConsumer.Start()
+	log.Printf("✅ Kafka consumer started for outbound messages")
+
 	// Validate and get ports from configuration - no hardcoded defaults
 	healthPort := svc.config.MTPHttpHealthPort
 	if healthPort == 0 {
