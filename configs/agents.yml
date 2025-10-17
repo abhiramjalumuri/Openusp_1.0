@@ -8,11 +8,11 @@
 usp_agent:
   # Device Information
   device:
-    endpoint_id: "proto::usp.agent.002"
+    endpoint_id: "proto::usp.agent.003"
     product_class: "HomeGateway"
     manufacturer: "Plume Design"
     model_name: "USP-PlumeDevice-v10000"
-    serial_number: "Plume-USP-SER002"
+    serial_number: "Plume-USP-SER003"
     software_version: "1.0.0"
     hardware_version: "1.0"
     device_type: "gateway"
@@ -27,7 +27,7 @@ usp_agent:
 
   # MTP Configuration
   mtp:
-    type: "stomp"
+    type: "websocket"
 
     # WebSocket Configuration
     websocket:

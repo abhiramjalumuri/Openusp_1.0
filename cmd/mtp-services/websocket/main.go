@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -25,13 +27,14 @@ const (
 
 // WebSocketMTPService handles WebSocket transport for USP messages
 type WebSocketMTPService struct {
-	config        *config.Config
-	kafkaClient   *kafka.Client
-	kafkaProducer *kafka.Producer
-	kafkaConsumer *kafka.Consumer
-	upgrader      websocket.Upgrader
-	connections   map[string]*websocket.Conn
-	connMutex     sync.RWMutex
+	config           *config.Config
+	kafkaClient      *kafka.Client
+	kafkaProducer    *kafka.Producer
+	kafkaConsumer    *kafka.Consumer
+	upgrader         websocket.Upgrader
+	connections      map[string]*websocket.Conn
+	endpointToClient map[string]string // Maps endpoint ID (proto::usp.agent.XXX) to clientID
+	connMutex        sync.RWMutex
 }
 
 func main() {
@@ -69,11 +72,12 @@ func main() {
 
 	// Create service instance
 	svc := &WebSocketMTPService{
-		config:        cfg,
-		kafkaClient:   kafkaClient,
-		kafkaProducer: kafkaProducer,
-		kafkaConsumer: kafkaConsumer,
-		connections:   make(map[string]*websocket.Conn),
+		config:           cfg,
+		kafkaClient:      kafkaClient,
+		kafkaProducer:    kafkaProducer,
+		kafkaConsumer:    kafkaConsumer,
+		connections:      make(map[string]*websocket.Conn),
+		endpointToClient: make(map[string]string),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -209,6 +213,13 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 	defer func() {
 		s.connMutex.Lock()
 		delete(s.connections, clientID)
+		// Clean up endpoint-to-client mapping
+		for endpoint, cid := range s.endpointToClient {
+			if cid == clientID {
+				delete(s.endpointToClient, endpoint)
+				log.Printf("🗑️ WebSocket: Removed endpoint mapping %s -> %s", endpoint, clientID)
+			}
+		}
 		s.connMutex.Unlock()
 		conn.Close()
 		log.Printf("🔌 WebSocket connection closed for client %s", clientID)
@@ -249,12 +260,56 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// extractEndpointID extracts the FromId (endpoint ID) from a USP Record
+func (s *WebSocketMTPService) extractEndpointID(data []byte) string {
+	// Scan for "proto::usp.agent" pattern which is the agent's endpoint ID format
+	// This avoids matching "proto::openusp.controller" (the ToId)
+	dataStr := string(data)
+	
+	// Look specifically for agent endpoint patterns
+	patterns := []string{"proto::usp.agent", "proto::cwmp.agent", "proto::device"}
+	for _, pattern := range patterns {
+		if idx := strings.Index(dataStr, pattern); idx >= 0 {
+			// Extract endpoint ID (format: proto::usp.agent.XXX)
+			// Find the extent of valid characters: alphanumeric, dots, colons, hyphens, underscores
+			endIdx := idx + len(pattern)
+			for endIdx < len(dataStr) {
+				ch := dataStr[endIdx]
+				// Valid characters in endpoint IDs
+				if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || 
+				   (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_' {
+					endIdx++
+				} else {
+					break
+				}
+			}
+			return dataStr[idx:endIdx]
+		}
+	}
+	
+	return "" // No endpoint ID found
+}
+
 // processUSPMessage publishes USP message to Kafka for processing
 func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([]byte, error) {
+	// Extract the actual endpoint ID from the USP Record
+	endpointID := s.extractEndpointID(data)
+	if endpointID != "" {
+		// Map endpoint ID to clientID for routing responses
+		s.connMutex.Lock()
+		s.endpointToClient[endpointID] = clientID
+		s.connMutex.Unlock()
+		log.Printf("📍 WebSocket: Mapped endpoint %s to client %s", endpointID, clientID)
+	} else {
+		// Fall back to using clientID if endpoint extraction fails
+		endpointID = clientID
+		log.Printf("⚠️ WebSocket: Could not extract endpoint ID, using clientID: %s", clientID)
+	}
+	
 	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessage(
 		s.config.Kafka.Topics.USPMessagesInbound,
-		clientID,                                     // endpointID (use clientID for now)
+		endpointID,                                   // endpointID (extracted from USP Record)
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
 		"Request",   // messageType
 		data,        // payload
@@ -265,7 +320,7 @@ func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([
 		return nil, fmt.Errorf("failed to publish to Kafka inbound topic: %w", err)
 	}
 
-	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic for client %s", clientID)
+	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic (endpoint: %s, client: %s)", endpointID, clientID)
 
 	// In event-driven architecture, we don't wait for synchronous response
 	// Responses will come through Kafka outbound topic
@@ -278,31 +333,51 @@ func (s *WebSocketMTPService) setupKafkaConsumer() error {
 	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
 
 	handler := func(msg *confluentkafka.Message) error {
-		log.Printf("📨 WebSocket: Received outbound message from Kafka (%d bytes)", len(msg.Value))
+		log.Printf("� Received message from topic: %s (partition: %d, offset: %d, size: %d bytes)", 
+			*msg.TopicPartition.Topic, msg.TopicPartition.Partition, msg.TopicPartition.Offset, len(msg.Value))
 		
-		// TODO: Need to extract endpoint/client ID from Kafka message to route to correct WebSocket connection
-		// For now, log that message is ready
-		// When implemented:
-		// 1. Parse message headers to get target endpoint/client ID
-		// 2. Look up WebSocket connection in s.connections map
-		// 3. Send message via conn.WriteMessage(websocket.BinaryMessage, msg.Value)
+		// Parse the USPMessageEvent envelope
+		var envelope struct {
+			EndpointID  string `json:"endpoint_id"`
+			MessageID   string `json:"message_id"`
+			MessageType string `json:"message_type"`
+			Payload     []byte `json:"payload"`
+			MTPProtocol string `json:"mtp_protocol"`
+		}
 		
-		log.Printf("ℹ️  WebSocket: Outbound message ready (client routing implementation pending)")
+		if err := json.Unmarshal(msg.Value, &envelope); err != nil {
+			log.Printf("❌ WebSocket: Failed to unmarshal USPMessageEvent envelope: %v", err)
+			return err
+		}
 		
-		// Example implementation (when client ID routing is added):
-		// s.connMutex.RLock()
-		// conn, exists := s.connections[clientID]
-		// s.connMutex.RUnlock()
-		// if exists {
-		//     if err := conn.WriteMessage(websocket.BinaryMessage, msg.Value); err != nil {
-		//         log.Printf("❌ WebSocket: Failed to send message to client %s: %v", clientID, err)
-		//         return err
-		//     }
-		//     log.Printf("✅ WebSocket: Sent message to client %s (%d bytes)", clientID, len(msg.Value))
-		// } else {
-		//     log.Printf("⚠️ WebSocket: Client %s not connected, cannot send message", clientID)
-		// }
+		log.Printf("📨 WebSocket: USP Response - EndpointID: %s, MessageType: %s, Payload: %d bytes", 
+			envelope.EndpointID, envelope.MessageType, len(envelope.Payload))
 		
+		// Look up the client ID from the endpoint ID
+		s.connMutex.RLock()
+		clientID, exists := s.endpointToClient[envelope.EndpointID]
+		if !exists {
+			s.connMutex.RUnlock()
+			log.Printf("⚠️ WebSocket: Endpoint %s not mapped to any client (agent may have disconnected)", envelope.EndpointID)
+			return nil
+		}
+		
+		// Get the WebSocket connection
+		conn, connExists := s.connections[clientID]
+		s.connMutex.RUnlock()
+		
+		if !connExists {
+			log.Printf("⚠️ WebSocket: Client %s (endpoint: %s) not connected, cannot send message", clientID, envelope.EndpointID)
+			return nil
+		}
+		
+		// Send the USP message (payload) to the client
+		if err := conn.WriteMessage(websocket.BinaryMessage, envelope.Payload); err != nil {
+			log.Printf("❌ WebSocket: Failed to send message to client %s (endpoint: %s): %v", clientID, envelope.EndpointID, err)
+			return err
+		}
+		
+		log.Printf("✅ WebSocket: Sent response to agent %s via client %s (%d bytes)", envelope.EndpointID, clientID, len(envelope.Payload))
 		return nil
 	}
 
