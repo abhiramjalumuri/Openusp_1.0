@@ -188,7 +188,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Infrastructure Simplification
 - **Docker Compose Restructure**: Updated to `docker-compose.infra.yml` without Consul dependency
-- **Prometheus Configuration**: Migrated to static target configuration (`prometheus-static-host.yml`)
+- **Prometheus Configuration**: Migrated to static target configuration (`prometheus.yml`)
 - **Grafana Integration**: Enhanced dashboard provisioning with 4 comprehensive dashboards
 - **Host Network Mode**: Implemented for cross-platform compatibility (macOS/Linux/Windows)
 

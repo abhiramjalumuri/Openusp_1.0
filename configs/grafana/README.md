@@ -92,7 +92,7 @@ To add new dashboards:
 
 ## Metrics Configuration
 
-The OpenUSP services expose Prometheus metrics that are scraped by the Prometheus service. Ensure your services are configured to expose metrics endpoints and that Prometheus is configured to scrape them in `configs/prometheus-static.yml`.
+The OpenUSP services expose Prometheus metrics that are scraped by the Prometheus service. Ensure your services are configured to expose metrics endpoints and that Prometheus is configured to scrape them in `configs/prometheus.yml`.
 
 ## Troubleshooting
 
@@ -115,4 +115,4 @@ The OpenUSP services expose Prometheus metrics that are scraped by the Prometheu
 
 - [Grafana Provisioning Documentation](https://grafana.com/docs/grafana/latest/administration/provisioning/)
 - [Prometheus Data Source](https://grafana.com/docs/grafana/latest/datasources/prometheus/)
-- [OpenUSP Metrics](../prometheus-static.yml)
+- [OpenUSP Metrics](../prometheus.yml)
