@@ -17,12 +17,14 @@ import (
 	confluentkafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"google.golang.org/protobuf/proto"
 
+	"openusp/internal/database"
 	"openusp/internal/tr181"
 	"openusp/pkg/config"
 	"openusp/pkg/kafka"
 	"openusp/pkg/metrics"
 	v1_3 "openusp/pkg/proto/v1_3"
 	v1_4 "openusp/pkg/proto/v1_4"
+	"openusp/pkg/redis"
 	"openusp/pkg/version"
 )
 
@@ -34,6 +36,9 @@ type USPCoreService struct {
 	config        *config.Config
 	httpServer    *http.Server
 	metrics       *metrics.OpenUSPMetrics
+	redisClient   *redis.Client
+	database      *database.Database
+	repos         *database.Repositories
 }
 
 func NewUSPCoreService(cfg *config.Config) (*USPCoreService, error) {
@@ -67,12 +72,35 @@ func NewUSPCoreService(cfg *config.Config) (*USPCoreService, error) {
 		return nil, fmt.Errorf("failed to initialize Kafka consumer: %w", err)
 	}
 
+	// Initialize Redis client
+	redisClient, err := redis.NewClient(&cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Redis client: %w", err)
+	}
+
+	// Initialize database
+	db, err := database.NewDatabase(nil) // Use default config with environment variables
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// Run database migrations
+	if err := db.Migrate(); err != nil {
+		return nil, fmt.Errorf("failed to run database migrations: %w", err)
+	}
+
+	// Create repositories
+	repos := database.NewRepositories(db.DB)
+
 	return &USPCoreService{
 		deviceManager: dm,
 		kafkaClient:   kafkaClient,
 		kafkaConsumer: kafkaConsumer,
 		kafkaProducer: kafkaProducer,
 		config:        cfg,
+		redisClient:   redisClient,
+		database:      db,
+		repos:         repos,
 		metrics:       metrics.NewOpenUSPMetrics("usp-service"),
 	}, nil
 }
@@ -153,7 +181,7 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 	s.storeEndpointMTPRouting(event.EndpointID, event.MTPProtocol, event.MTPDestination)
 
 	// Process the USP protobuf Record from the event payload
-	response, err := s.ProcessUSPMessage(event.Payload)
+	response, err := s.ProcessUSPMessageWithEvent(event.Payload, &event)
 	if err != nil {
 		log.Printf("❌ Error processing USP message: %v", err)
 		return err
@@ -400,6 +428,11 @@ func (s *USPCoreService) DetectUSPVersion(data []byte) (string, error) {
 
 // ProcessUSPMessage processes incoming USP messages (both v1.3 and v1.4)
 func (s *USPCoreService) ProcessUSPMessage(data []byte) ([]byte, error) {
+	return s.ProcessUSPMessageWithEvent(data, nil)
+}
+
+// ProcessUSPMessageWithEvent processes incoming USP messages with event context
+func (s *USPCoreService) ProcessUSPMessageWithEvent(data []byte, event *kafka.USPMessageEvent) ([]byte, error) {
 	version, err := s.DetectUSPVersion(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect USP version: %w", err)
@@ -409,15 +442,15 @@ func (s *USPCoreService) ProcessUSPMessage(data []byte) ([]byte, error) {
 
 	switch version {
 	case "1.4":
-		return s.processUSP14Message(data)
+		return s.processUSP14Message(data, event)
 	case "1.3":
-		return s.processUSP13Message(data)
+		return s.processUSP13Message(data, event)
 	default:
 		return nil, fmt.Errorf("unsupported USP version: %s", version)
 	}
 }
 
-func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
+func (s *USPCoreService) processUSP14Message(data []byte, event *kafka.USPMessageEvent) ([]byte, error) {
 	var record v1_4.Record
 	if err := proto.Unmarshal(data, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.4 record: %w", err)
@@ -429,18 +462,44 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 	switch recordType := record.RecordType.(type) {
 	case *v1_4.Record_StompConnect:
 		log.Printf("✅ STOMP connection established for agent %s (version %v)", record.FromId, recordType.StompConnect.Version)
+		// Call connection handler if event is available
+		if event != nil {
+			protocolVersion := fmt.Sprintf("%v", recordType.StompConnect.Version)
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_4.Record_WebsocketConnect:
 		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
+		// Call connection handler if event is available
+		if event != nil {
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_4.Record_MqttConnect:
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
+		// Call connection handler if event is available
+		if event != nil {
+			protocolVersion := fmt.Sprintf("%v", recordType.MqttConnect.Version)
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_4.Record_UdsConnect:
 		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
+		// Call connection handler if event is available
+		if event != nil {
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_4.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)
+		// Call disconnection handler if event is available
+		if event != nil {
+			_ = s.handleAgentDisconnect(record.FromId, event.MTPProtocol)
+		}
 		return nil, nil // No response needed for disconnect
 	}
 
@@ -486,7 +545,7 @@ func (s *USPCoreService) processUSP14Message(data []byte) ([]byte, error) {
 	return proto.Marshal(responseRecord)
 }
 
-func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
+func (s *USPCoreService) processUSP13Message(data []byte, event *kafka.USPMessageEvent) ([]byte, error) {
 	var record v1_3.Record
 	if err := proto.Unmarshal(data, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal USP 1.3 record: %w", err)
@@ -500,18 +559,44 @@ func (s *USPCoreService) processUSP13Message(data []byte) ([]byte, error) {
 	switch recordType := record.RecordType.(type) {
 	case *v1_3.Record_StompConnect:
 		log.Printf("✅ STOMP connection established for agent %s (version %v)", record.FromId, recordType.StompConnect.Version)
+		// Call connection handler if event is available
+		if event != nil {
+			protocolVersion := fmt.Sprintf("%v", recordType.StompConnect.Version)
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_3.Record_WebsocketConnect:
 		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
+		// Call connection handler if event is available
+		if event != nil {
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_3.Record_MqttConnect:
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
+		// Call connection handler if event is available
+		if event != nil {
+			protocolVersion := fmt.Sprintf("%v", recordType.MqttConnect.Version)
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_3.Record_UdsConnect:
 		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
+		// Call connection handler if event is available
+		if event != nil {
+			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
+		}
 		return nil, nil // No response needed for MTP-layer connect
+		
 	case *v1_3.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)
+		// Call disconnection handler if event is available
+		if event != nil {
+			_ = s.handleAgentDisconnect(record.FromId, event.MTPProtocol)
+		}
 		return nil, nil // No response needed for disconnect
 	}
 
@@ -1004,6 +1089,9 @@ func main() {
 
 	// Start Kafka consumer
 	go uspService.kafkaConsumer.Start()
+
+	// Start connection monitor for agent health checks
+	go uspService.monitorConnections()
 
 	// Start HTTP server for health/metrics
 	go func() {
