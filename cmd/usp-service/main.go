@@ -169,7 +169,7 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 
 	log.Printf("📨 USP Message Event - EndpointID: %s, MessageType: %s, Payload: %d bytes, MTP: %s",
 		event.EndpointID, event.MessageType, len(event.Payload), event.MTPProtocol)
-	
+
 	// Log MTP destination if present
 	if event.MTPDestination.WebSocketURL != "" || event.MTPDestination.STOMPQueue != "" || event.MTPDestination.MQTTTopic != "" {
 		log.Printf("📍 MTP Destination - WebSocket: %s, STOMP: %s, MQTT: %s",
@@ -191,21 +191,21 @@ func (s *USPCoreService) handleUSPMessage(msg *confluentkafka.Message) error {
 		// Get routing information for this endpoint (from incoming message or database)
 		destination := event.MTPDestination
 		mtpProtocol := event.MTPProtocol
-		
+
 		// If no routing info in the incoming message, try to get it from database
 		if destination.WebSocketURL == "" && destination.STOMPQueue == "" && destination.MQTTTopic == "" {
 			destination, mtpProtocol = s.getEndpointMTPRouting(event.EndpointID)
 		}
-		
+
 		// Wrap response in USPMessageEvent with endpoint ID, MTP protocol, and routing information
 		err = s.kafkaProducer.PublishUSPMessageWithDestination(
 			s.config.Kafka.Topics.USPMessagesOutbound,
-			event.EndpointID,  // Route response back to the same endpoint
+			event.EndpointID, // Route response back to the same endpoint
 			fmt.Sprintf("resp-%d", time.Now().UnixNano()),
 			"Response",
 			response,
-			mtpProtocol,       // Use the same MTP protocol as the incoming message
-			destination,       // Include MTP-specific routing information
+			mtpProtocol, // Use the same MTP protocol as the incoming message
+			destination, // Include MTP-specific routing information
 		)
 		if err != nil {
 			log.Printf("❌ Failed to publish USP response: %v", err)
@@ -467,7 +467,7 @@ func (s *USPCoreService) processUSP14Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_4.Record_WebsocketConnect:
 		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
 		// Call connection handler if event is available
@@ -475,7 +475,7 @@ func (s *USPCoreService) processUSP14Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_4.Record_MqttConnect:
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
 		// Call connection handler if event is available
@@ -484,7 +484,7 @@ func (s *USPCoreService) processUSP14Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_4.Record_UdsConnect:
 		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
 		// Call connection handler if event is available
@@ -492,7 +492,7 @@ func (s *USPCoreService) processUSP14Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_4.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)
 		// Call disconnection handler if event is available
@@ -564,7 +564,7 @@ func (s *USPCoreService) processUSP13Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_3.Record_WebsocketConnect:
 		log.Printf("✅ WebSocket connection established for agent %s", record.FromId)
 		// Call connection handler if event is available
@@ -572,7 +572,7 @@ func (s *USPCoreService) processUSP13Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_3.Record_MqttConnect:
 		log.Printf("✅ MQTT connection established for agent %s (version %v)", record.FromId, recordType.MqttConnect.Version)
 		// Call connection handler if event is available
@@ -581,7 +581,7 @@ func (s *USPCoreService) processUSP13Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, protocolVersion)
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_3.Record_UdsConnect:
 		log.Printf("✅ UDS connection record received for agent %s (protocol compliance only)", record.FromId)
 		// Call connection handler if event is available
@@ -589,7 +589,7 @@ func (s *USPCoreService) processUSP13Message(data []byte, event *kafka.USPMessag
 			_ = s.handleAgentConnect(record.FromId, event.MTPProtocol, event.MTPDestination, "1.0")
 		}
 		return nil, nil // No response needed for MTP-layer connect
-		
+
 	case *v1_3.Record_Disconnect:
 		log.Printf("👋 Agent %s disconnected", record.FromId)
 		// Call disconnection handler if event is available
@@ -1274,21 +1274,21 @@ func (s *USPCoreService) getEndpointMTPRouting(endpointID string) (kafka.MTPDest
 		log.Printf("⚠️ Failed to get connection info from Redis for %s: %v", endpointID, err)
 		return kafka.MTPDestination{}, ""
 	}
-	
+
 	if conn == nil {
 		log.Printf("⚠️ No active connection found in Redis for %s", endpointID)
 		return kafka.MTPDestination{}, ""
 	}
-	
+
 	// Convert Redis connection info to Kafka MTPDestination
 	destination := kafka.MTPDestination{
 		WebSocketURL: conn.MTPDestination.WebSocketURL,
 		STOMPQueue:   conn.MTPDestination.STOMPQueue,
 		MQTTTopic:    conn.MTPDestination.MQTTTopic,
 	}
-	
-	log.Printf("📖 Retrieved MTP routing from Redis for %s: protocol=%s, status=%s", 
+
+	log.Printf("📖 Retrieved MTP routing from Redis for %s: protocol=%s, status=%s",
 		endpointID, conn.MTPProtocol, conn.Status)
-	
+
 	return destination, conn.MTPProtocol
 }

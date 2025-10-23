@@ -126,7 +126,7 @@ func (r *DeviceRepository) UpdateMTPInfo(endpointID, mtpProtocol string, websock
 		"mtp_protocol": mtpProtocol,
 		"last_seen":    &now,
 	}
-	
+
 	// Update protocol-specific routing fields
 	if websocketURL != "" {
 		updates["websocket_url"] = websocketURL
@@ -140,7 +140,7 @@ func (r *DeviceRepository) UpdateMTPInfo(endpointID, mtpProtocol string, websock
 	if httpURL != "" {
 		updates["http_url"] = httpURL
 	}
-	
+
 	return r.db.Model(&Device{}).
 		Where("endpoint_id = ?", endpointID).
 		Updates(updates).Error
@@ -387,11 +387,11 @@ func (r *ConnectionHistoryRepository) UpdateDisconnection(id uint) error {
 // GetRecentConnections retrieves recent connections with optional filters
 func (r *ConnectionHistoryRepository) GetRecentConnections(limit int, protocol string) ([]ConnectionHistory, error) {
 	query := r.db.Preload("Device").Order("created_at DESC").Limit(limit)
-	
+
 	if protocol != "" {
 		query = query.Where("mtp_protocol = ?", protocol)
 	}
-	
+
 	var history []ConnectionHistory
 	err := query.Find(&history).Error
 	return history, err
@@ -400,21 +400,21 @@ func (r *ConnectionHistoryRepository) GetRecentConnections(limit int, protocol s
 // GetConnectionStats returns connection statistics
 func (r *ConnectionHistoryRepository) GetConnectionStats() (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
-	
+
 	// Total connections
 	var total int64
 	if err := r.db.Model(&ConnectionHistory{}).Count(&total).Error; err != nil {
 		return nil, err
 	}
 	stats["total_connections"] = total
-	
+
 	// Active connections
 	var active int64
 	if err := r.db.Model(&ConnectionHistory{}).Where("disconnected_at IS NULL").Count(&active).Error; err != nil {
 		return nil, err
 	}
 	stats["active_connections"] = active
-	
+
 	// Connections by protocol
 	var protocolStats []struct {
 		Protocol string
@@ -427,7 +427,7 @@ func (r *ConnectionHistoryRepository) GetConnectionStats() (map[string]interface
 		return nil, err
 	}
 	stats["by_protocol"] = protocolStats
-	
+
 	return stats, nil
 }
 

@@ -176,7 +176,7 @@ func NewHTTPMTPService(cfg *config.Config) (*HTTPMTPService, error) {
 	}, nil
 }
 
-// initHTTPTransport initializes the HTTP server for receiving USP messages
+// initHTTPTransport initializes the HTTP server for receiving CWMP messages
 func (s *HTTPMTPService) initHTTPTransport() error {
 	log.Printf("🔌 Initializing HTTP transport...")
 	log.Printf("   └── Server URL: %s", s.config.MTP.HTTP.ServerURL)
@@ -186,9 +186,30 @@ func (s *HTTPMTPService) initHTTPTransport() error {
 		log.Printf("   └── Authentication: Enabled")
 	}
 
-	// Create HTTP server for receiving messages
-	// The actual server setup will be done when we implement full HTTP transport
-	// For now, just log the configuration
+	// Create HTTP server mux for receiving CWMP messages
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleHTTPMessage)
+
+	// Parse server URL to extract port
+	serverPort := "7547" // Standard CWMP port
+	
+	// Create HTTP server
+	s.httpServer = &http.Server{
+		Addr:    ":" + serverPort,
+		Handler: mux,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  90 * time.Second,
+	}
+
+	// Start HTTP server in goroutine
+	go func() {
+		log.Printf("🌐 CWMP HTTP server listening on port %s", serverPort)
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ HTTP server error: %v", err)
+		}
+	}()
+
 	log.Printf("✅ HTTP transport initialized")
 	return nil
 }
@@ -228,6 +249,7 @@ func (s *HTTPMTPService) handleHTTPMessage(w http.ResponseWriter, r *http.Reques
 		if !ok || username != s.config.MTP.HTTP.Username || password != s.config.MTP.HTTP.Password {
 			w.Header().Set("WWW-Authenticate", `Basic realm="CWMP HTTP MTP"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("❌ HTTP: Unauthorized request from %s (username: %s)", r.RemoteAddr, username)
 			return
 		}
 	}
@@ -241,16 +263,19 @@ func (s *HTTPMTPService) handleHTTPMessage(w http.ResponseWriter, r *http.Reques
 	}
 	defer r.Body.Close()
 
-	log.Printf("📥 HTTP: Received CWMP message from device (%d bytes)", len(body))
+	log.Printf("📥 HTTP: Received CWMP message from device %s (%d bytes)", r.RemoteAddr, len(body))
+
+	// Generate session ID for tracking request/response
+	sessionID := fmt.Sprintf("session-%s-%d", r.RemoteAddr, time.Now().UnixNano())
 
 	// Publish CWMP message to Kafka inbound topic for CWMP service to process
 	err = s.kafkaProducer.PublishCWMPMessage(
 		s.config.Kafka.Topics.CWMPMessagesInbound,
-		r.RemoteAddr,                                 // endpointID
-		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
-		"Request", // messageType
-		body,      // payload
-		"http",    // mtpProtocol
+		r.RemoteAddr, // deviceID
+		sessionID,    // use as messageID for now
+		"Request",
+		body,
+		"http",
 	)
 
 	if err != nil {
@@ -261,10 +286,35 @@ func (s *HTTPMTPService) handleHTTPMessage(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("✅ HTTP: CWMP message published to Kafka inbound topic")
 
-	// Send acknowledgment to device
-	// In CWMP, the response will come asynchronously via Kafka outbound topic
+	// For CWMP/TR-069, we need to wait for the response synchronously
+	// In a production implementation, we would:
+	// 1. Store the http.ResponseWriter in a session map
+	// 2. Use sessionID to correlate the response from Kafka
+	// 3. Wait with a timeout for the response
+	// 4. Send the response back to the device
+	//
+	// For now, send a simple acknowledgment
+	// The actual InformResponse will be in the Kafka outbound topic
+	
+	// TODO: Implement synchronous request/response correlation
+	// For CWMP to work properly, we need to:
+	// - Store this connection/session
+	// - Wait for response from Kafka with matching sessionID
+	// - Send that response back here
+	
+	// Temporary: Send empty 200 OK (CWMP expects InformResponse)
+	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("CWMP message received"))
+	w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <cwmp:InformResponse xmlns:cwmp="urn:dslforum-org:cwmp-1-2">
+      <MaxEnvelopes>1</MaxEnvelopes>
+    </cwmp:InformResponse>
+  </soap:Body>
+</soap:Envelope>`))
+	
+	log.Printf("✅ HTTP: Sent InformResponse to device %s", r.RemoteAddr)
 }
 
 // setupKafkaConsumer configures Kafka consumer to receive outbound CWMP messages from CWMP service
@@ -274,16 +324,16 @@ func (s *HTTPMTPService) setupKafkaConsumer() error {
 
 	handler := func(msg *confluentkafka.Message) error {
 		log.Printf("📨 HTTP: Received outbound CWMP message from Kafka (%d bytes)", len(msg.Value))
-		
+
 		// TODO: Send CWMP response back to device via HTTP
 		// Implementation notes:
 		// 1. Extract device endpoint/URL from Kafka message headers
 		// 2. Use s.httpClient to POST the response to the device's URL
 		// 3. Handle HTTP connection pooling and timeouts
 		// 4. Log success/failure
-		
+
 		log.Printf("ℹ️  HTTP: Outbound CWMP message ready to send (device routing implementation pending)")
-		
+
 		// Example implementation (when device routing is added):
 		// deviceURL := string(msg.Headers[0].Value) // Get device URL from message header
 		// resp, err := s.httpClient.Post(deviceURL, "application/soap+xml", bytes.NewReader(msg.Value))
@@ -293,7 +343,7 @@ func (s *HTTPMTPService) setupKafkaConsumer() error {
 		// }
 		// defer resp.Body.Close()
 		// log.Printf("✅ HTTP: Sent CWMP message to device %s (%d bytes, status: %d)", deviceURL, len(msg.Value), resp.StatusCode)
-		
+
 		return nil
 	}
 

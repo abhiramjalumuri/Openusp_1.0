@@ -11,20 +11,20 @@ const (
 	// Redis key prefixes
 	KeyPrefixAgentConnection = "agent:connection:"
 	KeyPrefixAgentActivity   = "agent:activity:"
-	
+
 	// Default TTL for connection state (24 hours)
 	DefaultConnectionTTL = 24 * time.Hour
 )
 
 // AgentConnection represents the connection state of an agent
 type AgentConnection struct {
-	EndpointID      string                `json:"endpoint_id"`
-	MTPProtocol     string                `json:"mtp_protocol"`      // "websocket", "stomp", "mqtt"
-	MTPDestination  kafka.MTPDestination  `json:"mtp_destination"`
-	ConnectedAt     int64                 `json:"connected_at"`      // Unix timestamp
-	LastActivity    int64                 `json:"last_activity"`     // Unix timestamp
-	ProtocolVersion string                `json:"protocol_version"`  // MTP protocol version
-	Status          string                `json:"status"`            // "connected", "disconnected", "inactive"
+	EndpointID      string               `json:"endpoint_id"`
+	MTPProtocol     string               `json:"mtp_protocol"` // "websocket", "stomp", "mqtt"
+	MTPDestination  kafka.MTPDestination `json:"mtp_destination"`
+	ConnectedAt     int64                `json:"connected_at"`     // Unix timestamp
+	LastActivity    int64                `json:"last_activity"`    // Unix timestamp
+	ProtocolVersion string               `json:"protocol_version"` // MTP protocol version
+	Status          string               `json:"status"`           // "connected", "disconnected", "inactive"
 }
 
 // StoreAgentConnection stores agent connection state in Redis
@@ -34,7 +34,7 @@ func (c *Client) StoreAgentConnection(conn *AgentConnection) error {
 	}
 
 	key := KeyPrefixAgentConnection + conn.EndpointID
-	
+
 	// Store connection with TTL
 	if err := c.Set(key, conn, DefaultConnectionTTL); err != nil {
 		return fmt.Errorf("failed to store agent connection: %w", err)
@@ -52,7 +52,7 @@ func (c *Client) StoreAgentConnection(conn *AgentConnection) error {
 // GetAgentConnection retrieves agent connection state from Redis
 func (c *Client) GetAgentConnection(endpointID string) (*AgentConnection, error) {
 	key := KeyPrefixAgentConnection + endpointID
-	
+
 	var conn AgentConnection
 	if err := c.Get(key, &conn); err != nil {
 		return nil, fmt.Errorf("failed to get agent connection: %w", err)
@@ -130,7 +130,7 @@ func (c *Client) GetInactiveAgents(inactiveDuration time.Duration) ([]*AgentConn
 
 	threshold := time.Now().Add(-inactiveDuration).Unix()
 	inactive := make([]*AgentConnection, 0)
-	
+
 	for _, conn := range all {
 		if conn.LastActivity < threshold && conn.Status == "connected" {
 			inactive = append(inactive, conn)

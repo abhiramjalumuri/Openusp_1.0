@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"log"
@@ -635,33 +636,75 @@ func main() {
 // processCWMPMessageFromKafka processes a TR-069/CWMP message received from Kafka
 func (s *CWMPService) processCWMPMessageFromKafka(data []byte) {
 	// Unmarshal the CWMP message wrapper
-	type CWMPMessage struct {
-		Payload  []byte            `json:"payload"`
-		Metadata map[string]string `json:"metadata"`
-	}
-
-	var cwmpMsg CWMPMessage
-	if err := json.Unmarshal(data, &cwmpMsg); err != nil {
+	var cwmpEvent kafka.CWMPMessageEvent
+	if err := json.Unmarshal(data, &cwmpEvent); err != nil {
 		log.Printf("❌ Failed to unmarshal CWMP message: %v", err)
 		return
 	}
 
-	log.Printf("📦 Processing TR-069 message (%d bytes) from %s", len(cwmpMsg.Payload), cwmpMsg.Metadata["client-address"])
+	log.Printf("📦 Processing TR-069 %s (%d bytes) from device %s", 
+		cwmpEvent.MessageType, len(cwmpEvent.Payload), cwmpEvent.DeviceID)
 
-	// Process the TR-069 SOAP payload using the existing processor
-	// Note: This would typically parse the SOAP envelope and extract the CWMP method
-	//response, err := s.processor.ProcessMessage(cwmpMsg.Payload)
-	//if err != nil {
-	//	log.Printf("❌ Error processing CWMP message: %v", err)
-	//	return
-	//}
+	// Parse the SOAP envelope
+	var envelope cwmp.Envelope
+	if err := xml.Unmarshal(cwmpEvent.Payload, &envelope); err != nil {
+		log.Printf("❌ Failed to parse SOAP envelope: %v", err)
+		return
+	}
 
-	// TODO: Parse SOAP envelope and call appropriate CWMP handler
+	// Create a temporary session for processing
+	session := cwmp.NewSession(cwmpEvent.SessionID, cwmpEvent.DeviceID, s.config.SessionTimeout)
+	
+	// Process the CWMP message using the processor
+	var response *cwmp.Envelope
+	var processErr error
 
-	// In a full implementation, we would:
-	// 1. Parse the SOAP envelope
-	// 2. Extract the CWMP method (Inform, GetParameterValues, etc.)
-	// 3. Call the appropriate handler in processor
-	// 4. Generate SOAP response
-	// 5. Send response back via Kafka to mtp-http
+	if envelope.Body.Inform != nil {
+		log.Printf("📱 Processing Inform message from %s (SN: %s)", 
+			envelope.Body.Inform.DeviceId.Manufacturer, 
+			envelope.Body.Inform.DeviceId.SerialNumber)
+		response, processErr = s.processor.HandleInform(session, envelope.Body.Inform)
+	} else if envelope.Body.GetParameterValuesResponse != nil {
+		log.Printf("📊 Processing GetParameterValuesResponse")
+		// Handle other CWMP messages as needed
+		return
+	} else {
+		log.Printf("⚠️  Unknown CWMP message type")
+		return
+	}
+
+	if processErr != nil {
+		log.Printf("❌ Error processing CWMP message: %v", processErr)
+		return
+	}
+
+	// Marshal the response SOAP envelope
+	responseData, err := xml.MarshalIndent(response, "", "  ")
+	if err != nil {
+		log.Printf("❌ Failed to marshal SOAP response: %v", err)
+		return
+	}
+
+	// Add XML declaration
+	fullResponse := []byte(xml.Header + string(responseData))
+
+	// Generate message ID for response
+	responseID := fmt.Sprintf("resp-%s-%d", cwmpEvent.DeviceID, time.Now().UnixNano())
+
+	// Publish response back to Kafka outbound topic for MTP-HTTP to send to device
+	err = s.kafkaProducer.PublishCWMPMessage(
+		s.globalConfig.Kafka.Topics.CWMPMessagesOutbound,
+		cwmpEvent.DeviceID,
+		responseID,
+		"InformResponse",
+		fullResponse,
+		"http",
+	)
+
+	if err != nil {
+		log.Printf("❌ Failed to publish CWMP response to Kafka: %v", err)
+		return
+	}
+
+	log.Printf("✅ Published InformResponse to Kafka outbound topic (%d bytes)", len(fullResponse))
 }

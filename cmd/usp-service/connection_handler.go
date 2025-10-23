@@ -6,10 +6,11 @@ import (
 	"log"
 	"time"
 
-	"gorm.io/gorm"
 	"openusp/internal/database"
 	"openusp/pkg/kafka"
 	"openusp/pkg/redis"
+
+	"gorm.io/gorm"
 )
 
 // handleAgentConnect processes agent connection events

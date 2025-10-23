@@ -123,8 +123,8 @@ cwmp_agent:
   # ACS Configuration
   acs:
     url: "http://localhost:7547"
-    username: "acs"
-    password: "acs123"
+    username: "openusp"
+    password: "openusp123"
     periodic_inform_enabled: true
     periodic_inform_interval: "300s"
 

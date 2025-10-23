@@ -8,29 +8,29 @@ import (
 
 // Device represents a USP device/agent in the database
 type Device struct {
-	ID              uint           `gorm:"primaryKey" json:"id"`
-	EndpointID      string         `gorm:"uniqueIndex;not null" json:"endpoint_id"`
-	ProductClass    string         `json:"product_class"`
-	Manufacturer    string         `json:"manufacturer"`
-	ModelName       string         `json:"model_name"`
-	SerialNumber    string         `json:"serial_number"`
-	SoftwareVersion string         `json:"software_version"`
-	HardwareVersion string         `json:"hardware_version"`
-	Status          string         `gorm:"default:'offline'" json:"status"` // online, offline, provisioning
-	LastSeen        *time.Time     `json:"last_seen"`
-	IPAddress       string         `json:"ip_address"`
-	ConnectionType  string         `json:"connection_type"` // MQTT, STOMP, WebSocket, Unix
-	
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	EndpointID      string     `gorm:"uniqueIndex;not null" json:"endpoint_id"`
+	ProductClass    string     `json:"product_class"`
+	Manufacturer    string     `json:"manufacturer"`
+	ModelName       string     `json:"model_name"`
+	SerialNumber    string     `json:"serial_number"`
+	SoftwareVersion string     `json:"software_version"`
+	HardwareVersion string     `json:"hardware_version"`
+	Status          string     `gorm:"default:'offline'" json:"status"` // online, offline, provisioning
+	LastSeen        *time.Time `json:"last_seen"`
+	IPAddress       string     `json:"ip_address"`
+	ConnectionType  string     `json:"connection_type"` // MQTT, STOMP, WebSocket, Unix
+
 	// MTP routing information (stored as MTPProtocol for backward compatibility)
-	MTPProtocol      string `json:"mtp_protocol"`       // websocket, stomp, mqtt, http
-	WebSocketURL     string `json:"websocket_url"`      // WebSocket endpoint URL
-	STOMPQueue       string `json:"stomp_queue"`        // STOMP destination queue
-	MQTTTopic        string `json:"mqtt_topic"`         // MQTT response topic
-	HTTPURL          string `json:"http_url"`           // HTTP callback URL
-	
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	MTPProtocol  string `json:"mtp_protocol"`  // websocket, stomp, mqtt, http
+	WebSocketURL string `json:"websocket_url"` // WebSocket endpoint URL
+	STOMPQueue   string `json:"stomp_queue"`   // STOMP destination queue
+	MQTTTopic    string `json:"mqtt_topic"`    // MQTT response topic
+	HTTPURL      string `json:"http_url"`      // HTTP callback URL
+
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relationships
 	Parameters []Parameter `gorm:"foreignKey:DeviceID" json:"parameters,omitempty"`
@@ -92,14 +92,14 @@ type Session struct {
 // ConnectionHistory represents the connection history of agents
 type ConnectionHistory struct {
 	ID              uint       `gorm:"primaryKey" json:"id"`
-	DeviceID        uint       `gorm:"index" json:"device_id"`                      // Foreign key to Device (nullable for auto-registration)
-	EndpointID      string     `gorm:"index;not null" json:"endpoint_id"`           // Agent endpoint ID
-	MTPProtocol     string     `gorm:"not null" json:"mtp_protocol"`                // websocket, stomp, mqtt, http
-	ProtocolVersion string     `json:"protocol_version"`                            // MTP protocol version (STOMP 1.2, MQTT 5.0, etc.)
-	EventType       string     `gorm:"not null" json:"event_type"`                  // "connected", "disconnected"
-	ConnectedAt     time.Time  `json:"connected_at"`                                // When connection was established
-	DisconnectedAt  *time.Time `json:"disconnected_at"`                             // When connection was closed (NULL if still connected)
-	Duration        int64      `json:"duration"`                                    // Connection duration in seconds (computed on disconnect)
+	DeviceID        uint       `gorm:"index" json:"device_id"`            // Foreign key to Device (nullable for auto-registration)
+	EndpointID      string     `gorm:"index;not null" json:"endpoint_id"` // Agent endpoint ID
+	MTPProtocol     string     `gorm:"not null" json:"mtp_protocol"`      // websocket, stomp, mqtt, http
+	ProtocolVersion string     `json:"protocol_version"`                  // MTP protocol version (STOMP 1.2, MQTT 5.0, etc.)
+	EventType       string     `gorm:"not null" json:"event_type"`        // "connected", "disconnected"
+	ConnectedAt     time.Time  `json:"connected_at"`                      // When connection was established
+	DisconnectedAt  *time.Time `json:"disconnected_at"`                   // When connection was closed (NULL if still connected)
+	Duration        int64      `json:"duration"`                          // Connection duration in seconds (computed on disconnect)
 	CreatedAt       time.Time  `json:"created_at"`
 
 	// Relationship

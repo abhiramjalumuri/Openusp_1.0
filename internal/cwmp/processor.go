@@ -288,6 +288,11 @@ func (mp *MessageProcessor) handleInform(session *Session, inform *Inform) (*Env
 	return response, nil
 }
 
+// HandleInform is the public method for handling Inform messages
+func (mp *MessageProcessor) HandleInform(session *Session, inform *Inform) (*Envelope, error) {
+	return mp.handleInform(session, inform)
+}
+
 // handleGetRPCMethods handles GetRPCMethods requests
 func (mp *MessageProcessor) handleGetRPCMethods(session *Session) (*Envelope, error) {
 	methods := []string{

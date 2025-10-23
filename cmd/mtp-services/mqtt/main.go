@@ -196,7 +196,7 @@ func main() {
 // Supports all TR-369 authority schemes
 func (s *MQTTMTPService) extractEndpointID(data []byte) string {
 	// Extract endpoint ID from USP Record based on TR-369 authority schemes
-	// 
+	//
 	// TR-369 defines the following authority schemes for endpoint IDs:
 	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
 	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
@@ -207,58 +207,46 @@ func (s *MQTTMTPService) extractEndpointID(data []byte) string {
 	//   - imeisv:<IMEISV>  (e.g., imeisv:9900008624718540)
 	//   - ops:<OPS-ID>  (e.g., ops:1234567890)
 	//   - self::self (for controller self-identification)
-	
+	//
+	// The FromId field in a USP Record contains the sender's endpoint ID
+	// In protobuf encoding, from_id typically appears before to_id, so we return the first match
+
 	dataStr := string(data)
-	
+
 	// Define all TR-369 authority scheme patterns
-	// Order matters: check more specific patterns first to avoid false matches
 	authoritySchemes := []string{
-		"proto:",     // proto:<protocol>:<authority> - most common for agents
-		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
-		"oui:",       // oui:<OUI>-<SerialNumber>
-		"cid:",       // cid:<CompanyID>
-		"uuid:",      // uuid:<UUID>
-		"imei:",      // imei:<IMEI>
-		"imeisv:",    // imeisv:<IMEISV>
-		"ops:",       // ops:<OPS-ID>
-		"self::",     // self::self (controller)
+		"proto:",  // proto:<protocol>:<authority> - most common for agents
+		"os:",     // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",    // oui:<OUI>-<SerialNumber>
+		"cid:",    // cid:<CompanyID>
+		"uuid:",   // uuid:<UUID>
+		"imei:",   // imei:<IMEI>
+		"imeisv:", // imeisv:<IMEISV>
+		"ops:",    // ops:<OPS-ID>
+		"self::",  // self::self (controller)
 	}
-	
+
+	// Find the first occurrence of any authority scheme
 	for _, scheme := range authoritySchemes {
 		if idx := strings.Index(dataStr, scheme); idx >= 0 {
-			// Extract endpoint ID starting from the scheme
 			remaining := dataStr[idx:]
-			
+
 			// Find the terminator (null byte, whitespace, or control characters)
-			// Don't break on ':' or '-' as they're part of the endpoint ID format
 			endIdx := strings.IndexAny(remaining, "\x00\n\r\t ")
 			if endIdx > 0 {
-				endpointID := remaining[:endIdx]
-				// Validate it's not a controller endpoint (we want agent endpoints)
-				if !strings.Contains(endpointID, "controller") && 
-				   !strings.Contains(endpointID, "openusp") {
-					return endpointID
-				}
-			} else {
-				// No terminator found, take reasonable length
-				// UUID can be up to 36 chars, MAC addresses ~17, OUI patterns ~30-50
-				maxLen := 60
-				if len(remaining) > maxLen {
-					endpointID := remaining[:maxLen]
-					if !strings.Contains(endpointID, "controller") && 
-					   !strings.Contains(endpointID, "openusp") {
-						return endpointID
-					}
-				} else if len(remaining) > 0 {
-					if !strings.Contains(remaining, "controller") && 
-					   !strings.Contains(remaining, "openusp") {
-						return remaining
-					}
-				}
+				return remaining[:endIdx]
 			}
+
+			// No terminator found, take reasonable length
+			maxLen := 60
+			if len(remaining) > maxLen {
+				return remaining[:maxLen]
+			}
+
+			return remaining
 		}
 	}
-	
+
 	return ""
 }
 
@@ -312,7 +300,7 @@ func (s *MQTTMTPService) setupKafkaConsumer() error {
 
 	handler := func(msg *confluentkafka.Message) error {
 		log.Printf("📨 MQTT: Received outbound message from Kafka (%d bytes)", len(msg.Value))
-		
+
 		// Parse the Kafka message envelope to extract MTP destination
 		var envelope kafka.USPMessageEvent
 		if err := json.Unmarshal(msg.Value, &envelope); err != nil {
@@ -329,9 +317,9 @@ func (s *MQTTMTPService) setupKafkaConsumer() error {
 			mqttTopic = "usp/agent/response" // Default fallback topic
 			log.Printf("⚠️ MQTT: No topic in MTPDestination, using fallback: %s", mqttTopic)
 		}
-		
+
 		log.Printf("📍 MQTT: Routing to topic: %s", mqttTopic)
-		
+
 		// TODO: Send message to agent via MQTT
 		// When MQTT broker is implemented, publish to agent's topic:
 		// if s.mqttBroker != nil {
@@ -344,7 +332,7 @@ func (s *MQTTMTPService) setupKafkaConsumer() error {
 		// } else {
 		//     log.Printf("⚠️ MQTT: Broker not connected, cannot send message to agent")
 		// }
-		
+
 		log.Printf("ℹ️  MQTT: Outbound message ready to send to topic %s (MQTT broker implementation pending)", mqttTopic)
 		return nil
 	}

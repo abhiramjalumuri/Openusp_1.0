@@ -7,8 +7,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"openusp/pkg/config"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Client wraps Redis client with OpenUSP-specific operations
@@ -24,7 +25,7 @@ func NewClient(cfg *config.RedisConfig) (*Client, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
-	
+
 	log.Printf("🔌 Connecting to Redis at %s (DB: %d)...", addr, cfg.DB)
 
 	rdb := redis.NewClient(&redis.Options{

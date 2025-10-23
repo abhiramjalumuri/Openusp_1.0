@@ -559,10 +559,10 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		s.config.Kafka.Topics.USPMessagesInbound,
 		endpointID,                                   // endpointID extracted from USP Record
 		fmt.Sprintf("msg-%d", time.Now().UnixNano()), // messageID
-		"Request",    // messageType
-		data,         // payload
-		"stomp",      // mtpProtocol
-		destination,  // MTP routing information
+		"Request",   // messageType
+		data,        // payload
+		"stomp",     // mtpProtocol
+		destination, // MTP routing information
 	)
 
 	if err != nil {
@@ -570,7 +570,7 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to publish to Kafka: %w", err)
 	}
 
-	log.Printf("✅ STOMP: USP message published to Kafka inbound topic (EndpointID: %s, Queue: %s)", 
+	log.Printf("✅ STOMP: USP message published to Kafka inbound topic (EndpointID: %s, Queue: %s)",
 		endpointID, stompQueue)
 
 	// In event-driven architecture, we don't wait for synchronous response
@@ -581,7 +581,7 @@ func (s *STOMPMTPService) ProcessUSPMessage(data []byte) ([]byte, error) {
 // extractEndpointID extracts the FromId (endpoint ID) from a USP Record
 func (s *STOMPMTPService) extractEndpointID(data []byte) string {
 	// Extract endpoint ID from USP Record based on TR-369 authority schemes
-	// 
+	//
 	// TR-369 defines the following authority schemes for endpoint IDs:
 	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
 	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
@@ -594,58 +594,44 @@ func (s *STOMPMTPService) extractEndpointID(data []byte) string {
 	//   - self::self (for controller self-identification)
 	//
 	// The FromId field in a USP Record contains the sender's endpoint ID
-	
+	// In protobuf encoding, from_id typically appears before to_id, so we return the first match
+
 	dataStr := string(data)
-	
+
 	// Define all TR-369 authority scheme patterns
-	// Order matters: check more specific patterns first to avoid false matches
 	authoritySchemes := []string{
-		"proto:",     // proto:<protocol>:<authority> - most common for agents
-		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
-		"oui:",       // oui:<OUI>-<SerialNumber>
-		"cid:",       // cid:<CompanyID>
-		"uuid:",      // uuid:<UUID>
-		"imei:",      // imei:<IMEI>
-		"imeisv:",    // imeisv:<IMEISV>
-		"ops:",       // ops:<OPS-ID>
-		"self::",     // self::self (controller)
+		"proto:",  // proto:<protocol>:<authority> - most common for agents
+		"os:",     // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",    // oui:<OUI>-<SerialNumber>
+		"cid:",    // cid:<CompanyID>
+		"uuid:",   // uuid:<UUID>
+		"imei:",   // imei:<IMEI>
+		"imeisv:", // imeisv:<IMEISV>
+		"ops:",    // ops:<OPS-ID>
+		"self::",  // self::self (controller)
 	}
-	
+
+	// Find the first occurrence of any authority scheme
 	for _, scheme := range authoritySchemes {
 		if idx := strings.Index(dataStr, scheme); idx >= 0 {
-			// Extract endpoint ID starting from the scheme
 			remaining := dataStr[idx:]
-			
+
 			// Find the terminator (null byte, whitespace, or control characters)
-			// Don't break on ':' or '-' as they're part of the endpoint ID format
 			endIdx := strings.IndexAny(remaining, "\x00\n\r\t ")
 			if endIdx > 0 {
-				endpointID := remaining[:endIdx]
-				// Validate it's not a controller endpoint (we want agent endpoints)
-				if !strings.Contains(endpointID, "controller") && 
-				   !strings.Contains(endpointID, "openusp") {
-					return endpointID
-				}
-			} else {
-				// No terminator found, take reasonable length
-				// UUID can be up to 36 chars, MAC addresses ~17, OUI patterns ~30-50
-				maxLen := 60
-				if len(remaining) > maxLen {
-					endpointID := remaining[:maxLen]
-					if !strings.Contains(endpointID, "controller") && 
-					   !strings.Contains(endpointID, "openusp") {
-						return endpointID
-					}
-				} else if len(remaining) > 0 {
-					if !strings.Contains(remaining, "controller") && 
-					   !strings.Contains(remaining, "openusp") {
-						return remaining
-					}
-				}
+				return remaining[:endIdx]
 			}
+
+			// No terminator found, take reasonable length
+			maxLen := 60
+			if len(remaining) > maxLen {
+				return remaining[:maxLen]
+			}
+
+			return remaining
 		}
 	}
-	
+
 	return ""
 }
 
@@ -656,7 +642,7 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 
 	handler := func(msg *confluentkafka.Message) error {
 		log.Printf("📨 STOMP: Received outbound message from Kafka (%d bytes)", len(msg.Value))
-		
+
 		// Unmarshal Kafka USPMessageEvent envelope
 		var event kafka.USPMessageEvent
 		if err := json.Unmarshal(msg.Value, &event); err != nil {
@@ -679,9 +665,9 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 				}
 				log.Printf("⚠️ STOMP: No queue in MTPDestination, using fallback: %s", stompQueue)
 			}
-			
+
 			log.Printf("📍 STOMP: Routing to queue: %s", stompQueue)
-			
+
 			// Send the raw USP protobuf payload (not the JSON envelope)
 			err := s.stompBroker.Send(stompQueue, event.Payload)
 			if err != nil {
@@ -692,7 +678,7 @@ func (s *STOMPMTPService) setupKafkaConsumer() error {
 		} else {
 			log.Printf("⚠️ STOMP: Broker not connected, cannot send message to agent")
 		}
-		
+
 		return nil
 	}
 

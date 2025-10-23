@@ -264,7 +264,7 @@ func (s *WebSocketMTPService) handleWebSocket(w http.ResponseWriter, r *http.Req
 // Supports all TR-369 authority schemes
 func (s *WebSocketMTPService) extractEndpointID(data []byte) string {
 	// Extract endpoint ID from USP Record based on TR-369 authority schemes
-	// 
+	//
 	// TR-369 defines the following authority schemes for endpoint IDs:
 	//   - proto:<protocol>:<authority>  (e.g., proto:usp:controller, proto:1.1::002604889e3b)
 	//   - os:<OUI>-<ProductClass>-<SerialNumber>  (e.g., os::012345-CPE-SN123456)
@@ -275,51 +275,47 @@ func (s *WebSocketMTPService) extractEndpointID(data []byte) string {
 	//   - imeisv:<IMEISV>  (e.g., imeisv:9900008624718540)
 	//   - ops:<OPS-ID>  (e.g., ops:1234567890)
 	//   - self::self (for controller self-identification)
-	
+	//
+	// In protobuf encoding, from_id typically appears before to_id, so we return the first match
+
 	dataStr := string(data)
-	
+
 	// Define all TR-369 authority scheme patterns
-	// Order matters: check more specific patterns first to avoid false matches
 	authoritySchemes := []string{
-		"proto:",     // proto:<protocol>:<authority> - most common for agents
-		"os:",        // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
-		"oui:",       // oui:<OUI>-<SerialNumber>
-		"cid:",       // cid:<CompanyID>
-		"uuid:",      // uuid:<UUID>
-		"imei:",      // imei:<IMEI>
-		"imeisv:",    // imeisv:<IMEISV>
-		"ops:",       // ops:<OPS-ID>
-		"self::",     // self::self (controller)
+		"proto:",  // proto:<protocol>:<authority> - most common for agents
+		"os:",     // os:<OUI>-<ProductClass>-<SerialNumber> - obuspa agents
+		"oui:",    // oui:<OUI>-<SerialNumber>
+		"cid:",    // cid:<CompanyID>
+		"uuid:",   // uuid:<UUID>
+		"imei:",   // imei:<IMEI>
+		"imeisv:", // imeisv:<IMEISV>
+		"ops:",    // ops:<OPS-ID>
+		"self::",  // self::self (controller)
 	}
-	
+
+	// Find the first occurrence of any authority scheme
 	for _, scheme := range authoritySchemes {
 		if idx := strings.Index(dataStr, scheme); idx >= 0 {
-			// Extract endpoint ID starting from the scheme
-			// Find valid characters: alphanumeric, dots, colons, hyphens, underscores
+			// Extract endpoint ID - find valid characters
 			endIdx := idx
 			for endIdx < len(dataStr) {
 				ch := dataStr[endIdx]
 				// Valid characters in endpoint IDs per TR-369
-				if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || 
-				   (ch >= '0' && ch <= '9') || ch == ':' || ch == '.' || 
-				   ch == '-' || ch == '_' {
+				if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+					(ch >= '0' && ch <= '9') || ch == ':' || ch == '.' ||
+					ch == '-' || ch == '_' {
 					endIdx++
 				} else {
 					break
 				}
 			}
-			
+
 			if endIdx > idx {
-				endpointID := dataStr[idx:endIdx]
-				// Validate it's not a controller endpoint (we want agent endpoints)
-				if !strings.Contains(endpointID, "controller") && 
-				   !strings.Contains(endpointID, "openusp") {
-					return endpointID
-				}
+				return dataStr[idx:endIdx]
 			}
 		}
 	}
-	
+
 	return "" // No endpoint ID found
 }
 
@@ -331,19 +327,19 @@ func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([
 		log.Printf("❌ WebSocket: Failed to extract endpoint ID from USP Record - invalid message")
 		return nil, fmt.Errorf("endpoint ID (from_id) is mandatory but not found in USP Record")
 	}
-	
+
 	// Map endpoint ID to clientID for routing responses
 	s.connMutex.Lock()
 	s.endpointToClient[endpointID] = clientID
 	s.connMutex.Unlock()
 	log.Printf("📍 WebSocket: Mapped endpoint %s to client %s", endpointID, clientID)
-	
+
 	// Construct WebSocket URL for this agent (used by USP service for routing responses)
 	websocketURL := fmt.Sprintf("ws://localhost:%d/usp", s.config.MTP.Websocket.ServerPort)
 	destination := kafka.MTPDestination{
 		WebSocketURL: websocketURL,
 	}
-	
+
 	// Publish USP message to Kafka inbound topic for USP service to process
 	err := s.kafkaProducer.PublishUSPMessageWithDestination(
 		s.config.Kafka.Topics.USPMessagesInbound,
@@ -359,7 +355,7 @@ func (s *WebSocketMTPService) processUSPMessage(data []byte, clientID string) ([
 		return nil, fmt.Errorf("failed to publish to Kafka inbound topic: %w", err)
 	}
 
-	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic (endpoint: %s, client: %s, url: %s)", 
+	log.Printf("✅ WebSocket: USP message published to Kafka inbound topic (endpoint: %s, client: %s, url: %s)",
 		endpointID, clientID, websocketURL)
 
 	// In event-driven architecture, we don't wait for synchronous response
@@ -373,9 +369,9 @@ func (s *WebSocketMTPService) setupKafkaConsumer() error {
 	topics := []string{s.config.Kafka.Topics.USPMessagesOutbound}
 
 	handler := func(msg *confluentkafka.Message) error {
-		log.Printf("� Received message from topic: %s (partition: %d, offset: %d, size: %d bytes)", 
+		log.Printf("� Received message from topic: %s (partition: %d, offset: %d, size: %d bytes)",
 			*msg.TopicPartition.Topic, msg.TopicPartition.Partition, msg.TopicPartition.Offset, len(msg.Value))
-		
+
 		// Parse the USPMessageEvent envelope
 		var envelope struct {
 			EndpointID  string `json:"endpoint_id"`
@@ -384,15 +380,15 @@ func (s *WebSocketMTPService) setupKafkaConsumer() error {
 			Payload     []byte `json:"payload"`
 			MTPProtocol string `json:"mtp_protocol"`
 		}
-		
+
 		if err := json.Unmarshal(msg.Value, &envelope); err != nil {
 			log.Printf("❌ WebSocket: Failed to unmarshal USPMessageEvent envelope: %v", err)
 			return err
 		}
-		
-		log.Printf("📨 WebSocket: USP Response - EndpointID: %s, MessageType: %s, Payload: %d bytes", 
+
+		log.Printf("📨 WebSocket: USP Response - EndpointID: %s, MessageType: %s, Payload: %d bytes",
 			envelope.EndpointID, envelope.MessageType, len(envelope.Payload))
-		
+
 		// Look up the client ID from the endpoint ID
 		s.connMutex.RLock()
 		clientID, exists := s.endpointToClient[envelope.EndpointID]
@@ -401,22 +397,22 @@ func (s *WebSocketMTPService) setupKafkaConsumer() error {
 			log.Printf("⚠️ WebSocket: Endpoint %s not mapped to any client (agent may have disconnected)", envelope.EndpointID)
 			return nil
 		}
-		
+
 		// Get the WebSocket connection
 		conn, connExists := s.connections[clientID]
 		s.connMutex.RUnlock()
-		
+
 		if !connExists {
 			log.Printf("⚠️ WebSocket: Client %s (endpoint: %s) not connected, cannot send message", clientID, envelope.EndpointID)
 			return nil
 		}
-		
+
 		// Send the USP message (payload) to the client
 		if err := conn.WriteMessage(websocket.BinaryMessage, envelope.Payload); err != nil {
 			log.Printf("❌ WebSocket: Failed to send message to client %s (endpoint: %s): %v", clientID, envelope.EndpointID, err)
 			return err
 		}
-		
+
 		log.Printf("✅ WebSocket: Sent response to agent %s via client %s (%d bytes)", envelope.EndpointID, clientID, len(envelope.Payload))
 		return nil
 	}
